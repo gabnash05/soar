@@ -4,14 +4,11 @@
 
 ## Document status and source authority
 
-- **Status:** PRD v1, documentation-only. No implementation is included in this branch.
-- **Authoritative scope:** the client-approved `Project Scope and Acceptance — Final.pdf` is the source of truth for agreed features, acceptance checks, exclusions, required client inputs, and handover expectations.
-- **Supporting context:** `SOAR-project-overview.md` explains product direction, delivery context, and summarized workflows. The supplied `TECHNO/` source folder is evidence of the current draft, not the final requirement set.
+- **Status:** PRD v2, documentation-only. No implementation is included here.
+- **Primary agreement:** the client-approved `docs/client-scope/Project Scope and Acceptance — Final.pdf` defines the feature boundaries, acceptance checks, exclusions, required inputs, and handover expectations.
+- **Confirmed amendments:** the later approved decisions recorded for this PRD supersede the PDF only where they conflict. Most notably, annual access is now **PHP10 per account per year**, replacing the PDF's PHP2 amount.
+- **Supporting context:** `docs/client-scope/SOAR-project-overview.md` explains product direction, delivery context, and summarized workflows. The supplied `docs/client-scope/TECHNO/` source folder is evidence of the current draft, not the final requirement set.
 - **Reference quality bar:** the classmate site at <https://unsaysud-antech-ustpcdocafeteria.ai.studio/> is a minimum UI/UX quality reference, not an expansion of SOAR scope. `chrome-devtools-axi` was available but could not attach to a live browser target in this environment, so no specific visual observations from that site are encoded here.
-- **Reviewed input paths:**
-  - `/home/gab/agent-workspace/firstmate/projects/soar/docs/client-scope/Project Scope and Acceptance — Final.pdf`
-  - `/home/gab/agent-workspace/firstmate/projects/soar/docs/client-scope/SOAR-project-overview.md`
-  - `/home/gab/agent-workspace/firstmate/projects/soar/docs/client-scope/TECHNO/`
 
 Do not commit the supplied PDF, client source folder, account credentials, or secrets into this repository unless a later task explicitly authorizes specific files. Required secrets should be shared privately through service invitations or secure channels.
 
@@ -19,28 +16,39 @@ Do not commit the supplied PDF, client source folder, account credentials, or se
 
 SOAR is a hosted website that centralizes campus organization discovery, announcements, recruitment information, application progress, dated events, and meeting/interview requests.
 
-The intended outcome is a working application that can be demonstrated and used with real users and paying accounts. Students and outside users should be able to discover organizations and request or track relevant interactions. Organization officers should be able to keep their own organization information current and manage the operational workflows described in the agreed scope.
+The intended outcome is a working application that can be demonstrated and used with real users and paying accounts. Students, sponsors, and organization officers should be able to discover organizations and track the interactions appropriate to their roles. Organization officers should be able to keep their organization information current and manage the operational workflows described in the agreed scope.
 
 ## Success definition
 
 SOAR is successful when the delivered hosted website:
 
 1. Lets users register, sign in, recover passwords, manage allowed account settings, and access only role-appropriate pages.
-2. Requires a confirmed **₱2 annual payment per account** before account creation or continued main-app access, while preserving records for renewal.
+2. Requires a confirmed **PHP10 annual payment per account** before account creation or continued main-app access, while preserving records for renewal.
 3. Shows a responsive, readable organization directory, organization profiles, announcements, application tracker, meeting tracker, settings, and officer dashboard on phones and computers.
 4. Persists organization data, announcements, images, applications, meeting requests, payment/access status, and role permissions across refresh, sign-out, and another device.
-5. Keeps private application, meeting, and payment records visible only to the correct accounts, with officers limited to the organization linked to their account.
-6. Meets every acceptance check in the final scope and is handed over with the hosted link, updated source files, and short setup/use instructions.
+5. Keeps private application, meeting, and payment records visible only to the correct accounts, with officers limited to the organization they are approved to manage.
+6. Meets every acceptance check in the final scope as amended and is handed over with the hosted link, updated source files, and short setup/use instructions.
 
 ## Users and roles
 
-| Role | Agreed purpose | Core access |
-| --- | --- | --- |
-| Student | Discover organizations, read announcements, follow application instructions, confirm external-form submission, track application stages, request meetings/interviews, and manage allowed settings. | Announcements, organization directory/profiles, application tracker, meeting tracker, settings, payment/access status. |
-| Organization officer | Manage the organization linked to the officer account. | Officer dashboard sections for profile/recruitment settings, announcements, applicants, calendar/date entries, meeting requests, and organization image uploads. |
-| Basic outside user | View organization information and updates and request meetings through an account. | Role-appropriate browsing, meeting requests/tracking, settings, payment/access status. |
+| Role | Agreed purpose | Registration details | Core access |
+| --- | --- | --- | --- |
+| Student | Discover organizations, read announcements, follow application instructions, confirm external-form submission, track application stages, request meetings/interviews, and manage allowed personal settings. | Name, email, password, student ID number, email verification, and confirmed annual payment before account creation. | Announcements, organization directory/profiles, application tracker, meeting tracker, personal account settings, payment/access status. |
+| Organization officer | Manage an approved organization and its operational workflows. Officers are also students for account-identification purposes. | Name, email, password, student ID number, email verification, confirmed annual payment before account creation, and officer access approved through the organization-owner process. | Officer dashboard, organization settings, recruitment settings, announcements, applicants, calendar/date entries, meeting requests, personal account settings, payment/access status. |
+| Sponsor | Outside-user role with no special sponsor-only tools. Sponsors can view organization information and request meetings through an account. | Name, email, password, email verification, optional company/organization name, and confirmed annual payment before account creation. No TIN or government ID is required by the confirmed scope. | Role-appropriate browsing, organization profiles, announcements, meeting requests/tracking, personal account settings, payment/access status. |
 
-**Conflict to resolve before implementation:** the supplied draft code labels the outside-user role as `sponsor` and asks for a TIN. The final scope calls this role a **basic outside user** and explicitly excludes dedicated sponsor tools. Treat sponsor-specific features as out of scope unless the client approves a scope change.
+### Organization ownership and officer access
+
+- A project administrator assigns each organization's initial owner.
+- The initial owner approves officer access for that organization.
+- This is a controlled setup/approval workflow only. It should not be expanded into a general admin dashboard, membership-management system, or sponsor tooling unless a later scope change approves that work.
+- There is no initial proof-of-election/proof-upload requirement in the confirmed scope.
+
+### Personal-account vs organization settings
+
+- **Personal-account settings** manage the signed-in user's own allowed account details, such as name-change limits and verified email changes.
+- **Organization settings** manage the organization's public profile, logo, contact email, recruitment information, application link, announcements, calendar/date entries, and meeting requests.
+- Officers need both settings areas; students and sponsors need only personal-account settings plus payment/access status.
 
 ## Agreed product scope
 
@@ -51,21 +59,25 @@ SOAR is successful when the delivered hosted website:
 - Wide tables must be usable on phones without cutting off actions.
 - Include small button/page transitions and clear loading, empty, and error states.
 
-### 2. Accounts and settings
+### 2. Accounts, roles, and settings
 
-- Keep student, organization-officer, and basic outside-user accounts.
-- Registration collects name, email, password, and relevant ID details.
+- Keep student, organization-officer, and sponsor accounts.
+- Registration collects only the confirmed details for each role:
+  - students and officers: name, email, password, student ID number
+  - sponsors: name, email, password, optional company/organization name
 - Users can sign in, sign out, and recover passwords through email.
-- Name changes are allowed only within the existing 30-day limit.
+- Email verification is required as part of account creation.
+- Name changes follow the existing 30-day limit.
 - Email changes require the current password and verification of the new address; the saved email changes after verification.
 - Pages and controls must match the signed-in account role.
+- Officers manage only organizations for which they have approved officer access.
 
 ### 3. Organizations and profiles
 
 - Show a directory with each organization name, logo, short description, and profile link.
 - Keep name search with a clear no-results message.
 - Each organization profile shows description, contact details, recruitment information, posts, and available dates.
-- Officers can update only their own organization name, logo, description, contact email, recruitment title, requirements, and application link.
+- Approved officers can update only their own organization's name, logo, description, contact email, recruitment title, requirements, and application link.
 
 ### 4. Announcements
 
@@ -80,14 +92,14 @@ SOAR is successful when the delivered hosted website:
 
 - Organization recruitment content includes title, requirements, instructions, and an external Google Form or other application link.
 - Opening the link alone must **not** count as a completed submission.
-- A student must confirm in SOAR that they submitted the external form before the entry is listed for officer checking.
+- A student must explicitly confirm in SOAR that they submitted the external form before the entry is listed for officer checking.
 - Officers check responses in the existing form or Google Sheet and update the stage to: **Pending**, **Under review**, **Accepted**, or **Declined**.
-- Students see organization, position, and stage in a simple progress tracker.
-- Duplicate entries for the same application must be prevented.
+- Students see organization, position/recruitment opportunity, and stage in a simple progress tracker.
+- Duplicate entries must be prevented per student and recruitment opportunity/position.
 
 ### 6. Calendar entries and available dates
 
-- Officers can add, edit, and remove their organization events and available interview/meeting dates.
+- Officers can add, edit, and remove their organization's events and available interview/meeting dates.
 - Entries include title, date, short details, and time where needed.
 - Organization profiles show a simple dated event list.
 - Event details and available meeting/interview dates must be easy to distinguish.
@@ -95,6 +107,7 @@ SOAR is successful when the delivered hosted website:
 
 ### 7. Meeting requests
 
+- Students, sponsors, and officers can request meetings where the workflow is available to their role.
 - Keep the existing request flow: choose an organization posted meeting/interview entry, enter a date and time, and send a request.
 - Users see organization, meeting title, requested date/time, and status: **Pending**, **Approved**, or **Declined**.
 - Officers see requests for their own organization and can approve or decline them.
@@ -109,7 +122,7 @@ SOAR is successful when the delivered hosted website:
   - calendar/date entries
   - meeting requests
 - Use readable status labels, clear save messages, and confirmation before deleting a post or calendar entry.
-- Officers manage only the organization linked to their account.
+- Officers manage only organizations for which they have approved access.
 
 ### 9. Image uploads
 
@@ -118,13 +131,14 @@ SOAR is successful when the delivered hosted website:
 - Check file type and size and explain when an image cannot be accepted.
 - Store images in the project file storage so they display after refresh and sign-in.
 - Display images without stretching or overflowing the page.
-- Only the responsible officer can replace their organization logo or upload images to its posts.
+- Only an approved officer for the organization can replace its logo or upload images to its posts.
 
 ### 10. Annual paid access
 
-- Access costs **₱2 per account for one year** from confirmed payment.
-- Payment must go through one payment provider that supports GCash.
-- New users pay before creating an account and accessing main pages.
+- Access costs **PHP10 per account for one year** from confirmed payment. This is a confirmed amendment to the PDF's PHP2 amount.
+- Payment must go through one payment provider that supports GCash and automatic provider-side confirmation.
+- **PayMongo** is the intended provider, subject to merchant approval and a successful live PHP10 test. This is not a promise that PayMongo is free or the cheapest provider.
+- New users must complete verified payment before creating an account and accessing main pages.
 - Existing users need active paid access and renew manually when access expires; there is no automatic yearly charge.
 - Payment confirmation is automatic and linked to the correct registration or renewal.
 - Pending, failed, cancelled, or expired access does not unlock registration or main pages.
@@ -141,22 +155,23 @@ SOAR is successful when the delivered hosted website:
 
 ## Current draft vs. target behavior
 
-The supplied `TECHNO/` folder is a static Firebase-hosted draft using HTML, CSS, and JavaScript. It demonstrates several desired workflows but does not yet satisfy the final agreement.
+The supplied `docs/client-scope/TECHNO/` folder is a static Firebase-hosted draft using HTML, CSS, and JavaScript. It demonstrates several desired workflows but does not yet satisfy the final agreement as amended.
 
 | Area | Current draft evidence | Target alignment needed |
 | --- | --- | --- |
-| Hosting/setup | Firebase hosting config exists for `public/`; source imports Firebase Auth and Firestore. | Continue using the client-provided existing Firebase project, but add/verify required storage, security rules, payment confirmation flow, and handover instructions. |
+| Hosting/setup | Firebase hosting config exists for `public/`; source imports Firebase Auth and Firestore. | Continue using the existing Firebase project, then inspect and configure Authentication, database/storage, security rules, hosting, and any required functions. |
 | Framework | Plain HTML/CSS/JS pages with one large `script.js`; no build framework. | Framework migration is a later-phase proposal only. Do not treat React/Vue/Next/etc. as agreed scope until approved. |
-| Roles | Draft uses `student`, `organization`, and `sponsor`; login/register pages include role radios. | Align labels and behavior with agreed roles: student, organization officer, and basic outside user. Resolve whether any `sponsor` naming remains. |
-| Auth/settings | Registration, login, sign-out, password reset, name cooldown, and email verification flow are partially implemented. | Enforce payment gating, role-appropriate access, verified email-save timing, and agreed account-setting rules. |
-| Organizations | Directory, profile pages, search, officer profile fields, and organization logo input exist. | Add clear no-results states, requirements/instructions fields, robust validation, storage-backed image handling, and privacy/permission enforcement. |
+| Roles | Draft uses `student`, `organization`, and `sponsor`; login/register pages include role radios. | Keep sponsor as the outside-user label, remove sponsor-only tooling assumptions, remove TIN/government-ID collection, and add optional company/organization name. |
+| Auth/settings | Registration, login, sign-out, password reset, name cooldown, and email verification flow are partially implemented. | Enforce verified payment before account creation, role-appropriate access, verified email-save timing, personal-account settings, and officer organization settings. |
+| Organization officer onboarding | Draft includes organization proof upload and direct organization-account creation. | Replace with the confirmed project-administrator initial-owner assignment and owner-approved officer access. No initial proof upload is required. |
+| Organizations | Directory, profile pages, search, officer profile fields, and organization logo input exist. | Add clear no-results states, requirements/instructions fields, robust validation, storage-backed image handling, and permission enforcement for approved officers only. |
 | Announcements | Officers can create/delete posts; users can like/comment; optional image is handled as client-side data. | Validate empty posts/comments, save images to file storage, show preview/type/size checks, and ensure consistency across feed/profile after refresh/sign-in. |
-| Applications | Student click logs an application and opens the external form; officer page can update statuses. | Require student confirmation after external-form submission, prevent duplicates, include **Declined**, use the agreed status labels, and keep tracker updates consistent. |
+| Applications | Student click currently logs an application and opens the external form; officer page can update statuses. | Require explicit external-submission confirmation, prevent duplicates per recruitment opportunity/position, include **Declined**, use the agreed status labels, and keep tracker updates consistent. |
 | Calendar/date entries | Officers can add/delete simple title/date slots; profiles show available slots. | Add edit, short details, time where needed, valid-date checks, and visual distinction between events and interview/meeting availability. |
-| Meeting requests | Users can request date/time from a profile slot; officers can approve/decline. | Prevent repeated identical requests, clarify pending vs. confirmed, fix role-specific tracker rendering, and ensure all permitted user roles can see their own request history. |
-| Payments | No annual payment, GCash checkout, payment status, renewal, or access-expiry enforcement is present. | Implement the agreed ₱2 annual paid access flow before production use. |
+| Meeting requests | Users can request date/time from a profile slot; officers can approve/decline. | Allow the confirmed requesting roles, prevent repeated identical requests, clarify pending vs. confirmed, and ensure each user sees their own request history. |
+| Payments | No annual payment, GCash checkout, payment status, renewal, or access-expiry enforcement is present. | Implement the confirmed PHP10 annual paid access flow with provider-side automatic confirmation before production use. |
 | Images | Draft stores uploaded proof/logo/post images as base64-like data in saved records. | Use Firebase file storage or the agreed project file storage, with file validation and previews. |
-| Security | Current behavior appears primarily client-side; database/security rules were not supplied for review. | Implement/verify server-side or Firebase-rule enforcement for roles, organization ownership, private records, and payment/access fields. |
+| Security | Current behavior appears primarily client-side; database/security rules were not supplied for review. | Implement/verify Firebase-rule or server-side enforcement for roles, organization ownership/officer access, private records, and payment/access fields. |
 | Mixed dependencies | Some pages include a Supabase CDN script, but application logic uses Firebase. | Standardize on the agreed Firebase-backed implementation unless a later approved architecture changes this. |
 
 ## UI/UX baseline and design-system inputs
@@ -176,16 +191,18 @@ The classmate site should be used later as a minimum quality comparison for poli
 
 ## Acceptance criteria traceability
 
-| Acceptance check from agreement | Requirements covered |
+| Acceptance check | Requirements covered |
 | --- | --- |
 | Included pages are readable on phones and computers; navigation, forms, images, and tables fit; loading/empty/error messages are clear. | Layout and design; UI/UX baseline. |
-| Registration, sign-in, sign-out, and email password recovery work; name changes follow the limit; email changes take effect after verification. | Accounts and settings. |
+| Registration, sign-in, sign-out, email verification, and email password recovery work; role-specific registration details match the confirmed scope. | Accounts, roles, and settings. |
+| Name changes follow the 30-day limit, and email changes take effect after verification of the new address. | Personal-account settings. |
+| Organization owner/officer access is limited to approved organization management without adding a general admin dashboard or membership system. | Organization ownership and officer access; officer dashboard. |
 | Name search finds organizations; profile changes, posts, images, likes, and comments appear correctly in directory, feed, and profile pages. | Organizations/profiles; announcements; image uploads. |
-| Application links open; only confirmed submissions enter checking; officer stage changes appear in the student tracker without duplicates. | Applications. |
+| Application links open; only explicit confirmed external submissions enter checking; officer stage changes appear in the student tracker without duplicate entries per recruitment opportunity/position. | Applications. |
 | Officers can add, change, and remove calendar entries; permitted images save and display after refresh and sign-in. | Calendar/date entries; image uploads; saved data. |
 | Meeting requests save with correct organization, date, and time; officers approve/decline; users see decisions; repeated requests are handled clearly. | Meeting requests. |
-| A real successful ₱2 payment unlocks account creation and one year of access; pending/failed/cancelled payments and expired access stay restricted; renewal restores access without data loss. | Annual paid access; saved data. |
-| Users see only their private application, meeting, and payment records; officers manage only their organization; users cannot change paid status or access end date. | Permissions; saved data; officer dashboard; paid access. |
+| A real successful **PHP10** payment unlocks account creation and one year of access; pending/failed/cancelled payments and expired access stay restricted; renewal restores access without data loss. | Annual paid access; saved data. |
+| Users see only their private application, meeting, and payment records; officers manage only approved organizations; users cannot change paid status or access end date. | Permissions; saved data; officer dashboard; paid access. |
 | Hosted link, complete updated source files, and short setup/use instructions are handed over after final review. | Hosting and handover. |
 
 ## Explicit exclusions
@@ -198,15 +215,16 @@ The following are outside the agreed scope unless separately approved:
 - dashboard counters
 - elaborate animations
 - financial or transparency reports
-- dedicated sponsor tools
+- dedicated sponsor tools beyond the sponsor outside-user role described above
 - RSVP or attendance tracking
 - forms built inside the site
 - automatic reading of Google Form/Sheet responses
 - post/application/meeting alerts by email, text, or push notification
 - a native phone app
 - automatic yearly charges
+- a general admin dashboard or full membership-management system
 
-Do not treat unanswered product questions as permission to add any of these.
+Do not treat unanswered product questions or implementation convenience as permission to add any of these.
 
 ## Constraints and dependencies
 
@@ -218,19 +236,36 @@ The client must provide or confirm:
 - service invitations for hosting, database, file storage, domain, code repository, and the existing Firebase project
 - Firebase access covering Authentication, database/storage, security rules, hosting settings, and any existing server/function code
 - Firebase billing setup required for live payment confirmation and image uploads
-- an activated payment-provider account that supports the ₱2 GCash checkout
+- an activated payment-provider account that supports a PHP10 GCash checkout with automatic confirmation
 - any required secrets privately, not in committed files
 
 The client group is responsible for finding users and paying customers. Provider transaction fees and hosting/storage charges are paid through the client service accounts.
 
+### Payment-provider evidence
+
+PayMongo is the intended provider because public documentation reviewed on 2026-10-06 showed that PayMongo supports GCash in hosted checkout, webhook confirmation, and payment amounts below PHP10. The current public evidence is time-sensitive and must be rechecked during implementation.
+
+Official PayMongo sources reviewed:
+
+- Pricing: <https://www.paymongo.com/en/pricing>
+- Create PaymentIntent API: <https://docs.paymongo.com/reference/create-a-paymentintent.md>
+- Create Checkout Session API: <https://docs.paymongo.com/reference/create-a-checkout.md>
+- Hosted Checkout quick start: <https://docs.paymongo.com/docs/payment-channels-hosted-checkout-quick-start.md>
+- Webhook events: <https://docs.paymongo.com/docs/developer-tools-webhooks-events.md>
+- Testing: <https://docs.paymongo.com/docs/payment-acceptance-testing.md>
+- Account setup: <https://docs.paymongo.com/docs/account-settings-account-setup.md>
+
+Public pricing at retrieval time listed GCash e-wallet payments at **2.23% VAT-exclusive** and no Standard setup/monthly/hidden fees. A PHP10 payment would therefore have an estimated fee of about **PHP0.25** and estimated net of about **PHP9.75**, assuming VAT and centavo rounding consistent with PayMongo samples. This is an estimate only, not a fee-free promise or proof that PayMongo is cheapest.
+
 ### Delivery context
 
-The supplied overview states a fixed development fee of **₱3,000**, with first and final payments split around development start and handover, plus preview/final delivery dates from the current quote. Those business terms are context for planning; feature completion is judged against the final scope and acceptance checks above.
+The supplied overview states a fixed development fee of **PHP3,000**, with first and final payments split around development start and handover, plus preview/final delivery dates from the current quote. Those business terms are context for planning; feature completion is judged against the final scope and confirmed amendments above.
 
 ### Technical direction
 
 - **Agreed constraint:** use the existing Firebase project for accounts and saved records, with project file storage for images.
-- **Proposal, not agreed requirement:** migrate the draft from plain HTML/CSS/JS to a maintainable frontend framework in a later phase so future agent work is safer and easier. A likely direction is a typed component-based frontend with Firebase integrations and minimal server/cloud-function logic where required for payment confirmation and security-sensitive operations. This must be approved before implementation.
+- **Known access context:** Firebase administrator access is available, but actual configuration still needs inspection before implementation claims can be made.
+- **Proposal, not agreed requirement:** migrate the draft from plain HTML/CSS/JS to a maintainable frontend framework in a later phase so future agent work is safer and easier. Framework selection and frontend/backend design remain deferred until explicitly approved.
 - **Boundary:** this PRD does not define detailed frontend/backend architecture, database schema, payment webhook design, or deployment scripts.
 
 ### Repository intake guidance
@@ -246,25 +281,19 @@ Suggested repository structure remains:
 
 These are planning boundaries only, not a backend/frontend design.
 
-1. **Alignment and design intake:** approve this PRD, resolve open questions, review any Open Design output, and confirm current service access.
+1. **Alignment and design intake:** approve this PRD, review any Open Design output, and confirm current service access.
 2. **Project foundation:** decide whether/when to migrate from the static draft to a framework; set up the approved project structure without changing agreed scope.
-3. **Access foundation:** implement auth, roles, paid access, renewal/expiry behavior, payment status visibility, and permission enforcement.
-4. **Core content workflows:** implement organization directory/profiles, announcements, image handling, and responsive UI states.
+3. **Access foundation:** implement verified payment before account creation, manual annual renewal/expiry behavior, roles, owner-approved officer access, payment status visibility, and permission enforcement.
+4. **Core content workflows:** implement organization directory/profiles, announcements, image handling, personal and organization settings, and responsive UI states.
 5. **Operational workflows:** implement applications, calendar/date entries, meeting requests, and officer dashboard sections.
-6. **Hardening and handover:** validate acceptance checks, fix refresh/sign-out/another-device consistency, verify private-record access, test real payment, deploy, and write setup/use instructions.
+6. **Hardening and handover:** validate acceptance checks, fix refresh/sign-out/another-device consistency, verify private-record access, test a real PHP10 payment, deploy, and write setup/use instructions.
 
-## Unresolved conflicts and questions
+## Remaining verification items
 
-These must be answered or deliberately deferred before implementation choices expand scope:
+No product conflicts remain from the confirmed decisions above. The remaining items are implementation prerequisites and external validations, not permission to expand scope:
 
-1. **Outside-user naming:** should the final UI/database use “basic outside user,” “sponsor,” or another client-approved label? Sponsor-specific tools are excluded by the final scope.
-2. **Outside-user ID details:** if the role is not “sponsor,” should registration still collect a TIN or a different relevant ID?
-3. **Organization officer proof:** the draft collects proof of election/appointment, but the final scope only says relevant ID details. Confirm whether this proof upload remains required.
-4. **Payment provider:** which provider will support automatic ₱2 GCash confirmation, and what test/live account access will be supplied?
-5. **Pre-account payment link:** because new users must pay before creating an account, confirm the exact approved user experience for linking a payment to a registration attempt without exposing payment status editing to users.
-6. **Firebase security rules:** current rules and any server/function code were not supplied for review. They are required to validate role, organization ownership, private records, and payment/access fields.
-7. **Application confirmation:** define the exact UI language and timing for “I submitted the external form” so opening the link alone never creates a checkable submission.
-8. **Application statuses:** final status set is Pending, Under review, Accepted, Declined. The draft also shows `review` and a static `Interview` example; confirm whether Interview is excluded or a future change request.
-9. **Meeting requester roles:** confirm whether both students and basic outside users can request meetings, as the overview implies, and whether officers can request meetings with other organizations.
-10. **Account settings for officers:** clarify whether officers also get personal account settings, or only organization-profile settings.
-11. **Reference-site review:** browser inspection of the classmate reference site could not be completed in this environment; perform a later visual review before final UI decisions.
+1. **PayMongo approval and live test:** PayMongo merchant approval and a successful live PHP10 GCash test must happen before production acceptance of paid access.
+2. **Provider terms recheck:** PayMongo pricing, fees, VAT treatment, minimums, and webhook behavior must be rechecked against official sources during implementation.
+3. **Firebase inspection:** existing Firebase Authentication, Firestore/database, Storage, Hosting, security rules, billing, and any function/server code still need inspection before implementation.
+4. **Security enforcement:** roles, owner-approved officer access, private records, payment status, and access end dates must be enforced outside client-only UI logic.
+5. **Reference-site review:** browser inspection of the classmate reference site could not be completed in this environment; perform a later visual review before final UI decisions.
