@@ -1,0 +1,982 @@
+/* Reset default browser margins */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: Arial, sans-serif;
+}
+
+body {
+    background-color: #f4f7f6;
+    color: #333;
+}
+
+/* --- Navigation Bar Styling --- */
+.navbar {
+    background-color: #0056b3;
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 5%;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.navbar .logo {
+    color: white;
+    margin: 0;
+}
+
+.nav-links a {
+    color: white;
+    text-decoration: none;
+    margin-left: 1.5rem;
+    font-weight: bold;
+    transition: color 0.3s;
+}
+
+.nav-links a:hover {
+    color: #a8dadc;
+}
+
+/* --- Feed Container (Announcements) --- */
+.feed-container {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.feed-container h2 {
+    margin-bottom: 1.5rem;
+    color: #2c3e50;
+}
+
+.post-card {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.post-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.org-avatar {
+    width: 45px;
+    height: 45px;
+    background-color: #3498db;
+    border-radius: 50%;
+    margin-right: 1rem;
+}
+
+.org-info h3 {
+    font-size: 1.1rem;
+    margin-bottom: 0.2rem;
+}
+
+.post-date {
+    font-size: 0.85rem;
+    color: #7f8c8d;
+}
+
+.post-content p {
+    line-height: 1.6;
+    margin-bottom: 1rem;
+    color: #555;
+}
+
+.action-btn {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.action-btn:hover {
+    background-color: #218838;
+}
+
+/* --- Login Page Styles --- */
+.auth-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 80vh;
+    padding: 1rem;
+}
+
+.auth-card {
+    background: white;
+    width: 100%;
+    max-width: 420px;
+    padding: 2.5rem 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.auth-card h2 {
+    color: #0056b3;
+    margin-bottom: 0.5rem;
+}
+
+.auth-card p {
+    color: #7f8c8d;
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+}
+
+.user-type-toggle {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 1.5rem;
+    font-weight: bold;
+    color: #333;
+}
+
+.input-group {
+    text-align: left;
+    margin-bottom: 1.2rem;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 0.8rem;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 1rem;
+    box-sizing: border-box;
+}
+
+.forgot-password {
+    text-align: right;
+    margin-bottom: 1.5rem;
+    font-size: 0.85rem;
+}
+
+.forgot-password a {
+    color: #0056b3;
+    text-decoration: none;
+}
+
+.auth-btn {
+    width: 100%;
+    font-size: 1.1rem;
+    padding: 0.8rem;
+}
+
+.auth-footer {
+    margin-top: 1.5rem;
+    font-size: 0.9rem;
+}
+
+.auth-footer a {
+    color: #0056b3;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+/* --- Application Progress Bar Styles --- */
+.progress-container {
+    display: flex;
+    justify-content: space-between;
+    margin: 2rem 0;
+    position: relative;
+}
+
+.progress-container::before {
+    content: '';
+    background-color: #e0e0e0;
+    position: absolute;
+    top: 15px;
+    left: 0;
+    height: 4px;
+    width: 100%;
+    z-index: 1;
+}
+
+.step {
+    text-align: center;
+    position: relative;
+    z-index: 2;
+    flex: 1;
+}
+
+.step-circle {
+    background-color: #e0e0e0;
+    color: #7f8c8d;
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0 auto 0.5rem auto;
+    font-weight: bold;
+    border: 3px solid white;
+}
+
+.step p {
+    font-size: 0.85rem;
+    color: #7f8c8d;
+    margin: 0;
+}
+
+.step.completed .step-circle {
+    background-color: #28a745;
+    color: white;
+}
+.step.completed p {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.step.active .step-circle {
+    background-color: #0056b3;
+    color: white;
+    box-shadow: 0 0 0 3px rgba(0, 86, 179, 0.2);
+}
+.step.active p {
+    color: #0056b3;
+    font-weight: bold;
+}
+
+/* --- Calendar Layout Styles --- */
+.calendar-layout {
+    display: flex;
+    gap: 2rem;
+    max-width: 1000px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.calendar-card {
+    flex: 2;
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    color: #0056b3;
+}
+
+.calendar-header button {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #0056b3;
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px;
+    text-align: center;
+}
+
+.day-name {
+    font-weight: bold;
+    color: #7f8c8d;
+    margin-bottom: 0.5rem;
+}
+
+.date-cell {
+    padding: 1rem 0;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.date-cell:hover {
+    background-color: #e0e0e0;
+}
+
+.date-cell.empty {
+    background-color: transparent;
+    cursor: default;
+}
+
+.date-cell.available {
+    background-color: #d4edda;
+    color: #155724;
+    font-weight: bold;
+    border: 1px solid #c3e6cb;
+}
+
+.date-cell.booked {
+    background-color: #f8d7da;
+    color: #721c24;
+    font-weight: bold;
+    border: 1px solid #f5c6cb;
+}
+
+.events-sidebar {
+    flex: 1;
+}
+
+.events-sidebar h2 {
+    margin-bottom: 1.5rem;
+    color: #2c3e50;
+}
+
+.event-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    border-left: 5px solid #ccc;
+}
+
+.event-card h4 {
+    margin-bottom: 0.5rem;
+    color: #333;
+}
+
+.event-card p {
+    font-size: 0.9rem;
+    color: #555;
+    margin-bottom: 1rem;
+}
+
+.available-event {
+    border-left-color: #28a745;
+}
+
+.booked-event {
+    border-left-color: #dc3545;
+}
+
+@media (max-width: 768px) {
+    .calendar-layout {
+        flex-direction: column;
+    }
+}
+
+/* --- Organizations Directory Styles --- */
+.directory-container {
+    max-width: 1000px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.directory-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.directory-header h2 {
+    color: #2c3e50;
+}
+
+.search-bar {
+    padding: 0.6rem 1rem;
+    width: 300px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 0.95rem;
+}
+
+/* Responsive Grid for Cards */
+.org-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.org-directory-card {
+    background: white;
+    padding: 2rem 1.5rem;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    transition: transform 0.3s ease;
+}
+
+/* Slight lift effect when hovering over a card */
+.org-directory-card:hover {
+    transform: translateY(-5px);
+}
+
+.org-avatar.large {
+    width: 70px;
+    height: 70px;
+    margin: 0 auto 1rem auto;
+}
+
+.org-directory-card h3 {
+    color: #333;
+    margin-bottom: 0.3rem;
+}
+
+.org-category {
+    color: #0056b3;
+    font-size: 0.85rem;
+    font-weight: bold;
+    margin-bottom: 1rem;
+}
+
+.org-desc {
+    color: #666;
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+    line-height: 1.5;
+}
+
+/* Mobile Responsiveness for Header */
+@media (max-width: 768px) {
+    .directory-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    .search-bar {
+        width: 100%;
+    }
+}
+
+/* --- Organization Profile Styles --- */
+.org-profile-header {
+    max-width: 1000px;
+    margin: 2rem auto 0 auto;
+    padding: 2rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    display: flex;
+    align-items: center;
+}
+
+@media (max-width: 768px) {
+    .org-profile-header {
+        flex-direction: column;
+        text-align: center;
+    }
+    .org-profile-header .org-avatar {
+        margin: 0 auto 1rem auto !important;
+    }
+}
+
+/* --- Extended Profile Layout Styles --- */
+.profile-content {
+    max-width: 1000px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.profile-section {
+    margin-bottom: 3rem;
+}
+
+.section-title {
+    color: #0056b3;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.org-profile-info {
+    flex: 1;
+}
+
+/* --- Dashboard Styles --- */
+.dashboard-container {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.dashboard-section {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    margin-bottom: 2rem;
+}
+
+.dashboard-section h3 {
+    margin-bottom: 1rem;
+    color: #2c3e50;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 0.5rem;
+}
+
+#create-post-form textarea {
+    width: 100%;
+    height: 100px;
+    padding: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    resize: none;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#create-event-form input {
+    width: 100%;
+    padding: 0.8rem;
+    margin-bottom: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+/* --- Clickable Post Header Styles --- */
+.post-header-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    transition: opacity 0.2s;
+}
+
+/* Change the text color and add an underline when hovered */
+.post-header-link:hover .org-info h3 {
+    color: #0056b3;
+    text-decoration: underline;
+}
+
+/* Slightly fade the avatar when hovered */
+.post-header-link:hover .org-avatar {
+    opacity: 0.8;
+}
+
+/* --- Reactions & Comments Styles --- */
+.post-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
+}
+
+.reaction-btn {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 5px;
+    transition: background 0.2s ease, color 0.2s ease;
+    font-weight: bold;
+}
+
+.reaction-btn:hover {
+    background-color: #f0f4f8;
+}
+
+/* Color change when a user 'likes' a post */
+.reaction-btn.liked {
+    color: #0056b3;
+    background-color: #e6f0fa;
+}
+
+.post-comments {
+    margin-top: 1rem;
+    padding: 1.5rem;
+    background: #f9f9f9;
+    border-radius: 8px;
+    border: 1px solid #eee;
+}
+
+.comment {
+    font-size: 0.9rem;
+    color: #444;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+
+.comment-input-area {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.comment-input-area input {
+    flex: 1;
+    padding: 0.6rem;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 0.9rem;
+}
+
+/* --- Organization Contact Styles --- */
+.org-contact {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: #444;
+    background-color: #f9f9f9;
+    padding: 0.8rem;
+    border-radius: 5px;
+    display: inline-block;
+    border: 1px solid #eee;
+}
+
+.org-contact p {
+    margin-bottom: 0.3rem;
+}
+
+.org-contact p:last-child {
+    margin-bottom: 0;
+}
+
+/* --- Interactive Calendar Selection Styles --- */
+.date-cell.selected {
+    background-color: #0056b3 !important;
+    color: white !important;
+    font-weight: bold;
+    box-shadow: 0 0 10px rgba(0, 86, 179, 0.4);
+    border: 1px solid #0056b3 !important;
+}
+
+/* --- Custom Modal Styles --- */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-card {
+    background: white;
+    padding: 2.5rem 2rem;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 400px;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+
+.modal-card h3 {
+    color: #0056b3;
+    margin-bottom: 0.8rem;
+}
+
+.modal-card p {
+    color: #666;
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.modal-card input {
+    width: 100%;
+    padding: 0.8rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 1rem;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 1rem;
+}
+
+.modal-buttons button {
+    flex: 1;
+}
+
+/* --- Manage Posts Styles --- */
+.manage-post-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.8rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
+}
+
+.manage-btn {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.edit-btn {
+    background-color: #f1c40f;
+    color: #333;
+}
+
+.delete-btn {
+    background-color: #e74c3c;
+    color: white;
+}
+
+/* =========================================================
+   DARK PASTEL UI OVERRIDES (Poppins & Pill Components)
+   ========================================================= */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+:root {
+    --bg-dark: #1a192b;         
+    --card-bg: #ffffff;         
+    --primary-purple: #b3a7f0;  
+    --primary-hover: #9c8eed;
+    --secondary-bg: #f3f2fa;    
+    --text-dark: #2d2b3b;       
+    --text-muted: #827f98;
+    --text-light: #ffffff;      
+    --accent-pink: #ffb3c6;     
+    --shadow-main: 0 12px 35px rgba(0,0,0,0.25);
+}
+
+/* Base Body Smoothing & Page Transition Animation */
+body {
+    background-color: var(--bg-dark) !important;
+    color: var(--text-light) !important;
+    font-family: 'Poppins', sans-serif !important;
+    animation: smoothFadeIn 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+@keyframes smoothFadeIn {
+    from { opacity: 0; transform: translateY(15px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Navbar & Rectangular Border Separator --- */
+.navbar {
+    background-color: var(--bg-dark) !important;
+    border-bottom: 2px solid rgba(179, 167, 240, 0.25) !important; /* Soft pastel purple border line */
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4) !important; /* Deep shadow to separate from content */
+    padding: 1.5rem 5% !important;
+    margin-bottom: 2rem !important;
+}
+
+.logo-main {
+    background: linear-gradient(135deg, var(--primary-purple), var(--accent-pink)) !important;
+    -webkit-background-clip: text !important;
+    background-clip: text !important; 
+    -webkit-text-fill-color: transparent !important;
+    font-weight: 700 !important;
+    font-size: 2.2rem !important;
+    letter-spacing: 1px !important;
+}
+.logo-subtitle { color: var(--text-light) !important; opacity: 0.7; }
+
+/* Interactive Nav Tabs (With Animations) */
+.nav-links { gap: 0.5rem !important; }
+.nav-links a {
+    color: var(--text-light) !important;
+    background: transparent !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 50px !important; /* Pill Shape */
+    font-weight: 500 !important;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+}
+
+.nav-links a:hover {
+    background: var(--primary-purple) !important;
+    color: var(--bg-dark) !important;
+    transform: translateY(-2px);
+}
+
+/* "Press Down" Animation when clicking a tab */
+.nav-links a:active {
+    transform: scale(0.92);
+}
+
+/* Distinct Logout Button */
+.nav-links .logout-btn {
+    background: rgba(255, 179, 198, 0.15) !important;
+    color: var(--accent-pink) !important;
+    font-weight: 600 !important;
+}
+.nav-links .logout-btn:hover {
+    background: var(--accent-pink) !important;
+    color: var(--bg-dark) !important;
+}
+
+/* Cards & Containers (Added org-directory-card override) */
+.dashboard-section, .org-card, .post-card, .event-card, .org-profile-header, .auth-card, .org-directory-card, .calendar-card {
+    background-color: var(--card-bg) !important;
+    border-radius: 24px !important;
+    border: none !important;
+    box-shadow: var(--shadow-main) !important;
+    padding: 2.5rem !important;
+}
+
+/* Force text inside white cards to be dark */
+.dashboard-section h2, .dashboard-section h3, .dashboard-section p, .dashboard-section label,
+.org-card h3, .org-card p, .post-card p, .post-card h3, .event-card h4, .event-card p,
+.org-profile-header h2, .org-profile-header p, .auth-card h2, .auth-card p, .auth-card label,
+.org-directory-card h3, .org-directory-card p, .directory-header h2 {
+    color: var(--text-dark) !important;
+}
+
+/* Search Bar Fix */
+.search-bar {
+    background-color: var(--secondary-bg) !important;
+    border: 2px solid transparent !important;
+    border-radius: 50px !important;
+    color: var(--text-dark) !important;
+    padding: 0.9rem 1.5rem !important;
+    box-shadow: none !important;
+}
+.search-bar:focus {
+    border-color: var(--primary-purple) !important;
+    background-color: var(--card-bg) !important;
+    box-shadow: 0 0 0 4px rgba(179, 167, 240, 0.2) !important;
+    outline: none !important;
+}
+
+/* Pill Buttons */
+.btn-primary, .action-btn {
+    background-color: var(--primary-purple) !important;
+    color: var(--bg-dark) !important; 
+    border-radius: 50px !important; 
+    font-weight: 600 !important;
+    box-shadow: 0 6px 16px rgba(179, 167, 240, 0.3) !important;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    border: none !important;
+    padding: 0.8rem 1.8rem !important;
+}
+
+.btn-primary:hover, .action-btn:hover {
+    background-color: var(--primary-hover) !important;
+    transform: translateY(-3px) !important;
+    box-shadow: 0 8px 20px rgba(179, 167, 240, 0.4) !important;
+}
+
+.btn-primary:active, .action-btn:active {
+    transform: scale(0.95) !important;
+}
+
+/* Pill Input Fields */
+input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="url"], input[type="time"], select {
+    background-color: var(--secondary-bg) !important;
+    border: 2px solid transparent !important;
+    border-radius: 50px !important; 
+    color: var(--text-dark) !important;
+    padding: 0.9rem 1.5rem !important;
+    transition: all 0.3s ease !important;
+    font-family: 'Poppins', sans-serif !important;
+    box-shadow: none !important;
+}
+
+textarea {
+    background-color: var(--secondary-bg) !important;
+    border: 2px solid transparent !important;
+    border-radius: 20px !important;
+    color: var(--text-dark) !important;
+    padding: 1rem 1.5rem !important;
+    transition: all 0.3s ease !important;
+    font-family: 'Poppins', sans-serif !important;
+    box-shadow: none !important;
+}
+
+input:focus, textarea:focus, select:focus {
+    border-color: var(--primary-purple) !important;
+    background-color: var(--card-bg) !important;
+    box-shadow: 0 0 0 4px rgba(179, 167, 240, 0.2) !important;
+    outline: none !important;
+}
+
+/* Tables and Chips */
+.app-table th { color: var(--text-muted) !important; border-bottom: 2px solid var(--secondary-bg) !important; }
+.app-table td { border-bottom: 1px solid var(--secondary-bg) !important; color: var(--text-dark) !important; }
+
+.status-chip {
+    padding: 0.5rem 1rem !important;
+    border-radius: 50px !important;
+    font-weight: 600 !important;
+    font-size: 0.8rem !important;
+    border: none !important;
+}
+
+/* --- Post Header Animations & Dates --- */
+.post-header-link {
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+}
+.post-header-link:hover {
+    transform: translateX(6px); /* Smooth slide to the right */
+}
+.post-header-link:hover .org-name-title {
+    color: var(--primary-purple) !important;
+    text-decoration: underline;
+}
+.post-header-link:hover img {
+    transform: scale(1.1); /* Pops the avatar out */
+    box-shadow: 0 4px 12px rgba(179, 167, 240, 0.5) !important;
+}
+.post-date {
+    font-size: 0.85rem !important;
+    color: var(--text-muted) !important;
+    font-weight: 500 !important;
+}
+
+/* --- Tablet & Mobile Responsiveness --- */
+@media (max-width: 1100px) {
+    .navbar {
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center !important;
+        gap: 1.5rem !important;
+        padding: 1.5rem 1rem !important;
+    }
+    .nav-links {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        justify-content: center !important;
+        gap: 0.6rem !important;
+        width: 100% !important;
+    }
+    .nav-links a {
+        padding: 0.5rem 1rem !important;
+        font-size: 0.85rem !important;
+    }
+    .dashboard-container {
+        padding: 1rem !important;
+        margin: 1rem auto !important;
+    }
+    .dashboard-section, .post-card, .org-card, .org-profile-header, .auth-card {
+        padding: 1.5rem !important;
+        border-radius: 18px !important;
+    }
+    .app-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+}

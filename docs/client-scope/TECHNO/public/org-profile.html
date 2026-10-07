@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Organization Profile - SOAR</title>
+    <link rel="stylesheet" href="style.css?v=ipadfinal">
+</head>
+<body>
+    
+    <nav class="navbar">
+        <div class="logo-container">
+            <h1 class="logo-main">SOAR</h1>
+            <span class="logo-subtitle">Student Organizations and Allied Resources</span>
+        </div>
+        <div class="nav-links"></div>
+    </nav>
+
+    <main class="dashboard-container" style="max-width: 1000px; margin: 2rem auto;">
+        
+        <!-- Top Header: Organization Info -->
+        <div class="dashboard-section" style="padding: 2.5rem; display: flex; gap: 2rem; align-items: center; margin-bottom: 2rem;">
+            <div class="org-avatar" style="width: 110px; height: 110px; border-radius: 50%; background: #eee;"></div>
+            <div class="org-profile-info" style="flex: 1;">
+                <h2 style="font-size: 1.6rem; margin-bottom: 0.4rem;" id="profile-name">Loading...</h2>
+                <p style="color: gray; line-height: 1.5; margin-bottom: 1rem;" id="profile-bio">Please wait while the profile loads.</p>
+                <div class="org-contact" style="font-size: 0.9rem; font-weight: bold;" id="profile-contact"></div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1.7fr 1fr; gap: 2rem; align-items: start;">
+            
+            <!-- Left Column: Recruitment & Posts -->
+            <div>
+                <!-- Active Recruitment Widget (Hidden until org adds a link) -->
+                <div id="application-section" class="dashboard-section" style="display: none; padding: 2rem; margin-bottom: 2rem;">
+                    <h3 id="recruit-title" style="margin-bottom: 0.5rem; font-size: 1.2rem;">Recruitment Open</h3>
+                    <p id="recruit-desc" style="color: gray; font-size: 0.9rem; margin-bottom: 1.5rem;">The organization is now accepting applications. Submit your details through the official registration form below.</p>
+                    <button id="apply-btn" class="btn-primary" style="width: 100%; padding: 0.8rem; display: none;">Apply via Google Form</button>
+                </div>
+
+                <!-- Announcements Feed -->
+                <h3 style="margin-bottom: 1.2rem; font-size: 1.15rem;">Announcements & Updates</h3>
+                <div id="org-posts-feed">
+                    <p style="text-align: center; color: gray; padding: 2rem;">Loading organization posts...</p>
+                </div>
+            </div>
+
+            <!-- Right Column: Calendar Slots -->
+            <div class="dashboard-section" style="padding: 2rem;">
+                <div id="events-sidebar">
+                    <h3 style="margin-bottom: 1.2rem; font-size: 1.1rem; border-bottom: 1px solid #ccc; padding-bottom: 0.6rem;">Available Slots</h3>
+                    <p style="color: gray; font-size: 0.85rem;">Loading slots...</p>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Cache buster attached to script so the newest logic loads -->
+    <script type="module" src="script.js?v=verified"></script>
+</body>
+</html>

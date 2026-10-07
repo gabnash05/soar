@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Applications - SOAR</title>
+   <link rel="stylesheet" href="style.css?v=ipadfinal">
+    
+    <!-- Supabase JavaScript Client Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="logo-container">
+            <h1 class="logo-main">SOAR</h1>
+            <span class="logo-subtitle">Student Organizations and Allied Resources</span>
+        </div>
+        
+        <div class="nav-links">
+            <a href="org-dashboard.html">My Dashboard</a>
+            <a href="org-applications.html" style="color: var(--primary-action); font-weight: bold;">Applications</a>
+            <a href="announcements.html">Announcements</a>
+            <a href="index.html" class="logout-btn">Logout</a>
+        </div>
+    </nav>
+
+    <!-- Dedicated Application Management Container -->
+    <div class="dashboard-container" style="max-width: 900px;">
+        <h2 style="color: var(--primary-action); margin-bottom: 0.5rem;">Manage Applicant Statuses</h2>
+        <p style="color: var(--gray-500); font-size: 0.95rem; margin-bottom: 1.5rem;">
+            Review students who applied for your events or committee positions and update their progress.
+        </p>
+        
+        <div class="dashboard-section" style="padding: 0; overflow-x: auto;">
+            <table class="app-table">
+                <thead>
+                    <tr>
+                        <th>Applicant</th>
+                        <th>Position / Event</th>
+                        <th>Current Status</th>
+                        <th>Update Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <strong>Juliana Reyes</strong><br>
+                            <span class="applicant-meta">2023-88910 | BSCE</span>
+                        </td>
+                        <td>
+                            Calculator Techniques Workshop<br>
+                            <span class="applicant-meta">Facilitator</span>
+                        </td>
+                        <td><span class="status-chip pending">Pending</span></td>
+                        <td>
+                            <select class="status-dropdown">
+                                <option value="pending" selected>Pending</option>
+                                <option value="review">Under Review</option>
+                                <option value="interview">Interview</option>
+                                <option value="accepted">Accepted</option>
+                            </select>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script type="module" src="script.js?v=verified"></script>
+</body>
+</html>

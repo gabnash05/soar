@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Organization Dashboard - SOAR</title>
+    <link rel="stylesheet" href="style.css?v=ipadfinal">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="logo-container">
+            <h1 class="logo-main">SOAR</h1>
+            <span class="logo-subtitle">Student Organizations and Allied Resources</span>
+        </div>
+        <div class="nav-links"></div>
+    </nav>
+
+    <main class="dashboard-container" style="padding: 2rem; max-width: 1000px; margin: 0 auto;">
+        
+        <div class="dashboard-section" style="padding: 2.5rem; margin-bottom: 2rem;">
+            <h2 style="margin-bottom: 1.5rem; border-bottom: 2px solid var(--border-soft); padding-bottom: 0.5rem;">Profile & Recruitment Settings</h2>
+           <form id="profile-settings-form">
+                <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Organization Name</label>
+                <input type="text" id="edit-org-name" style="width: 100%; margin-bottom: 1rem; padding: 0.6rem;">
+    
+                <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Contact Email</label>
+                <input type="email" id="edit-org-email" style="width: 100%; margin-bottom: 1rem; padding: 0.6rem;">
+
+                <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Bio / Description</label>
+                <textarea id="edit-org-bio" rows="3" style="width: 100%; margin-bottom: 1rem; padding: 0.6rem;"></textarea>
+
+                <!-- THESE TWO LINES ARE CRITICAL FOR SAVING -->
+                <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Recruitment Position / Title</label>
+                <input type="text" id="edit-org-position" placeholder="e.g. Officer Application 2026" style="width: 100%; margin-bottom: 1rem; padding: 0.6rem;">
+
+                <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Google Form / Registration Link</label>
+                <input type="url" id="edit-org-link" placeholder="https://forms.gle/..." style="width: 100%; margin-bottom: 1rem; padding: 0.6rem;">
+    
+                <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">Profile Picture</label>
+                <input type="file" id="edit-org-pic" accept="image/*" style="width: 100%; margin-bottom: 1.5rem;">
+
+                <button type="submit" class="btn-primary" style="padding: 0.8rem 1.5rem;">Save Settings</button>
+            </form>
+        </div>
+
+        <div class="dashboard-section" style="padding: 2.5rem; margin-bottom: 2rem;">
+            <h3 style="margin-bottom: 1.5rem; border-bottom: 2px solid var(--border-soft); padding-bottom: 0.5rem;">Manage Meeting Requests</h3>
+            <table class="app-table" id="meeting-requests-table" style="width: 100%; text-align: left;">
+                <thead><tr><th>Requester</th><th>Event / Date</th><th>Time</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody><tr><td colspan="5" style="text-align:center;">Loading requests...</td></tr></tbody>
+            </table>
+        </div>
+
+        <div class="dashboard-section" style="padding: 2.5rem; margin-bottom: 2rem;">
+            <h3 style="margin-bottom: 1.5rem; border-bottom: 2px solid var(--border-soft); padding-bottom: 0.5rem;">Add & Manage Calendar Slots</h3>
+            <form id="create-event-form" style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+                <input type="text" id="event-title" placeholder="Event / Slot Title" required style="flex: 2;">
+                <input type="date" id="event-date" required style="flex: 1;">
+                <button type="submit" class="btn-primary">Add Slot</button>
+            </form>
+            <div id="org-calendar-slots-list" style="display: grid; gap: 1rem;"></div>
+        </div>
+
+        <div class="dashboard-section" style="padding: 2.5rem; margin-bottom: 2rem;">
+            <h3 style="margin-bottom: 1.5rem; border-bottom: 2px solid var(--border-soft); padding-bottom: 0.5rem;">Create Announcement</h3>
+            <form id="create-post-form">
+                <textarea id="post-text" placeholder="Write an announcement..." rows="3" style="width: 100%; margin-bottom: 1rem;"></textarea>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <input type="file" id="post-image" accept="image/*">
+                    <button type="submit" class="btn-primary">Post Announcement</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="dashboard-section" style="padding: 2.5rem;">
+            <h3 style="margin-bottom: 1.5rem; border-bottom: 2px solid var(--border-soft); padding-bottom: 0.5rem;">My Posts</h3>
+            <div id="live-feed"><p style="text-align: center;">Loading your posts...</p></div>
+        </div>
+
+    </main>
+    <script type="module" src="script.js?v=verified"></script>
+</body>
+</html>

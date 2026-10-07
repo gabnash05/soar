@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - SOAR</title>
+    <link rel="stylesheet" href="style.css?v=ipadfinal">
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <h2>Create Account</h2>
+            <p>Sign up to join SOAR as a Student, Sponsor, or Organization.</p>
+            
+            <form id="register-form">
+                <!-- User Roles -->
+                <div class="user-type-toggle" style="margin-bottom: 1rem;">
+                    <label style="margin-right: 10px;">
+                        <input type="radio" name="user_type" value="student" checked> Student
+                    </label>
+                    <label style="margin-right: 10px;">
+                        <input type="radio" name="user_type" value="sponsor"> Sponsor
+                    </label>
+                    <label>
+                        <input type="radio" name="user_type" value="organization"> Organization
+                    </label>
+                </div>
+
+                <!-- Full Name -->
+                <div class="input-group">
+                    <label for="reg-name">Full Name / Organization Name</label>
+                    <input type="text" id="reg-name" placeholder="e.g., John Dela Cruz" required>
+                </div>
+
+                <!-- DYNAMIC IDENTIFICATION FIELDS -->
+                <div id="dynamic-id-fields">
+                    
+                    <!-- Student ID Field -->
+                    <div class="input-group" id="field-student">
+                        <label for="reg-student-id">Student ID</label>
+                        <input type="text" id="reg-student-id" placeholder="e.g., 2023-88910">
+                    </div>
+
+                    <!-- Sponsor TIN Field -->
+                    <div class="input-group" id="field-sponsor" style="display: none;">
+                        <label for="reg-tin">TIN (Tax Identification Number)</label>
+                        <input type="text" id="reg-tin" placeholder="e.g., 123-456-789-000">
+                    </div>
+
+                    <!-- Organization ID & Proof Fields -->
+                    <div class="input-group" id="field-organization" style="display: none;">
+                        <label for="reg-org-id">Accreditation / Organization ID</label>
+                        <input type="text" id="reg-org-id" placeholder="e.g., USTP-ORG-2026" style="margin-bottom: 1rem;">
+                        
+                        <label for="reg-org-proof">Proof of Election / Appointment (Image or PDF)</label>
+                        <input type="file" id="reg-org-proof" accept="image/*,.pdf" style="width: 100%; padding: 0.6rem; border: 1px solid #ccc; border-radius: 5px; font-family: inherit;">
+                        <small style="color: #666; display: block; margin-top: 0.3rem;">Required to verify your legitimate officer status.</small>
+                    </div>
+
+                </div>
+
+                <!-- Email Address -->
+                <div class="input-group">
+                    <label for="reg-email">Email Address</label>
+                    <input type="email" id="reg-email" placeholder="e.g., user@ustp.edu.ph" required>
+                </div>
+
+                <!-- Password -->
+                <div class="input-group">
+                    <label for="reg-password">Password</label>
+                    <input type="password" id="reg-password" placeholder="Create a password" required>
+                </div>
+
+                <button type="submit" style="width: 100%; padding: 0.75rem; background-color: #0f4c5c; color: white; border: none; border-radius: 6px; font-family: inherit; font-size: 1rem; font-weight: bold; cursor: pointer; margin-top: 1rem;">Register</button>
+            </form>
+            
+            <p style="text-align: center; margin-top: 1rem;">
+                Already have an account? <a href="index.html">Log in here</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Ensure module script is used -->
+    <script type="module" src="script.js?v=verified"></script>
+</body>
+</html>
