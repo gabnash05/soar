@@ -6,11 +6,11 @@
 
 - **Status:** PRD v2, documentation-only. No implementation is included here.
 - **Primary agreement:** the client-approved `docs/client-scope/Project Scope and Acceptance — Final.pdf` defines the feature boundaries, acceptance checks, exclusions, required inputs, and handover expectations.
-- **Confirmed amendments:** the later approved decisions recorded for this PRD supersede the PDF only where they conflict. Most notably, annual access is now **PHP10 per account per year**, replacing the PDF's PHP2 amount.
-- **Supporting context:** `docs/client-scope/SOAR-project-overview.md` explains product direction, delivery context, and summarized workflows. The supplied `docs/client-scope/TECHNO/` source folder is evidence of the current draft, not the final requirement set.
+- **Confirmed amendments:** the later approved decisions recorded for this PRD supersede the PDF and supplied overview only where they conflict. Most notably, annual access is now **PHP10 per account per year**, replacing earlier PHP2 references.
+- **Supporting context:** `docs/client-scope/SOAR-project-overview.md` explains product direction, delivery context, and summarized workflows as originally supplied. The supplied `docs/client-scope/TECHNO/` source folder is evidence of the current draft, not the final requirement set.
 - **Reference quality bar:** the classmate site at <https://unsaysud-antech-ustpcdocafeteria.ai.studio/> is a minimum UI/UX quality reference, not an expansion of SOAR scope. `chrome-devtools-axi` was available but could not attach to a live browser target in this environment, so no specific visual observations from that site are encoded here.
 
-Do not commit the supplied PDF, client source folder, account credentials, or secrets into this repository unless a later task explicitly authorizes specific files. Required secrets should be shared privately through service invitations or secure channels.
+The supplied PDF, overview, and client source draft are now committed with explicit publication authorization. Do not commit account credentials, service-account keys, private secrets, cache/build artifacts, or Windows `:Zone.Identifier` metadata. Required secrets should be shared privately through service invitations or secure channels.
 
 ## Product purpose
 
@@ -273,7 +273,7 @@ The supplied overview states a fixed development fee of **PHP3,000**, with first
 Suggested repository structure remains:
 
 - `app/` — future application source once implementation begins.
-- `docs/client-scope/` — agreed scope, requirements, client notes, and hosting context if specific files are approved for repository intake.
+- `docs/client-scope/` — agreed scope, requirements, client notes, hosting context, and the supplied current-draft source for intake/reference.
 - `docs/design-system/open-design/` — future Open Design outputs.
 - `docs/agent-workflow/` — agent-facing workflow notes and implementation plans.
 
