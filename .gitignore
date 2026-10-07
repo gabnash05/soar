@@ -3,11 +3,21 @@
 .env.*
 !.env.example
 
+# Credential and account-key files
+*serviceAccount*.json
+*service-account*.json
+*-service-account.json
+*.pem
+*.key
+
 # Dependencies and build output
 node_modules/
 dist/
 build/
 .firebase/
+
+# Windows alternate data stream metadata
+*:Zone.Identifier
 
 # Logs
 *.log
