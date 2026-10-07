@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Settings - SOAR</title>
+    <link rel="stylesheet" href="style.css?v=ipadfinal">
+</head>
+<body>
+    
+    <nav class="navbar">
+        <div class="logo-container">
+            <h1 class="logo-main">SOAR</h1>
+            <span class="logo-subtitle">Student Organizations and Allied Resources</span>
+        </div>
+        <div class="nav-links"></div>
+    </nav>
+
+    <main class="dashboard-container" style="max-width: 700px; margin: 2rem auto;">
+        
+        <div class="dashboard-section">
+            <h2 style="margin-bottom: 1.5rem; font-size: 1.5rem;">Account Settings</h2>
+            <p style="color: var(--text-muted); margin-bottom: 2rem;">Update your personal information and account credentials.</p>
+
+            <!-- Name Change Form -->
+            <form id="change-name-form" style="margin-bottom: 3rem; padding-bottom: 2rem; border-bottom: 2px solid var(--secondary-bg);">
+                <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">Change Registered Name</h3>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Note: You can only change your name once every 30 days.</p>
+                
+                <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">New Full Name</label>
+                <input type="text" id="new-name-input" required style="width: 100%; margin-bottom: 1rem;" placeholder="Enter new name">
+                
+                <button type="submit" class="btn-primary" id="btn-change-name">Update Name</button>
+                <p id="name-cooldown-msg" style="color: var(--accent-pink); font-size: 0.85rem; font-weight: 600; margin-top: 1rem; display: none;"></p>
+            </form>
+
+            <!-- Email Change Form -->
+            <form id="change-email-form">
+                <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">Change Email Address</h3>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">A verification link will be sent to your new email. You must verify it before the change takes effect.</p>
+                
+                <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">Current Password (Required for security)</label>
+                <input type="password" id="current-password-email" required style="width: 100%; margin-bottom: 1rem;" placeholder="Enter current password">
+
+                <label style="font-weight: 600; display: block; margin-bottom: 0.5rem; font-size: 0.9rem;">New Email Address</label>
+                <input type="email" id="new-email-input" required style="width: 100%; margin-bottom: 1.5rem;" placeholder="Enter new email">
+                
+                <button type="submit" class="btn-primary" id="btn-change-email">Send Verification Link</button>
+            </form>
+        </div>
+
+    </main>
+
+    <script type="module" src="script.js?v=verified"></script>
+</body>
+</html>

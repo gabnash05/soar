@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOAR - Campus Announcements</title>
+    <link rel="stylesheet" href="style.css?v=ipadfinal">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="logo-container">
+            <h1 class="logo-main">SOAR</h1>
+            <span class="logo-subtitle">Student Organizations and Allied Resources</span>
+        </div>
+        
+        <!-- JS will dynamically inject the correct role-based links here -->
+        <div class="nav-links"></div>
+    </nav>
+
+    <!-- Main Feed Section -->
+    <main class="dashboard-container" style="padding: 2rem; max-width: 1000px; margin: 0 auto;">
+        <h2 style="color: #0f4c5c; margin-bottom: 1.5rem; border-bottom: 2px solid #eee; padding-bottom: 0.5rem;">Campus Announcements</h2>
+        
+        <!-- ONLY the dynamic Firebase feed container stays here. -->
+        <div id="announcements-feed" class="feed-container"></div>
+    </main>
+    
+    <!-- Using type="module" is critical for Firebase -->
+   <script type="module" src="script.js?v=verified"></script>
+</body>
+</html>

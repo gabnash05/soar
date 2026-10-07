@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Organizations - SOAR</title>
+   <link rel="stylesheet" href="style.css?v=ipadfinal">
+</head>
+<body style="background-color: #f8fafc;">
+    
+    <nav class="navbar">
+        <div class="logo-container">
+            <h1 class="logo-main">SOAR</h1>
+            <span class="logo-subtitle">Student Organizations and Allied Resources</span>
+        </div>
+        <div class="nav-links"></div>
+    </nav>
+
+    <main class="dashboard-container" style="padding: 2rem; max-width: 1200px; margin: 0 auto;">
+        
+        <!-- Sponsor Meeting Requests Section (Hidden for Students) -->
+        <div id="sponsor-meetings-container" style="display: none; background: #fff; padding: 2.5rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 3rem;">
+            <h2 style="color: #0f4c5c; margin-bottom: 1.5rem; border-bottom: 2px solid #eee; padding-bottom: 0.5rem;">My Meeting Requests</h2>
+            <table class="app-table" style="width: 100%; border-collapse: collapse; text-align: left;" id="sponsor-meetings-table">
+                <thead>
+                    <tr style="border-bottom: 2px solid #eee;">
+                        <th style="padding: 1rem 0; color: #555;">Organization</th>
+                        <th style="padding: 1rem 0; color: #555;">Event / Date</th>
+                        <th style="padding: 1rem 0; color: #555;">Time</th>
+                        <th style="padding: 1rem 0; color: #555;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="4" style="text-align:center; padding: 2rem; color: #888;">Loading meetings...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Header with Live Search Bar -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 2px solid #eee; padding-bottom: 0.5rem;">
+            <h2 style="color: #0f4c5c; margin: 0;">Campus Organizations</h2>
+            <input type="text" id="org-search" placeholder="Search by name..." style="width: 100%; max-width: 300px; padding: 0.6rem; border: 1px solid #ccc; border-radius: 6px; font-family: inherit;">
+        </div>
+        
+        <!-- Live Organizations Grid -->
+        <div id="organizations-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 2rem;">
+            <p style="color: #888; text-align: center; width: 100%; grid-column: 1 / -1; padding: 2rem;">Loading organizations...</p>
+        </div>
+    </main>
+
+    <script type="module" src="script.js?v=verified"></script>
+</body>
+</html>
