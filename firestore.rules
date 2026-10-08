@@ -77,10 +77,6 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).changedKeys().hasOnly(keys);
     }
 
-    function unchanged(keys) {
-      return request.resource.data.diff(resource.data).changedKeys().hasAny(keys) == false;
-    }
-
     function validTimestampNow(fieldName) {
       return request.resource.data[fieldName] is timestamp
         && request.resource.data[fieldName] == request.time;
@@ -105,34 +101,6 @@ service cloud.firestore {
         && nameCooldownSatisfied();
     }
 
-    function validOrganizationProfileUpdate(orgId) {
-      let changed = request.resource.data.diff(resource.data).changedKeys();
-      return canManageOrganization(orgId)
-        && request.resource.data.ownerUid == resource.data.ownerUid
-        && changed.hasOnly([
-          'name',
-          'slug',
-          'shortDescription',
-          'description',
-          'contactEmail',
-          'logoPath',
-          'recruitment',
-          'updatedAt'
-        ])
-        && validTimestampNow('updatedAt')
-        && request.resource.data.name is string
-        && request.resource.data.name.size() >= 2
-        && request.resource.data.name.size() <= 140;
-    }
-
-    function requestOrgId() {
-      return request.resource.data.orgId;
-    }
-
-    function existingOrgId() {
-      return resource.data.orgId;
-    }
-
     function ownedBySelf(fieldName) {
       return request.resource.data[fieldName] == request.auth.uid;
     }
@@ -155,8 +123,7 @@ service cloud.firestore {
 
     match /organizations/{orgId} {
       allow get, list: if activeUser();
-      allow create, delete: if false;
-      allow update: if validOrganizationProfileUpdate(orgId);
+      allow create, update, delete: if false;
 
       match /officerGrants/{uid} {
         allow get: if activeUser() && (request.auth.uid == uid || isOrganizationOwner(orgId));
@@ -167,39 +134,22 @@ service cloud.firestore {
 
     match /announcements/{announcementId} {
       allow get, list: if activeUser();
-      allow create: if activeUser()
-        && request.resource.data.orgId is string
-        && canManageOrganization(requestOrgId())
-        && request.resource.data.authorUid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if activeUser()
-        && resource.data.orgId is string
-        && existingOrgId() == requestOrgId()
-        && canManageOrganization(existingOrgId())
-        && unchanged(['orgId', 'authorUid', 'createdAt'])
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if activeUser()
-        && resource.data.orgId is string
-        && canManageOrganization(existingOrgId());
+      allow create, update, delete: if false;
+
+      match /likes/{uid} {
+        allow get, list: if activeUser() && exists(/databases/$(database)/documents/announcements/$(announcementId));
+        allow create, update, delete: if false;
+      }
+
+      match /comments/{commentId} {
+        allow get, list: if activeUser() && exists(/databases/$(database)/documents/announcements/$(announcementId));
+        allow create, update, delete: if false;
+      }
     }
 
     match /calendarEntries/{entryId} {
       allow get, list: if activeUser();
-      allow create: if activeUser()
-        && request.resource.data.orgId is string
-        && canManageOrganization(requestOrgId())
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if activeUser()
-        && resource.data.orgId is string
-        && existingOrgId() == requestOrgId()
-        && canManageOrganization(existingOrgId())
-        && unchanged(['orgId', 'createdAt'])
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if activeUser()
-        && resource.data.orgId is string
-        && canManageOrganization(existingOrgId());
+      allow create, update, delete: if false;
     }
 
     match /applications/{applicationId} {

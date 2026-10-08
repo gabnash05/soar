@@ -7,6 +7,24 @@ import { getUserSession } from '../identity/session';
 import { requestVerifiedEmailChange, updateDisplayName } from '../identity/accountSettings';
 import { approveOfficerGrant, assignInitialOrganizationOwner, revokeOfficerGrant } from '../organizations/service';
 import { attachAuthToPaymentRequest, paymentHandlers, sendPaymentResult } from '../paymentsAdapter';
+import {
+  addAnnouncementComment,
+  createAnnouncement,
+  createAnnouncementImageTarget,
+  createDateEntry,
+  createLogoImageTarget,
+  deleteAnnouncement,
+  deleteDateEntry,
+  getOrganizationProfile,
+  listAnnouncementComments,
+  listAnnouncements,
+  listDateEntries,
+  listOrganizations,
+  scopedDateEntryQuery,
+  setAnnouncementLike,
+  updateDateEntry,
+  updateOrganizationProfile
+} from '../content/service';
 
 function sendError(res: Response, error: unknown): void {
   if (error instanceof ZodError) {
@@ -59,7 +77,7 @@ export function createApiApp() {
   app.use(express.json({ limit: '256kb' }));
 
   app.get(['/health', '/api/health'], (_req, res) => {
-    res.json({ ok: true, service: 'soar-backend', scope: 'identity-organization-payments-foundation' });
+    res.json({ ok: true, service: 'soar-backend', scope: 'identity-payments-content-foundation' });
   });
 
   app.get(['/session', '/api/session'], asyncRoute(async (req, res) => {
@@ -101,6 +119,91 @@ export function createApiApp() {
   app.get(['/payments/access/status', '/api/payments/access/status'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     await sendPaymentResult(res, paymentHandlers().getAccessStatus(attachAuthToPaymentRequest(req, user)));
+  }));
+
+  app.get(['/organizations', '/api/organizations'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await listOrganizations(user, req.query));
+  }));
+
+  app.get(['/organizations/:orgId', '/api/organizations/:orgId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await getOrganizationProfile(user, getParam(req, 'orgId')));
+  }));
+
+  app.patch(['/organizations/:orgId', '/api/organizations/:orgId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await updateOrganizationProfile(user, getParam(req, 'orgId'), req.body));
+  }));
+
+  app.post(['/organizations/:orgId/logo-image-targets', '/api/organizations/:orgId/logo-image-targets'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.status(201).json(await createLogoImageTarget(user, getParam(req, 'orgId'), req.body));
+  }));
+
+  app.get(['/announcements', '/api/announcements'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await listAnnouncements(user, req.query));
+  }));
+
+  app.post(['/organizations/:orgId/announcements/image-targets', '/api/organizations/:orgId/announcements/image-targets'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.status(201).json(await createAnnouncementImageTarget(user, getParam(req, 'orgId'), req.body));
+  }));
+
+  app.post(['/organizations/:orgId/announcements', '/api/organizations/:orgId/announcements'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.status(201).json(await createAnnouncement(user, getParam(req, 'orgId'), req.body));
+  }));
+
+  app.delete(['/organizations/:orgId/announcements/:announcementId', '/api/organizations/:orgId/announcements/:announcementId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await deleteAnnouncement(user, getParam(req, 'orgId'), getParam(req, 'announcementId')));
+  }));
+
+  app.post(['/announcements/:announcementId/like', '/api/announcements/:announcementId/like'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await setAnnouncementLike(user, getParam(req, 'announcementId'), true));
+  }));
+
+  app.delete(['/announcements/:announcementId/like', '/api/announcements/:announcementId/like'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await setAnnouncementLike(user, getParam(req, 'announcementId'), false));
+  }));
+
+  app.get(['/announcements/:announcementId/comments', '/api/announcements/:announcementId/comments'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await listAnnouncementComments(user, getParam(req, 'announcementId'), req.query));
+  }));
+
+  app.post(['/announcements/:announcementId/comments', '/api/announcements/:announcementId/comments'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.status(201).json(await addAnnouncementComment(user, getParam(req, 'announcementId'), req.body));
+  }));
+
+  app.get(['/date-entries', '/api/date-entries'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await listDateEntries(user, req.query));
+  }));
+
+  app.get(['/organizations/:orgId/date-entries', '/api/organizations/:orgId/date-entries'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await listDateEntries(user, scopedDateEntryQuery(getParam(req, 'orgId'), req.query)));
+  }));
+
+  app.post(['/organizations/:orgId/date-entries', '/api/organizations/:orgId/date-entries'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.status(201).json(await createDateEntry(user, getParam(req, 'orgId'), req.body));
+  }));
+
+  app.patch(['/organizations/:orgId/date-entries/:entryId', '/api/organizations/:orgId/date-entries/:entryId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await updateDateEntry(user, getParam(req, 'orgId'), getParam(req, 'entryId'), req.body));
+  }));
+
+  app.delete(['/organizations/:orgId/date-entries/:entryId', '/api/organizations/:orgId/date-entries/:entryId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await deleteDateEntry(user, getParam(req, 'orgId'), getParam(req, 'entryId')));
   }));
 
   app.post(['/organizations/:orgId/officer-grants', '/api/organizations/:orgId/officer-grants'], asyncRoute(async (req, res) => {
