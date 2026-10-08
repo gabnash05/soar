@@ -1,0 +1,69 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function emailVerified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function entitlementDoc() {
+      return firestore.get(/databases/(default)/documents/entitlements/$(request.auth.uid));
+    }
+
+    function hasActiveAccess() {
+      return firestore.exists(/databases/(default)/documents/entitlements/$(request.auth.uid))
+        && entitlementDoc().data.status == 'active'
+        && entitlementDoc().data.accessExpiresAt is timestamp
+        && entitlementDoc().data.accessExpiresAt > request.time;
+    }
+
+    function activeUser() {
+      return emailVerified() && hasActiveAccess();
+    }
+
+    function organizationDoc(orgId) {
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId));
+    }
+
+    function isOrganizationOwner(orgId) {
+      return activeUser()
+        && firestore.exists(/databases/(default)/documents/organizations/$(orgId))
+        && organizationDoc(orgId).data.ownerUid == request.auth.uid;
+    }
+
+    function hasActiveOfficerGrant(orgId) {
+      return activeUser()
+        && firestore.exists(/databases/(default)/documents/organizations/$(orgId)/officerGrants/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/organizations/$(orgId)/officerGrants/$(request.auth.uid)).data.status == 'active';
+    }
+
+    function canManageOrganization(orgId) {
+      return isOrganizationOwner(orgId) || hasActiveOfficerGrant(orgId);
+    }
+
+    function validImageUpload() {
+      return request.resource != null
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
+    }
+
+    match /organization-logos/{orgId}/{fileName} {
+      allow read: if activeUser();
+      allow write: if canManageOrganization(orgId) && validImageUpload();
+      allow delete: if canManageOrganization(orgId);
+    }
+
+    match /announcement-images/{orgId}/{announcementId}/{fileName} {
+      allow read: if activeUser();
+      allow write: if canManageOrganization(orgId) && validImageUpload();
+      allow delete: if canManageOrganization(orgId);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
