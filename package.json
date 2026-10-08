@@ -1,0 +1,16 @@
+{
+  "name": "soar",
+  "private": true,
+  "workspaces": [
+    "app/backend"
+  ],
+  "scripts": {
+    "build": "npm --workspace app/backend run build",
+    "typecheck": "npm --workspace app/backend run typecheck",
+    "test": "npm run build && npm --workspace app/backend run test",
+    "test:rules": "firebase emulators:exec --project soar-a711e --only firestore,storage \"npm --workspace app/backend run test:rules\""
+  },
+  "devDependencies": {
+    "firebase-tools": "^15.32.1"
+  }
+}

@@ -1,0 +1,251 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function emailVerified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function entitlementPath(uid) {
+      return /databases/$(database)/documents/entitlements/$(uid);
+    }
+
+    function accountPath(uid) {
+      return /databases/$(database)/documents/accounts/$(uid);
+    }
+
+    function hasActiveAccess(uid) {
+      return exists(entitlementPath(uid))
+        && get(entitlementPath(uid)).data.status == 'active'
+        && get(entitlementPath(uid)).data.accessExpiresAt is timestamp
+        && get(entitlementPath(uid)).data.accessExpiresAt > request.time;
+    }
+
+    function activeUser() {
+      return emailVerified() && hasActiveAccess(request.auth.uid);
+    }
+
+    function currentAccount() {
+      return get(accountPath(request.auth.uid));
+    }
+
+    function currentRole(roleName) {
+      return exists(accountPath(request.auth.uid))
+        && currentAccount().data.role == roleName;
+    }
+
+    function studentUser() {
+      return activeUser() && currentRole('student');
+    }
+
+    function sponsorUser() {
+      return activeUser() && currentRole('sponsor');
+    }
+
+    function organizationPath(orgId) {
+      return /databases/$(database)/documents/organizations/$(orgId);
+    }
+
+    function grantPath(orgId, uid) {
+      return /databases/$(database)/documents/organizations/$(orgId)/officerGrants/$(uid);
+    }
+
+    function isOrganizationOwner(orgId) {
+      return activeUser()
+        && exists(organizationPath(orgId))
+        && get(organizationPath(orgId)).data.ownerUid == request.auth.uid;
+    }
+
+    function hasActiveOfficerGrant(orgId) {
+      return activeUser()
+        && exists(grantPath(orgId, request.auth.uid))
+        && get(grantPath(orgId, request.auth.uid)).data.status == 'active';
+    }
+
+    function canManageOrganization(orgId) {
+      return isOrganizationOwner(orgId) || hasActiveOfficerGrant(orgId);
+    }
+
+    function onlyChanged(keys) {
+      return request.resource.data.diff(resource.data).changedKeys().hasOnly(keys);
+    }
+
+    function unchanged(keys) {
+      return request.resource.data.diff(resource.data).changedKeys().hasAny(keys) == false;
+    }
+
+    function validTimestampNow(fieldName) {
+      return request.resource.data[fieldName] is timestamp
+        && request.resource.data[fieldName] == request.time;
+    }
+
+    function validDisplayName(name) {
+      return name is string && name.size() >= 2 && name.size() <= 120;
+    }
+
+    function nameCooldownSatisfied() {
+      return resource.data.keys().hasAny(['lastNameChangedAt']) == false
+        || resource.data.lastNameChangedAt <= request.time - duration.value(30, 'd');
+    }
+
+    function validSelfAccountUpdate(uid) {
+      return isSelf(uid)
+        && activeUser()
+        && onlyChanged(['displayName', 'lastNameChangedAt', 'updatedAt'])
+        && validDisplayName(request.resource.data.displayName)
+        && validTimestampNow('lastNameChangedAt')
+        && validTimestampNow('updatedAt')
+        && nameCooldownSatisfied();
+    }
+
+    function validOrganizationProfileUpdate(orgId) {
+      let changed = request.resource.data.diff(resource.data).changedKeys();
+      return canManageOrganization(orgId)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && changed.hasOnly([
+          'name',
+          'slug',
+          'shortDescription',
+          'description',
+          'contactEmail',
+          'logoPath',
+          'recruitment',
+          'updatedAt'
+        ])
+        && validTimestampNow('updatedAt')
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 140;
+    }
+
+    function requestOrgId() {
+      return request.resource.data.orgId;
+    }
+
+    function existingOrgId() {
+      return resource.data.orgId;
+    }
+
+    function ownedBySelf(fieldName) {
+      return request.resource.data[fieldName] == request.auth.uid;
+    }
+
+    match /accounts/{uid} {
+      allow get: if isSelf(uid);
+      allow list: if false;
+      allow create, delete: if false;
+      allow update: if validSelfAccountUpdate(uid);
+    }
+
+    match /entitlements/{uid} {
+      allow get: if isSelf(uid);
+      allow list, create, update, delete: if false;
+    }
+
+    match /entitlementProviderEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /organizations/{orgId} {
+      allow get, list: if activeUser();
+      allow create, delete: if false;
+      allow update: if validOrganizationProfileUpdate(orgId);
+
+      match /officerGrants/{uid} {
+        allow get: if activeUser() && (request.auth.uid == uid || isOrganizationOwner(orgId));
+        allow list: if isOrganizationOwner(orgId);
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /announcements/{announcementId} {
+      allow get, list: if activeUser();
+      allow create: if activeUser()
+        && request.resource.data.orgId is string
+        && canManageOrganization(requestOrgId())
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if activeUser()
+        && resource.data.orgId is string
+        && existingOrgId() == requestOrgId()
+        && canManageOrganization(existingOrgId())
+        && unchanged(['orgId', 'authorUid', 'createdAt'])
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if activeUser()
+        && resource.data.orgId is string
+        && canManageOrganization(existingOrgId());
+    }
+
+    match /calendarEntries/{entryId} {
+      allow get, list: if activeUser();
+      allow create: if activeUser()
+        && request.resource.data.orgId is string
+        && canManageOrganization(requestOrgId())
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if activeUser()
+        && resource.data.orgId is string
+        && existingOrgId() == requestOrgId()
+        && canManageOrganization(existingOrgId())
+        && unchanged(['orgId', 'createdAt'])
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if activeUser()
+        && resource.data.orgId is string
+        && canManageOrganization(existingOrgId());
+    }
+
+    match /applications/{applicationId} {
+      allow get: if activeUser()
+        && (resource.data.studentUid == request.auth.uid || canManageOrganization(resource.data.orgId));
+      allow list: if false;
+      allow create: if studentUser()
+        && ownedBySelf('studentUid')
+        && request.resource.data.orgId is string
+        && request.resource.data.status == 'pending'
+        && request.resource.data.externalFormOpenedAt is timestamp
+        && request.resource.data.externalSubmissionConfirmedAt == request.time
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if activeUser()
+        && resource.data.orgId is string
+        && canManageOrganization(resource.data.orgId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'reviewedByUid', 'updatedAt'])
+        && request.resource.data.status in ['pending', 'under_review', 'accepted', 'declined']
+        && request.resource.data.reviewedByUid == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /meetingRequests/{requestId} {
+      allow get: if activeUser()
+        && (resource.data.requesterUid == request.auth.uid || canManageOrganization(resource.data.orgId));
+      allow list: if false;
+      allow create: if activeUser()
+        && (studentUser() || sponsorUser())
+        && ownedBySelf('requesterUid')
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if activeUser()
+        && resource.data.orgId is string
+        && canManageOrganization(resource.data.orgId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'decidedByUid', 'updatedAt'])
+        && request.resource.data.status in ['pending', 'approved', 'declined']
+        && request.resource.data.decidedByUid == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

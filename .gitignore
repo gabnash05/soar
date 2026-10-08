@@ -14,6 +14,7 @@
 node_modules/
 dist/
 build/
+app/backend/lib/
 .firebase/
 
 # Windows alternate data stream metadata
