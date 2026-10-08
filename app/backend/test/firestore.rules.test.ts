@@ -71,6 +71,7 @@ async function seedBaseData() {
       orgId: 'org1',
       name: 'Robotics Club',
       slug: 'robotics-club',
+      searchName: 'robotics club',
       ownerUid: 'owner',
       shortDescription: 'Robotics',
       description: 'Builds robots.',
@@ -86,6 +87,36 @@ async function seedBaseData() {
       uid: 'officer',
       status: 'active',
       grantedByUid: 'owner',
+      createdAt: oldEnough,
+      updatedAt: oldEnough
+    });
+
+    await setDoc(doc(db, 'announcements', 'post1'), {
+      announcementId: 'post1',
+      orgId: 'org1',
+      organizationName: 'Robotics Club',
+      organizationLogoPath: 'organization-logos/org1/logo.png',
+      authorUid: 'owner',
+      body: 'Tryouts Friday.',
+      image: null,
+      likeCount: 0,
+      commentCount: 0,
+      deletedAt: null,
+      createdAt: oldEnough,
+      updatedAt: oldEnough
+    });
+
+    await setDoc(doc(db, 'calendarEntries', 'date1'), {
+      entryId: 'date1',
+      orgId: 'org1',
+      organizationName: 'Robotics Club',
+      kind: 'availability',
+      title: 'Interview window',
+      date: '2026-11-12',
+      startTime: '14:00',
+      endTime: '16:00',
+      details: 'Request one time during this window.',
+      createdByUid: 'owner',
       createdAt: oldEnough,
       updatedAt: oldEnough
     });
@@ -169,17 +200,14 @@ describe('account and entitlement boundaries', () => {
 });
 
 describe('organization permissions', () => {
-  it('allows owners and approved officers to update profile fields only', async () => {
-    await assertSucceeds(updateDoc(doc(dbFor('owner'), 'organizations', 'org1'), {
+  it('allows active users to read organizations but blocks direct SDK organization writes', async () => {
+    await assertSucceeds(getDoc(doc(dbFor('student'), 'organizations', 'org1')));
+    await assertFails(updateDoc(doc(dbFor('owner'), 'organizations', 'org1'), {
       name: 'Robotics Guild',
       updatedAt: serverTimestamp()
     }));
-    await assertSucceeds(updateDoc(doc(dbFor('officer'), 'organizations', 'org1'), {
+    await assertFails(updateDoc(doc(dbFor('officer'), 'organizations', 'org1'), {
       shortDescription: 'Updated by officer',
-      updatedAt: serverTimestamp()
-    }));
-    await assertFails(updateDoc(doc(dbFor('foreign'), 'organizations', 'org1'), {
-      shortDescription: 'Owned by me now',
       updatedAt: serverTimestamp()
     }));
     await assertFails(updateDoc(doc(dbFor('owner'), 'organizations', 'org1'), {
@@ -203,6 +231,41 @@ describe('organization permissions', () => {
 });
 
 describe('workflow record boundaries enforced by rules', () => {
+  it('allows active users to read content but blocks direct SDK content writes owned by backend services', async () => {
+    await assertSucceeds(getDoc(doc(dbFor('student'), 'announcements', 'post1')));
+    await assertSucceeds(getDoc(doc(dbFor('student'), 'calendarEntries', 'date1')));
+    await assertFails(setDoc(doc(dbFor('owner'), 'announcements', 'post2'), {
+      announcementId: 'post2',
+      orgId: 'org1',
+      authorUid: 'owner',
+      body: 'Direct post.',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }));
+    await assertFails(setDoc(doc(dbFor('student'), 'announcements', 'post1', 'likes', 'student'), {
+      uid: 'student',
+      announcementId: 'post1',
+      createdAt: serverTimestamp()
+    }));
+    await assertFails(setDoc(doc(dbFor('student'), 'announcements', 'post1', 'comments', 'comment1'), {
+      commentId: 'comment1',
+      announcementId: 'post1',
+      authorUid: 'student',
+      body: 'Direct comment.',
+      createdAt: serverTimestamp()
+    }));
+    await assertFails(setDoc(doc(dbFor('owner'), 'calendarEntries', 'date2'), {
+      entryId: 'date2',
+      orgId: 'org1',
+      kind: 'event',
+      title: 'Direct date',
+      date: '2026-11-15',
+      details: 'Blocked.',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }));
+  });
+
   it('blocks collection scans for private application and meeting data', async () => {
     await assertFails(getDocs(query(collection(dbFor('student'), 'applications'), where('studentUid', '==', 'student'))));
     await assertFails(getDocs(query(collection(dbFor('student'), 'meetingRequests'), where('requesterUid', '==', 'student'))));

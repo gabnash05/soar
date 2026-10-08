@@ -53,6 +53,7 @@ async function seedBaseData() {
       orgId: 'org1',
       name: 'Robotics Club',
       slug: 'robotics-club',
+      searchName: 'robotics club',
       ownerUid: 'owner',
       createdAt: oldEnough,
       updatedAt: oldEnough,

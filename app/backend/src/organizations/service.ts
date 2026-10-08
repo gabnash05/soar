@@ -2,6 +2,7 @@ import type { DecodedIdToken } from 'firebase-admin/auth';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { accountPath, organizationPath, officerGrantPath } from '../contracts/paths';
 import { createOfficerGrantSchema, createOrganizationSchema } from '../contracts/validation';
+import { normalizedName } from '../content/validation';
 import { AppError } from '../errors';
 import { db } from '../firebase';
 import { requireActiveAccess } from '../identity/access';
@@ -45,6 +46,7 @@ export async function assignInitialOrganizationOwner(rawInput: unknown, actorUid
       orgId: input.orgId,
       name: input.name,
       slug: input.slug,
+      searchName: normalizedName(input.name),
       ownerUid: input.ownerUid,
       shortDescription: input.shortDescription ?? '',
       description: input.description ?? '',

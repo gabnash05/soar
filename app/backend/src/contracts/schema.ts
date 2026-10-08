@@ -70,6 +70,7 @@ export interface OrganizationDocument {
   orgId: string;
   name: string;
   slug: string;
+  searchName?: string;
   ownerUid: string;
   shortDescription?: string;
   description?: string;
@@ -79,6 +80,54 @@ export interface OrganizationDocument {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   createdByUid: string;
+}
+
+export type DateEntryKind = 'event' | 'availability';
+
+export interface AnnouncementImage {
+  storagePath: string;
+  contentType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+  sizeBytes: number;
+  alt?: string;
+}
+
+export interface AnnouncementDocument {
+  announcementId: string;
+  orgId: string;
+  organizationName: string;
+  organizationLogoPath?: string;
+  authorUid: string;
+  body: string;
+  image?: AnnouncementImage | null;
+  likeCount: number;
+  commentCount: number;
+  deletedAt?: Timestamp | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface AnnouncementCommentDocument {
+  commentId: string;
+  announcementId: string;
+  authorUid: string;
+  authorName: string;
+  body: string;
+  createdAt: Timestamp;
+}
+
+export interface CalendarEntryDocument {
+  entryId: string;
+  orgId: string;
+  organizationName: string;
+  kind: DateEntryKind;
+  title: string;
+  date: string;
+  startTime?: string;
+  endTime?: string;
+  details: string;
+  createdByUid: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 export interface OfficerGrantDocument {
