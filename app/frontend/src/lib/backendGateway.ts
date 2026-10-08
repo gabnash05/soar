@@ -1,0 +1,243 @@
+import {
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  reload,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  updateProfile,
+  verifyBeforeUpdateEmail,
+} from '@firebase/auth';
+import {
+  type AccessEntitlement,
+  type CheckoutStatus,
+  type EmailChangeInput,
+  type NameChangeInput,
+  type RegisterAccountInput,
+  type RegistrationPaymentInput,
+  type RegistrationPaymentIntent,
+  type RenewalRequest,
+  type RenewalRequestInput,
+  ServiceUnavailableError,
+  type SignInInput,
+  type UserSession,
+} from './contracts';
+import { getFirebaseConfigStatus, getFirebaseRuntime } from './firebase';
+import { createFixtureGateway } from './fixtures';
+
+export interface BackendGateway {
+  readonly mode: 'production' | 'fixture';
+  readonly label: string;
+  reloadSession(): Promise<UserSession | null>;
+  signIn(input: SignInInput): Promise<UserSession>;
+  signOut(): Promise<void>;
+  sendPasswordRecovery(email: string): Promise<void>;
+  startRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
+  getCheckoutStatus(intentId: string): Promise<CheckoutStatus>;
+  registerAccount(input: RegisterAccountInput): Promise<UserSession>;
+  resendEmailVerification(): Promise<void>;
+  requestManualRenewal(input: RenewalRequestInput): Promise<RenewalRequest>;
+  getAccessStatus(): Promise<UserSession['access']>;
+  updateDisplayName(input: NameChangeInput): Promise<UserSession>;
+  requestEmailChange(input: EmailChangeInput): Promise<void>;
+}
+
+interface ApiResponse<T> {
+  data: T;
+}
+
+const apiBaseUrl = () => (import.meta.env.VITE_SOAR_API_BASE_URL || '').replace(/\/$/, '');
+
+const assertApiBase = () => {
+  const base = apiBaseUrl();
+  if (!base) {
+    throw new ServiceUnavailableError(
+      'SOAR backend API is not configured. Set VITE_SOAR_API_BASE_URL or enable VITE_SOAR_USE_FIXTURES=true for local UI development.',
+    );
+  }
+  return base;
+};
+
+const apiFetch = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const base = assertApiBase();
+  const response = await fetch(`${base}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    let message = `Request failed with status ${response.status}`;
+    try {
+      const body = (await response.json()) as { message?: string };
+      if (body.message) message = body.message;
+    } catch {
+      // Keep status-based message.
+    }
+    throw new Error(message);
+  }
+
+  const body = (await response.json()) as ApiResponse<T> | T;
+  return body && typeof body === 'object' && 'data' in body ? (body as ApiResponse<T>).data : (body as T);
+};
+
+const currentFirebaseIdToken = async () => {
+  const { auth } = getFirebaseRuntime();
+  const user = auth.currentUser;
+  return user ? user.getIdToken() : null;
+};
+
+const authHeaders = async (): Promise<HeadersInit> => {
+  const token = await currentFirebaseIdToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+type RawAccessStatus = AccessEntitlement['status'] | 'none';
+
+type RawAccess = Omit<Partial<AccessEntitlement>, 'status'> & {
+  status?: RawAccessStatus;
+  active?: boolean;
+  accessExpiresAt?: string;
+  latestPaymentId?: string | null;
+};
+
+const normalizeAccess = (access: RawAccess): AccessEntitlement => {
+  const status = access.status === 'none' ? 'missing' : access.status;
+  return {
+    status: status ?? (access.active ? 'active' : 'missing'),
+    annualFeePhp: 10,
+    startsAt: access.startsAt,
+    expiresAt: access.expiresAt ?? access.accessExpiresAt,
+    lastPaymentReference: access.lastPaymentReference ?? access.latestPaymentId ?? undefined,
+    renewalAvailable: access.renewalAvailable ?? status !== 'active',
+  };
+};
+
+const mapSession = (session: UserSession): UserSession => ({
+  ...session,
+  access: normalizeAccess(session.access),
+  officerGrants: session.officerGrants ?? [],
+});
+
+const createProductionGateway = (): BackendGateway => ({
+  mode: 'production',
+  label: 'Configured services',
+
+  async reloadSession() {
+    const firebaseStatus = getFirebaseConfigStatus();
+    if (!firebaseStatus.configured || !apiBaseUrl()) {
+      return null;
+    }
+
+    const { auth } = getFirebaseRuntime();
+    if (!auth.currentUser) return null;
+    await reload(auth.currentUser);
+    const session = await apiFetch<UserSession>('/auth/session', { headers: await authHeaders() });
+    return mapSession({ ...session, emailVerified: auth.currentUser.emailVerified });
+  },
+
+  async signIn(input) {
+    const { auth } = getFirebaseRuntime();
+    const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
+    const session = await apiFetch<UserSession>('/auth/session', { headers: await authHeaders() });
+    return mapSession({ ...session, emailVerified: credential.user.emailVerified });
+  },
+
+  async signOut() {
+    const firebaseStatus = getFirebaseConfigStatus();
+    if (firebaseStatus.configured) {
+      await firebaseSignOut(getFirebaseRuntime().auth);
+    }
+  },
+
+  async sendPasswordRecovery(email) {
+    const { auth } = getFirebaseRuntime();
+    await sendPasswordResetEmail(auth, email);
+  },
+
+  async startRegistrationPayment(input) {
+    return apiFetch<RegistrationPaymentIntent>('/access/registration-intents', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getCheckoutStatus(intentId) {
+    return apiFetch<CheckoutStatus>(`/access/checkout-status?intentId=${encodeURIComponent(intentId)}`);
+  },
+
+  async registerAccount(input) {
+    const checkout = await this.getCheckoutStatus(input.intentId);
+    if (!checkout.canCreateAccount || checkout.status !== 'active') {
+      throw new Error('Payment is not confirmed yet. Account creation remains locked.');
+    }
+
+    await apiFetch<{ uid: string; completed: boolean; accessExpiresAt?: string }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+
+    const { auth } = getFirebaseRuntime();
+    const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
+    await sendEmailVerification(credential.user);
+    const session = await apiFetch<UserSession>('/auth/session', { headers: await authHeaders() });
+
+    return mapSession({ ...session, emailVerified: credential.user.emailVerified });
+  },
+
+  async resendEmailVerification() {
+    const { auth } = getFirebaseRuntime();
+    if (!auth.currentUser) throw new Error('Sign in before requesting a verification email.');
+    await sendEmailVerification(auth.currentUser);
+  },
+
+  async requestManualRenewal(input) {
+    return apiFetch<RenewalRequest>('/access/renewals', {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getAccessStatus() {
+    const access = await apiFetch<RawAccess>('/access/status', { headers: await authHeaders() });
+    return normalizeAccess(access);
+  },
+
+  async updateDisplayName(input) {
+    const { auth } = getFirebaseRuntime();
+    if (auth.currentUser) {
+      await updateProfile(auth.currentUser, { displayName: input.displayName });
+    }
+    const session = await apiFetch<UserSession>('/settings/display-name', {
+      method: 'PATCH',
+      headers: await authHeaders(),
+      body: JSON.stringify(input),
+    });
+    return mapSession(session);
+  },
+
+  async requestEmailChange(input) {
+    const { auth } = getFirebaseRuntime();
+    if (!auth.currentUser || !auth.currentUser.email) throw new Error('Sign in before changing email.');
+    const credential = EmailAuthProvider.credential(auth.currentUser.email, input.currentPassword);
+    await reauthenticateWithCredential(auth.currentUser, credential);
+    await verifyBeforeUpdateEmail(auth.currentUser, input.newEmail);
+    await apiFetch('/settings/email-change-intents', {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({ newEmail: input.newEmail }),
+    });
+  },
+});
+
+export const createBackendGateway = (): BackendGateway => {
+  if (import.meta.env.VITE_SOAR_USE_FIXTURES === 'true') {
+    return createFixtureGateway();
+  }
+  return createProductionGateway();
+};
