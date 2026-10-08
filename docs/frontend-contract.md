@@ -11,7 +11,7 @@
 
 ## Shared route contract
 
-Frontend foundation owns public/access/settings routes and the shell. The workflows lane should implement the route components below under `src/pages/workflows` with default exports and no duplicate style system.
+Frontend owns public/access/settings routes, the app shell, and workflow route components under `src/pages/workflows` with default exports and no duplicate style system.
 
 | Route | Workflow file | Export | Guard | Purpose |
 | --- | --- | --- | --- | --- |
@@ -22,7 +22,7 @@ Frontend foundation owns public/access/settings routes and the shell. The workfl
 | `/app/meetings` | `src/pages/workflows/MeetingsPage.tsx` | `default function MeetingsPage()` | active access | requester meeting tracker |
 | `/app/officer` | `src/pages/workflows/OfficerPage.tsx` | `default function OfficerPage()` | active access + approved organization grant | officer tools for approved organizations only |
 
-Foundation currently binds these routes to clear unavailable placeholders until the workflows PR supplies those files. The placeholders are intentionally disabled and do not pretend to save workflow data.
+Workflow pages now render complete fixture-mode screens and production API loading/error states. Fixture mode is opt-in local sample data; production mode calls configured backend services and does not fall back to fixture success.
 
 ## Shared data contracts
 
@@ -55,18 +55,27 @@ Shared backend coordination read: `/home/gab/agent-workspace/firstmate/data/soar
 
 Production mode requires `VITE_SOAR_API_BASE_URL` and public Firebase config. Missing backend/Firebase configuration surfaces as an unavailable state rather than a false successful login/payment.
 
-Current HTTP paths used by the production gateway are intentionally small and can be adapted by the backend lane behind the same method names if route names change:
+Current HTTP paths used by the production identity/payment gateway match the merged backend Express app's bare route mounts. The backend also mounts `/api`-prefixed equivalents; set `VITE_SOAR_API_BASE_URL` accordingly instead of changing client method names.
 
 | Method | Path | Frontend expectation |
 | --- | --- | --- |
-| `GET` | `/auth/session` | Returns trusted `UserSession` for the current Firebase ID token. |
-| `POST` | `/access/registration-intents` | Creates provider checkout for PHP10 registration payment and returns `RegistrationPaymentIntent`. |
-| `GET` | `/access/checkout-status?intentId=:intentId` | Returns `CheckoutStatus`; only `status: active` with `canCreateAccount: true` unlocks account creation. Matches the merged JS paid-access handler's query/body `intentId` input. |
-| `POST` | `/auth/register` | Server creates paid Firebase account from confirmed registration intent. The merged paid-access handler returns completion metadata (`uid`, `completed`, `accessExpiresAt`); the frontend then signs in and reloads `/auth/session` for trusted profile/access/grant details. |
-| `POST` | `/access/renewals` | Creates manual renewal checkout for the signed-in account. |
-| `GET` | `/access/status` | Returns signed-in account entitlement/access details. |
-| `PATCH` | `/settings/display-name` | Applies the 30-day display-name cooldown and returns updated `UserSession`. |
-| `POST` | `/settings/email-change-intents` | Records verified-email-change intent after client reauthentication and verification email dispatch. |
+| `GET` | `/session` | Returns trusted `UserSession` for the current Firebase ID token. |
+| `POST` | `/payments/registration/start` | Creates provider checkout for PHP10 registration payment and returns `RegistrationPaymentIntent`; passwords are not sent here. |
+| `GET` | `/payments/registration/status?intentId=:intentId` | Returns `CheckoutStatus`; only `status: active` with `canCreateAccount: true` unlocks account creation, and the backend validates its registration-binding cookie. |
+| `POST` | `/payments/registration/complete` | Server creates the paid Firebase account from a confirmed registration intent. The merged paid-access handler returns completion metadata (`uid`, `completed`, `accessExpiresAt`); the frontend then signs in and reloads `/session` for trusted profile/access/grant details. |
+| `POST` | `/payments/renewals/start` | Creates manual renewal checkout for the signed-in account. |
+| `GET` | `/payments/access/status` | Returns signed-in account entitlement/access details. |
+| `POST` | `/account/display-name` | Applies the 30-day display-name cooldown and returns updated `UserSession`. |
+| `POST` | `/account/email-change` | Records verified-email-change intent after client reauthentication and verification email dispatch. |
+
+## Workflow backend contract
+
+The production workflow client reads and writes through `VITE_SOAR_API_BASE_URL` using Firebase bearer auth.
+It consumes the content lane's organization, announcement, comment, like and dated-entry paths (`/organizations`, `/announcements`, and `/date-entries`) and the request lane's application and meeting paths (`/applications`, `/meeting-requests`, and organization-scoped officer subroutes).
+List responses may be arrays or `{ items, nextPageToken? }`; the UI currently renders the first page with clear loading, empty, error and save-result states.
+Application stages map backend `pending | under_review | accepted | declined` into `Pending | Under review | Accepted | Declined`.
+Meeting statuses map backend `pending | approved | declined` into `Pending | Approved | Declined`.
+Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired access is locked by the shared route guard.
 
 ## Design-system precedence
 

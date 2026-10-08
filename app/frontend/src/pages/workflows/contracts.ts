@@ -1,6 +1,6 @@
 import type { ApplicationStage, MeetingStatus, UserSession } from '../../lib/contracts';
 
-export type WorkflowDataMode = 'fixture' | 'unavailable';
+export type WorkflowDataMode = 'fixture' | 'production' | 'unavailable';
 
 export interface WorkflowQueryResult<T> {
   data: T;

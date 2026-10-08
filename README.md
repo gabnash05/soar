@@ -4,7 +4,7 @@
 
 ## Document status and source authority
 
-- **Status:** PRD v2, documentation-only. No implementation is included here.
+- **Status:** PRD v2 plus in-progress MVP implementation. React frontend and Firebase/Express backend foundations now live under `app/` while this README remains the product-requirements authority.
 - **Primary agreement:** the client-approved `docs/client-scope/Project Scope and Acceptance — Final.pdf` defines the feature boundaries, acceptance checks, exclusions, required inputs, and handover expectations.
 - **Confirmed amendments:** the later approved decisions recorded for this PRD supersede the PDF and supplied overview only where they conflict. Most notably, annual access is now **PHP10 per account per year**, replacing earlier PHP2 references.
 - **Supporting context:** `docs/client-scope/SOAR-project-overview.md` explains product direction, delivery context, and summarized workflows as originally supplied. The supplied `docs/client-scope/TECHNO/` source folder is evidence of the current draft, not the final requirement set.
@@ -160,7 +160,7 @@ The supplied `docs/client-scope/TECHNO/` folder is a static Firebase-hosted draf
 | Area | Current draft evidence | Target alignment needed |
 | --- | --- | --- |
 | Hosting/setup | Firebase hosting config exists for `public/`; source imports Firebase Auth and Firestore. | Continue using the existing Firebase project, then inspect and configure Authentication, database/storage, security rules, hosting, and any required functions. |
-| Framework | Plain HTML/CSS/JS pages with one large `script.js`; no build framework. | Framework migration is a later-phase proposal only. Do not treat React/Vue/Next/etc. as agreed scope until approved. |
+| Framework | The supplied intake draft was plain HTML/CSS/JS with one large `script.js`; the active MVP implementation now uses React, TypeScript and Vite under `app/frontend`. | Continue the approved React/Vite MVP path without expanding product scope or redesigning agreed workflows. |
 | Roles | Draft uses `student`, `organization`, and `sponsor`; login/register pages include role radios. | Keep sponsor as the outside-user label, remove sponsor-only tooling assumptions, remove TIN/government-ID collection, and add optional company/organization name. |
 | Auth/settings | Registration, login, sign-out, password reset, name cooldown, and email verification flow are partially implemented. | Enforce verified payment before account creation, role-appropriate access, verified email-save timing, personal-account settings, and officer organization settings. |
 | Organization officer onboarding | Draft includes organization proof upload and direct organization-account creation. | Replace with the confirmed project-administrator initial-owner assignment and owner-approved officer access. No initial proof upload is required. |
@@ -265,7 +265,7 @@ The supplied overview states a fixed development fee of **PHP3,000**, with first
 
 - **Agreed constraint:** use the existing Firebase project for accounts and saved records, with project file storage for images.
 - **Known access context:** Firebase administrator access is available, but actual configuration still needs inspection before implementation claims can be made.
-- **Proposal, not agreed requirement:** migrate the draft from plain HTML/CSS/JS to a maintainable frontend framework in a later phase so future agent work is safer and easier. Framework selection and frontend/backend design remain deferred until explicitly approved.
+- **Active implementation:** the approved MVP foundation uses React, TypeScript and Vite for the frontend under `app/frontend`, with Firebase/Express backend code under `app/backend`.
 - **Boundary:** this PRD does not define detailed frontend/backend architecture, database schema, payment webhook design, or deployment scripts.
 
 ### Repository intake guidance

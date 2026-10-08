@@ -26,6 +26,7 @@ import {
   todayIsoDate,
   validateMeetingRequest,
 } from './workflowUtils';
+import { createProductionWorkflowDataClient } from './apiClient';
 
 const unavailableMessage = 'Workflow services for announcements, organizations, applications, meetings, and officer tools are not connected yet. No sample save is live backend persistence.';
 
@@ -637,7 +638,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
 }
 
 export function getWorkflowDataClientForGatewayMode(mode: BackendGatewayMode): WorkflowDataClient {
-  return mode === 'fixture' ? createFixtureWorkflowDataClient() : unavailableWorkflowDataClient;
+  return mode === 'fixture' ? createFixtureWorkflowDataClient() : createProductionWorkflowDataClient();
 }
 
 export function createEmptyOfficerDateEntry(organizationId: string): DateEntryInput {

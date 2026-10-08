@@ -42,8 +42,15 @@ const makeFixtureSession = (email: string, overrides: Partial<UserSession> = {})
   const officer = lower.includes('officer');
   const expired = lower.includes('expired');
   const unverified = lower.includes('unverified');
+  const fixtureUid = lower.includes('sponsor')
+    ? 'sponsor-1'
+    : lower.includes('officer')
+      ? 'officer-1'
+      : lower.includes('student')
+        ? 'student-1'
+        : `fixture-${lower.replace(/[^a-z0-9]+/g, '-')}`;
   return {
-    uid: `fixture-${lower.replace(/[^a-z0-9]+/g, '-')}`,
+    uid: fixtureUid,
     email,
     displayName: sponsor ? 'Sam Sponsor' : officer ? 'Mara Officer' : 'Mara Santos',
     accountKind: sponsor ? 'sponsor' : 'student',
@@ -54,8 +61,8 @@ const makeFixtureSession = (email: string, overrides: Partial<UserSession> = {})
     officerGrants: officer
       ? [
           {
-            organizationId: 'coding-society',
-            organizationName: 'Coding Society',
+            organizationId: 'robotics',
+            organizationName: 'Robotics Guild',
             status: 'active',
             grantedBy: 'project-admin',
             grantedAt: pastIso(20),

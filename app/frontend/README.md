@@ -27,4 +27,4 @@ Set public Firebase web config and `VITE_SOAR_API_BASE_URL` for real auth/paymen
 - Sponsors have no application tools.
 - PHP10 payment must be provider-confirmed before account creation.
 - The browser never calls payment-provider secret APIs or includes Firebase Admin credentials.
-- Main workflow pages are placeholders until the workflows lane connects real backend data.
+- Main workflow pages provide opt-in fixture browsing and production API loading/error states; fixture data is never a production fallback.
