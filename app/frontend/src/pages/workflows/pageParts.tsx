@@ -126,7 +126,11 @@ export function RouteUnavailableState({ loading, session }: { loading: boolean; 
 }
 
 export function SourceNotice({ message, client }: { message?: string | null; client: WorkflowDataClient }) {
-  const copy = message || (client.mode === 'unavailable' ? getUnavailableCopy() : 'Development fixture mode: sample workflow state is local only.');
+  const copy = message || (client.mode === 'fixture'
+    ? 'Development fixture mode: sample workflow state is local only.'
+    : client.mode === 'production'
+      ? 'Configured backend services are in use. Failed saves or empty data are shown directly.'
+      : getUnavailableCopy());
   return (
     <Card className="notice-card">
       <p>

@@ -19,10 +19,10 @@ import {
   type RegistrationPaymentIntent,
   type RenewalRequest,
   type RenewalRequestInput,
-  ServiceUnavailableError,
   type SignInInput,
   type UserSession,
 } from './contracts';
+import { apiBaseUrl, apiFetch, authHeaders } from './apiClient';
 import { getFirebaseConfigStatus, getFirebaseRuntime } from './firebase';
 import { createFixtureGateway } from './fixtures';
 
@@ -42,59 +42,6 @@ export interface BackendGateway {
   updateDisplayName(input: NameChangeInput): Promise<UserSession>;
   requestEmailChange(input: EmailChangeInput): Promise<void>;
 }
-
-interface ApiResponse<T> {
-  data: T;
-}
-
-const apiBaseUrl = () => (import.meta.env.VITE_SOAR_API_BASE_URL || '').replace(/\/$/, '');
-
-const assertApiBase = () => {
-  const base = apiBaseUrl();
-  if (!base) {
-    throw new ServiceUnavailableError(
-      'SOAR backend API is not configured. Set VITE_SOAR_API_BASE_URL or enable VITE_SOAR_USE_FIXTURES=true for local UI development.',
-    );
-  }
-  return base;
-};
-
-const apiFetch = async <T>(path: string, init?: RequestInit): Promise<T> => {
-  const base = assertApiBase();
-  const response = await fetch(`${base}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-    credentials: 'include',
-  });
-
-  if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
-    try {
-      const body = (await response.json()) as { message?: string };
-      if (body.message) message = body.message;
-    } catch {
-      // Keep status-based message.
-    }
-    throw new Error(message);
-  }
-
-  const body = (await response.json()) as ApiResponse<T> | T;
-  return body && typeof body === 'object' && 'data' in body ? (body as ApiResponse<T>).data : (body as T);
-};
-
-const currentFirebaseIdToken = async () => {
-  const { auth } = getFirebaseRuntime();
-  const user = auth.currentUser;
-  return user ? user.getIdToken() : null;
-};
-
-const authHeaders = async (): Promise<HeadersInit> => {
-  const token = await currentFirebaseIdToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
 
 type RawAccessStatus = AccessEntitlement['status'] | 'none';
 
@@ -136,14 +83,14 @@ const createProductionGateway = (): BackendGateway => ({
     const { auth } = getFirebaseRuntime();
     if (!auth.currentUser) return null;
     await reload(auth.currentUser);
-    const session = await apiFetch<UserSession>('/auth/session', { headers: await authHeaders() });
+    const session = await apiFetch<UserSession>('/session', { headers: await authHeaders() });
     return mapSession({ ...session, emailVerified: auth.currentUser.emailVerified });
   },
 
   async signIn(input) {
     const { auth } = getFirebaseRuntime();
     const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
-    const session = await apiFetch<UserSession>('/auth/session', { headers: await authHeaders() });
+    const session = await apiFetch<UserSession>('/session', { headers: await authHeaders() });
     return mapSession({ ...session, emailVerified: credential.user.emailVerified });
   },
 
@@ -160,14 +107,14 @@ const createProductionGateway = (): BackendGateway => ({
   },
 
   async startRegistrationPayment(input) {
-    return apiFetch<RegistrationPaymentIntent>('/access/registration-intents', {
+    return apiFetch<RegistrationPaymentIntent>('/payments/registration/start', {
       method: 'POST',
       body: JSON.stringify(input),
     });
   },
 
   async getCheckoutStatus(intentId) {
-    return apiFetch<CheckoutStatus>(`/access/checkout-status?intentId=${encodeURIComponent(intentId)}`);
+    return apiFetch<CheckoutStatus>(`/payments/registration/status?intentId=${encodeURIComponent(intentId)}`);
   },
 
   async registerAccount(input) {
@@ -176,7 +123,7 @@ const createProductionGateway = (): BackendGateway => ({
       throw new Error('Payment is not confirmed yet. Account creation remains locked.');
     }
 
-    await apiFetch<{ uid: string; completed: boolean; accessExpiresAt?: string }>('/auth/register', {
+    await apiFetch<{ uid: string; completed: boolean; accessExpiresAt?: string }>('/payments/registration/complete', {
       method: 'POST',
       body: JSON.stringify(input),
     });
@@ -184,7 +131,7 @@ const createProductionGateway = (): BackendGateway => ({
     const { auth } = getFirebaseRuntime();
     const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
     await sendEmailVerification(credential.user);
-    const session = await apiFetch<UserSession>('/auth/session', { headers: await authHeaders() });
+    const session = await apiFetch<UserSession>('/session', { headers: await authHeaders() });
 
     return mapSession({ ...session, emailVerified: credential.user.emailVerified });
   },
@@ -196,7 +143,7 @@ const createProductionGateway = (): BackendGateway => ({
   },
 
   async requestManualRenewal(input) {
-    return apiFetch<RenewalRequest>('/access/renewals', {
+    return apiFetch<RenewalRequest>('/payments/renewals/start', {
       method: 'POST',
       headers: await authHeaders(),
       body: JSON.stringify(input),
@@ -204,7 +151,7 @@ const createProductionGateway = (): BackendGateway => ({
   },
 
   async getAccessStatus() {
-    const access = await apiFetch<RawAccess>('/access/status', { headers: await authHeaders() });
+    const access = await apiFetch<RawAccess>('/payments/access/status', { headers: await authHeaders() });
     return normalizeAccess(access);
   },
 
@@ -213,8 +160,8 @@ const createProductionGateway = (): BackendGateway => ({
     if (auth.currentUser) {
       await updateProfile(auth.currentUser, { displayName: input.displayName });
     }
-    const session = await apiFetch<UserSession>('/settings/display-name', {
-      method: 'PATCH',
+    const session = await apiFetch<UserSession>('/account/display-name', {
+      method: 'POST',
       headers: await authHeaders(),
       body: JSON.stringify(input),
     });
@@ -227,7 +174,7 @@ const createProductionGateway = (): BackendGateway => ({
     const credential = EmailAuthProvider.credential(auth.currentUser.email, input.currentPassword);
     await reauthenticateWithCredential(auth.currentUser, credential);
     await verifyBeforeUpdateEmail(auth.currentUser, input.newEmail);
-    await apiFetch('/settings/email-change-intents', {
+    await apiFetch('/account/email-change', {
       method: 'POST',
       headers: await authHeaders(),
       body: JSON.stringify({ newEmail: input.newEmail }),
