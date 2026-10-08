@@ -1,0 +1,102 @@
+# SOAR frontend foundation contract
+
+## Implementation choices
+
+- App root: `app/frontend`.
+- Framework: React + TypeScript + Vite. This repo had no existing frontend framework, so the lightweight Vite client is the foundation path.
+- Routing: `react-router-dom` browser routes with explicit guards.
+- Styling: project CSS tokens in `src/styles/tokens.css` and component/page styles in `src/styles/app.css`; no CSS framework dependency.
+- Runtime services: environment-driven Firebase client initialization plus typed backend gateway interfaces. The browser never stores provider secrets and never calls payment-provider secret APIs.
+- Fixture mode: `VITE_SOAR_USE_FIXTURES=true` enables named development fixtures. Fixture mode is opt-in and should not be used as production readiness evidence.
+
+## Shared route contract
+
+Frontend foundation owns public/access/settings routes and the shell. The workflows lane should implement the route components below under `src/pages/workflows` with default exports and no duplicate style system.
+
+| Route | Workflow file | Export | Guard | Purpose |
+| --- | --- | --- | --- | --- |
+| `/app` | `src/pages/workflows/FeedPage.tsx` | `default function FeedPage()` | active access | announcements/home feed |
+| `/app/directory` | `src/pages/workflows/DirectoryPage.tsx` | `default function DirectoryPage()` | active access | searchable organization directory |
+| `/app/organizations/:organizationId` | `src/pages/workflows/OrganizationPage.tsx` | `default function OrganizationPage()` | active access | organization profile, recruitment, events, meeting/application entry points |
+| `/app/applications` | `src/pages/workflows/ApplicationsPage.tsx` | `default function ApplicationsPage()` | active student access | student application tracker |
+| `/app/meetings` | `src/pages/workflows/MeetingsPage.tsx` | `default function MeetingsPage()` | active access | requester meeting tracker |
+| `/app/officer` | `src/pages/workflows/OfficerPage.tsx` | `default function OfficerPage()` | active access + approved organization grant | officer tools for approved organizations only |
+
+Foundation currently binds these routes to clear unavailable placeholders until the workflows PR supplies those files. The placeholders are intentionally disabled and do not pretend to save workflow data.
+
+## Shared data contracts
+
+Use the shared domain types from `src/lib/contracts.ts`:
+
+- `AccountKind = 'student' | 'sponsor'` (officer is an organization grant on a student account, not an account kind).
+- `AccessStatus = 'active' | 'pending' | 'failed' | 'cancelled' | 'expired' | 'revoked' | 'missing'`. Backend entitlement documents use `active | expired | revoked`; checkout-intent responses may additionally use pending/failed/cancelled/missing before an entitlement exists.
+- `ApplicationStage = 'Pending' | 'Under review' | 'Accepted' | 'Declined'`.
+- `MeetingStatus = 'Pending' | 'Approved' | 'Declined'`.
+- `UserSession` includes trusted `access` and `officerGrants` from backend/auth claims, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI.
+
+Workflow pages should consume foundation hooks/components instead of creating a parallel adapter:
+
+- `useAuth()` for trusted session, access, email verification and sign out.
+- `useBackendGateway()` for backend calls.
+- Shared UI from `src/components/ui`.
+- Navigation metadata from `src/router/nav.ts`; route guards/bootstrap live in `src/router/routes.tsx`.
+
+## Backend gateway contract
+
+Shared backend coordination read: `/home/gab/agent-workspace/firstmate/data/soar-identity-foundation/payment-coordination.md`. Frontend expects backend responses to map identity-owned Firestore records into the `UserSession` shape above: `accounts/{uid}` -> profile fields, `entitlements/{uid}` -> `access`, and `organizations/{orgId}/officerGrants/{uid}` -> `officerGrants`. Backend `officerGrants.status: "active"` is rendered as approved officer access.
+
+`src/lib/backendGateway.ts` defines these frontend-facing methods:
+
+- `startRegistrationPayment(input)` creates a payment-before-account registration intent and hosted checkout URL.
+- `getCheckoutStatus(intentId)` returns provider-confirmed status from the backend; the client never marks payment successful by itself.
+- `registerAccount(input)` calls the backend after confirmed payment; backend/paid-access lanes own idempotent provider-intent handling, Firebase Auth user creation, `accounts/{uid}`, and `entitlements/{uid}` initialization. The frontend may sign in afterward to send/reload email verification, but it does not create production Auth users client-side. This aligns with the backend helper shape `createPaidAccountFromConfirmedRegistration({ email, password, displayName, role, studentId?, companyName?, entitlement }) -> { uid }`; account creation must be recoverable/idempotent across provider and Firebase services, not assumed atomic from a Firestore transaction alone.
+- `signIn`, `sendPasswordRecovery`, `reloadSession`, `signOut` manage auth.
+- `requestManualRenewal`, `getAccessStatus`, `updateDisplayName`, `requestEmailChange` power access/settings screens.
+
+Production mode requires `VITE_SOAR_API_BASE_URL` and public Firebase config. Missing backend/Firebase configuration surfaces as an unavailable state rather than a false successful login/payment.
+
+Current HTTP paths used by the production gateway are intentionally small and can be adapted by the backend lane behind the same method names if route names change:
+
+| Method | Path | Frontend expectation |
+| --- | --- | --- |
+| `GET` | `/auth/session` | Returns trusted `UserSession` for the current Firebase ID token. |
+| `POST` | `/access/registration-intents` | Creates provider checkout for PHP10 registration payment and returns `RegistrationPaymentIntent`. |
+| `GET` | `/access/checkout-status?intentId=:intentId` | Returns `CheckoutStatus`; only `status: active` with `canCreateAccount: true` unlocks account creation. Matches the merged JS paid-access handler's query/body `intentId` input. |
+| `POST` | `/auth/register` | Server creates paid Firebase account from confirmed registration intent. The merged paid-access handler returns completion metadata (`uid`, `completed`, `accessExpiresAt`); the frontend then signs in and reloads `/auth/session` for trusted profile/access/grant details. |
+| `POST` | `/access/renewals` | Creates manual renewal checkout for the signed-in account. |
+| `GET` | `/access/status` | Returns signed-in account entitlement/access details. |
+| `PATCH` | `/settings/display-name` | Applies the 30-day display-name cooldown and returns updated `UserSession`. |
+| `POST` | `/settings/email-change-intents` | Records verified-email-change intent after client reauthentication and verification email dispatch. |
+
+## Design-system precedence
+
+Imported source export: `docs/design-system/Soar-Design-System/` excluding Windows `:Zone.Identifier` files.
+
+Canonical visual source precedence for product UI:
+
+1. Approved UX wireframe behavior and final backend decisions for flows/copy/permissions.
+2. Customized `soar-design-system-v2.html` and `brand-spec.md` for SOAR colors, typography, spacing, radii, shadows, focus/validation states and responsive breakpoints.
+3. Generated token files (`system/tokens.*.json`, `system/variables*.css`) only when they agree with the customized v2 source.
+4. Generic `DESIGN.md`, `brand.json`, and `theme.json` Slack purple/branding are retained as export provenance, not product truth.
+
+Canonical tokens extracted for implementation:
+
+- Navy `#1A1851` for hierarchy and shell.
+- Campus gold `#FCB315` for the primary action in a decision area.
+- Deep blue `#0D4A77` and sky blue `#329DEA` for links, informational status and focus.
+- Bright/warm orange `#FF9718` / `#FF6418` for progress, warning and validation attention.
+- Surfaces: white cards on off-white `#f8f9fc`, ink `#16162a`, muted `#5d6275`, border `#dfe2ea`.
+- Type: display `Avenir Next`, `Segoe UI Variable Display`, `Segoe UI`, sans-serif; body `Segoe UI Variable Text`, `Segoe UI`, Arial, sans-serif.
+- Spacing: 8px rhythm, 44px minimum targets, compact 4-8px title/detail gaps, 12-16px control gaps.
+- Radii: 6px small, 10px card, 16px feature, pill `999px`.
+- Shadows/motion: soft elevation and 160ms state transitions; reduced-motion media query disables transitions.
+
+## Wireframe/export UX conflicts resolved
+
+- Export preview showed generic product examples and some Slack-derived source material; implementation follows SOAR wireframe flows and product copy, not Slack marketing or Open Design preview chrome.
+- Officers are not a separate signup persona. UI exposes officer tools only after trusted organization grants on a student account.
+- Students/officers require student ID. Sponsors use optional company/organization name and have no application tools.
+- PHP10 payment is required before account creation; pending/failed/cancelled states never unlock registration.
+- Email verification gates the main app after account creation.
+- Expired access locks main workflow routes while keeping recovery, payment/renewal and settings paths available.
+- External-form opening is separate from explicit SOAR submission confirmation; workflows must keep confirmation locked until the form is opened/returned and still rely on backend duplicate prevention.
