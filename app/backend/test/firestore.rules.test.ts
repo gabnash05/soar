@@ -122,10 +122,14 @@ async function seedBaseData() {
     });
 
     await setDoc(doc(db, 'applications', 'app1'), {
+      applicationId: 'app1',
       studentUid: 'student',
+      studentName: 'Student User',
       orgId: 'org1',
-      status: 'pending',
-      position: 'Member',
+      organizationName: 'Robotics Club',
+      opportunityId: 'org1-member',
+      opportunityTitle: 'Member',
+      status: 'Pending',
       externalFormOpenedAt: oldEnough,
       externalSubmissionConfirmedAt: oldEnough,
       createdAt: oldEnough,
@@ -133,9 +137,15 @@ async function seedBaseData() {
     });
 
     await setDoc(doc(db, 'meetingRequests', 'meeting1'), {
+      meetingRequestId: 'meeting1',
       requesterUid: 'student',
+      requesterName: 'Student User',
+      requesterRole: 'student',
       orgId: 'org1',
-      status: 'pending',
+      organizationName: 'Robotics Club',
+      dateEntryId: 'date1',
+      meetingTitle: 'Interview window',
+      status: 'Pending',
       requestedDate: '2026-10-10',
       requestedTime: '10:00',
       createdAt: oldEnough,
@@ -278,83 +288,56 @@ describe('workflow record boundaries enforced by rules', () => {
     await assertFails(getDoc(doc(dbFor('foreign'), 'applications', 'app1')));
   });
 
-  it('requires student self-ownership and explicit external submission confirmation for applications', async () => {
-    await assertSucceeds(setDoc(doc(dbFor('student'), 'applications', 'app2'), {
-      studentUid: 'student',
-      orgId: 'org1',
-      status: 'pending',
-      position: 'Member',
-      externalFormOpenedAt: oldEnough,
-      externalSubmissionConfirmedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    }));
-
-    await assertFails(setDoc(doc(dbFor('sponsor'), 'applications', 'sponsor-app'), {
-      studentUid: 'sponsor',
-      orgId: 'org1',
-      status: 'pending',
-      position: 'Member',
-      externalFormOpenedAt: oldEnough,
-      externalSubmissionConfirmedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    }));
-
-    await assertFails(setDoc(doc(dbFor('student'), 'applications', 'foreign-app'), {
-      studentUid: 'foreign',
-      orgId: 'org1',
-      status: 'pending',
-      position: 'Member',
-      externalFormOpenedAt: oldEnough,
-      externalSubmissionConfirmedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    }));
+  it('allows only the requester or organization managers to read meeting records', async () => {
+    await assertSucceeds(getDoc(doc(dbFor('student'), 'meetingRequests', 'meeting1')));
+    await assertSucceeds(getDoc(doc(dbFor('owner'), 'meetingRequests', 'meeting1')));
+    await assertSucceeds(getDoc(doc(dbFor('officer'), 'meetingRequests', 'meeting1')));
+    await assertFails(getDoc(doc(dbFor('foreign'), 'meetingRequests', 'meeting1')));
   });
 
-  it('allows organization managers, not foreign users, to decide applications and meetings', async () => {
-    await assertSucceeds(updateDoc(doc(dbFor('owner'), 'applications', 'app1'), {
-      status: 'under_review',
+  it('requires trusted backend writes for application confirmations and stage changes', async () => {
+    await assertFails(setDoc(doc(dbFor('student'), 'applications', 'app2'), {
+      applicationId: 'app2',
+      studentUid: 'student',
+      studentName: 'Student User',
+      orgId: 'org1',
+      organizationName: 'Robotics Club',
+      opportunityId: 'org1-member',
+      opportunityTitle: 'Member',
+      status: 'Pending',
+      externalFormOpenedAt: oldEnough,
+      externalSubmissionConfirmedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }));
+
+    await assertFails(updateDoc(doc(dbFor('owner'), 'applications', 'app1'), {
+      status: 'Under review',
       reviewedByUid: 'owner',
       updatedAt: serverTimestamp()
     }));
-    await assertFails(updateDoc(doc(dbFor('foreign'), 'applications', 'app1'), {
-      status: 'accepted',
-      reviewedByUid: 'foreign',
-      updatedAt: serverTimestamp()
-    }));
-
-    await assertSucceeds(updateDoc(doc(dbFor('officer'), 'meetingRequests', 'meeting1'), {
-      status: 'approved',
-      decidedByUid: 'officer',
-      updatedAt: serverTimestamp()
-    }));
-    await assertFails(updateDoc(doc(dbFor('foreign'), 'meetingRequests', 'meeting1'), {
-      status: 'declined',
-      decidedByUid: 'foreign',
-      updatedAt: serverTimestamp()
-    }));
   });
 
-  it('allows active students and sponsors to create their own pending meeting requests', async () => {
-    await assertSucceeds(setDoc(doc(dbFor('sponsor'), 'meetingRequests', 'sponsor-meeting'), {
+  it('requires trusted backend writes for meeting requests and decisions', async () => {
+    await assertFails(setDoc(doc(dbFor('sponsor'), 'meetingRequests', 'sponsor-meeting'), {
+      meetingRequestId: 'sponsor-meeting',
       requesterUid: 'sponsor',
+      requesterName: 'Sponsor User',
+      requesterRole: 'sponsor',
       orgId: 'org1',
-      status: 'pending',
+      organizationName: 'Robotics Club',
+      dateEntryId: 'date1',
+      meetingTitle: 'Interview window',
+      status: 'Pending',
       requestedDate: '2026-10-10',
       requestedTime: '11:00',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     }));
 
-    await assertFails(setDoc(doc(dbFor('student'), 'meetingRequests', 'bad-meeting'), {
-      requesterUid: 'foreign',
-      orgId: 'org1',
-      status: 'pending',
-      requestedDate: '2026-10-10',
-      requestedTime: '11:00',
-      createdAt: serverTimestamp(),
+    await assertFails(updateDoc(doc(dbFor('officer'), 'meetingRequests', 'meeting1'), {
+      status: 'Approved',
+      decidedByUid: 'officer',
       updatedAt: serverTimestamp()
     }));
   });

@@ -25,6 +25,7 @@ import {
   updateDateEntry,
   updateOrganizationProfile
 } from '../content/service';
+import { mountRequestRoutes } from '../requests/routes';
 
 function sendError(res: Response, error: unknown): void {
   if (error instanceof ZodError) {
@@ -77,7 +78,7 @@ export function createApiApp() {
   app.use(express.json({ limit: '256kb' }));
 
   app.get(['/health', '/api/health'], (_req, res) => {
-    res.json({ ok: true, service: 'soar-backend', scope: 'identity-payments-content-foundation' });
+    res.json({ ok: true, service: 'soar-backend', scope: 'identity-payments-content-requests-foundation' });
   });
 
   app.get(['/session', '/api/session'], asyncRoute(async (req, res) => {
@@ -220,6 +221,8 @@ export function createApiApp() {
     const admin = await requireAdmin(req);
     res.status(201).json(await assignInitialOrganizationOwner(req.body, admin.uid));
   }));
+
+  mountRequestRoutes(app, asyncRoute);
 
   app.use((_req, res) => {
     res.status(404).json({ code: 'not_found', message: 'Endpoint not found.' });
