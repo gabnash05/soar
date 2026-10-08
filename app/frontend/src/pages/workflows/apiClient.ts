@@ -48,8 +48,8 @@ function mapStage(stage: unknown): ApplicationStage {
   return 'Pending';
 }
 
-function toBackendStage(stage: ApplicationStage): string {
-  return stage === 'Under review' ? 'under_review' : stage.toLowerCase();
+function toBackendStage(stage: ApplicationStage): ApplicationStage {
+  return stage;
 }
 
 function mapMeetingStatus(status: unknown): MeetingStatus {
@@ -59,8 +59,8 @@ function mapMeetingStatus(status: unknown): MeetingStatus {
   return 'Pending';
 }
 
-function toBackendMeetingStatus(status: Exclude<MeetingStatus, 'Pending'>): string {
-  return status.toLowerCase();
+function toBackendMeetingStatus(status: Exclude<MeetingStatus, 'Pending'>): Exclude<MeetingStatus, 'Pending'> {
+  return status;
 }
 
 function mapAnnouncement(raw: unknown): Announcement {
@@ -243,7 +243,8 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     },
 
     async confirmExternalApplication(input: ApplicationConfirmationInput) {
-      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(input.organizationId)}/applications`, await bodyInit({
+      const response = await apiFetch<unknown>('/requests/applications/confirm', await bodyInit({
+        organizationId: input.organizationId,
         opportunityId: input.opportunityId,
         externalFormOpened: input.externalFormOpened,
         confirmedExternalSubmission: input.confirmedExternalSubmission,
@@ -252,7 +253,7 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     },
 
     async listMyApplications() {
-      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/applications', await activeHeaders());
+      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/requests/applications/mine', await activeHeaders());
       return queryResult(listItems(response).map(mapApplication));
     },
 
@@ -262,12 +263,12 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     },
 
     async listMyMeetingRequests() {
-      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/meeting-requests', await activeHeaders());
+      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/requests/meetings/mine', await activeHeaders());
       return queryResult(listItems(response).map(mapMeetingRequest));
     },
 
     async requestMeeting(input: MeetingRequestInput) {
-      const response = await apiFetch<unknown>('/meeting-requests', await bodyInit(input));
+      const response = await apiFetch<unknown>('/requests/meetings', await bodyInit(input));
       return mutationResult('Meeting request created as Pending.', mapMeetingRequest(response));
     },
 
@@ -275,9 +276,9 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       const [organization, announcements, applicants, dateEntries, meetingRequests] = await Promise.all([
         apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}`, await activeHeaders()),
         apiFetch<ListEnvelope<unknown> | unknown[]>(`/announcements?orgId=${encodeURIComponent(organizationId)}`, await activeHeaders()),
-        apiFetch<ListEnvelope<unknown> | unknown[]>(`/organizations/${encodeURIComponent(organizationId)}/applications`, await activeHeaders()),
+        apiFetch<ListEnvelope<unknown> | unknown[]>(`/requests/organizations/${encodeURIComponent(organizationId)}/applications`, await activeHeaders()),
         apiFetch<ListEnvelope<unknown> | unknown[]>(`/organizations/${encodeURIComponent(organizationId)}/date-entries`, await activeHeaders()),
-        apiFetch<ListEnvelope<unknown> | unknown[]>(`/organizations/${encodeURIComponent(organizationId)}/meeting-requests`, await activeHeaders()),
+        apiFetch<ListEnvelope<unknown> | unknown[]>(`/requests/organizations/${encodeURIComponent(organizationId)}/meetings`, await activeHeaders()),
       ]);
       return queryResult<OfficerDashboard>({
         organization: mapOrganizationProfile(organization),
@@ -304,7 +305,7 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     },
 
     async updateApplicationStage(applicationId, stage: ApplicationStage, organizationId) {
-      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}/applications/${encodeURIComponent(applicationId)}/stage`, await bodyInit({ stage: toBackendStage(stage) }, 'PATCH'));
+      const response = await apiFetch<unknown>(`/requests/organizations/${encodeURIComponent(organizationId)}/applications/${encodeURIComponent(applicationId)}/stage`, await bodyInit({ status: toBackendStage(stage) }, 'PATCH'));
       return mutationResult(`Application moved to ${stage}.`, mapApplication(response));
     },
 
@@ -322,7 +323,7 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     },
 
     async decideMeetingRequest(meetingRequestId, status: Exclude<MeetingStatus, 'Pending'>, organizationId) {
-      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}/meeting-requests/${encodeURIComponent(meetingRequestId)}/status`, await bodyInit({ status: toBackendMeetingStatus(status) }, 'PATCH'));
+      const response = await apiFetch<unknown>(`/requests/organizations/${encodeURIComponent(organizationId)}/meetings/${encodeURIComponent(meetingRequestId)}/status`, await bodyInit({ status: toBackendMeetingStatus(status) }, 'PATCH'));
       return mutationResult(`Meeting request ${status.toLowerCase()}.`, mapMeetingRequest(response));
     },
   };

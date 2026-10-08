@@ -71,10 +71,10 @@ Current HTTP paths used by the production identity/payment gateway match the mer
 ## Workflow backend contract
 
 The production workflow client reads and writes through `VITE_SOAR_API_BASE_URL` using Firebase bearer auth.
-It consumes the content lane's organization, announcement, comment, like and dated-entry paths (`/organizations`, `/announcements`, and `/date-entries`) and the request lane's application and meeting paths (`/applications`, `/meeting-requests`, and organization-scoped officer subroutes).
+It consumes the content lane's organization, announcement, comment, like and dated-entry paths (`/organizations`, `/announcements`, and `/date-entries`) and the request lane's application and meeting paths under `/requests` (`/requests/applications/confirm`, `/requests/applications/mine`, `/requests/meetings`, `/requests/meetings/mine`, and `/requests/organizations/:orgId/...` officer subroutes).
 List responses may be arrays or `{ items, nextPageToken? }`; the UI currently renders the first page with clear loading, empty, error and save-result states.
-Application stages map backend `pending | under_review | accepted | declined` into `Pending | Under review | Accepted | Declined`.
-Meeting statuses map backend `pending | approved | declined` into `Pending | Approved | Declined`.
+Application stages preserve the request-service labels `Pending | Under review | Accepted | Declined` and still tolerate older snake/lowercase response values when reading.
+Meeting statuses preserve the request-service labels `Pending | Approved | Declined` and still tolerate older lowercase response values when reading.
 Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired access is locked by the shared route guard.
 
 ## Design-system precedence
