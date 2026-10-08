@@ -9,10 +9,10 @@ export type EntitlementStatus = (typeof ENTITLEMENT_STATUSES)[number];
 export const OFFICER_GRANT_STATUSES = ['active', 'revoked'] as const;
 export type OfficerGrantStatus = (typeof OFFICER_GRANT_STATUSES)[number];
 
-export const APPLICATION_STATUSES = ['pending', 'under_review', 'accepted', 'declined'] as const;
+export const APPLICATION_STATUSES = ['Pending', 'Under review', 'Accepted', 'Declined'] as const;
 export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
 
-export const MEETING_STATUSES = ['pending', 'approved', 'declined'] as const;
+export const MEETING_STATUSES = ['Pending', 'Approved', 'Declined'] as const;
 export type MeetingStatus = (typeof MEETING_STATUSES)[number];
 
 export interface AccountDocument {
@@ -60,6 +60,7 @@ export interface EntitlementProviderEventDocument {
 }
 
 export interface OrganizationRecruitment {
+  opportunityId?: string;
   title?: string;
   requirements?: string;
   instructions?: string;

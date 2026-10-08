@@ -21,7 +21,7 @@ Implemented in this PR:
 Not implemented here:
 
 - Full frontend migration.
-- Full announcements, applications, calendar, or meeting service APIs.
+- Full announcements or calendar service APIs outside the request-service endpoints documented in `docs/backend/requests.md`.
 - A general admin dashboard.
 - A student organization-creation request queue.
 - Production deploys, live payment charges, Firebase billing changes, or account migrations.

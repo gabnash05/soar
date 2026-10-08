@@ -155,43 +155,13 @@ service cloud.firestore {
     match /applications/{applicationId} {
       allow get: if activeUser()
         && (resource.data.studentUid == request.auth.uid || canManageOrganization(resource.data.orgId));
-      allow list: if false;
-      allow create: if studentUser()
-        && ownedBySelf('studentUid')
-        && request.resource.data.orgId is string
-        && request.resource.data.status == 'pending'
-        && request.resource.data.externalFormOpenedAt is timestamp
-        && request.resource.data.externalSubmissionConfirmedAt == request.time
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if activeUser()
-        && resource.data.orgId is string
-        && canManageOrganization(resource.data.orgId)
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'reviewedByUid', 'updatedAt'])
-        && request.resource.data.status in ['pending', 'under_review', 'accepted', 'declined']
-        && request.resource.data.reviewedByUid == request.auth.uid
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if false;
+      allow list, create, update, delete: if false;
     }
 
     match /meetingRequests/{requestId} {
       allow get: if activeUser()
         && (resource.data.requesterUid == request.auth.uid || canManageOrganization(resource.data.orgId));
-      allow list: if false;
-      allow create: if activeUser()
-        && (studentUser() || sponsorUser())
-        && ownedBySelf('requesterUid')
-        && request.resource.data.status == 'pending'
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if activeUser()
-        && resource.data.orgId is string
-        && canManageOrganization(resource.data.orgId)
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status', 'decidedByUid', 'updatedAt'])
-        && request.resource.data.status in ['pending', 'approved', 'declined']
-        && request.resource.data.decidedByUid == request.auth.uid
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if false;
+      allow list, create, update, delete: if false;
     }
 
     match /{document=**} {

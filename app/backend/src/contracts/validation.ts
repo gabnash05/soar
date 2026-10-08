@@ -50,6 +50,7 @@ export const organizationProfileSchema = z.object({
   contactEmail: emailSchema.optional(),
   logoPath: trimmedString.max(512).optional(),
   recruitment: z.object({
+    opportunityId: trimmedString.min(2).max(160).regex(/^[A-Za-z0-9_-]+$/).optional(),
     title: trimmedString.max(140).optional(),
     requirements: trimmedString.max(4000).optional(),
     instructions: trimmedString.max(4000).optional(),

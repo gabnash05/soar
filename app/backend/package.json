@@ -11,9 +11,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run test:payments && npm run test:content",
+    "test": "npm run test:payments && npm run test:content && npm run test:requests",
     "test:payments": "node --test src/payments/__tests__/payments.test.js",
     "test:content": "vitest run src/content/__tests__/content.test.ts",
+    "test:requests": "vitest run test/requests.service.test.ts",
     "test:rules": "vitest run test/firestore.rules.test.ts test/storage.rules.test.ts",
     "test:rules:firestore": "vitest run test/firestore.rules.test.ts",
     "test:rules:storage": "vitest run test/storage.rules.test.ts"
