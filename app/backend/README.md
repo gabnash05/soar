@@ -4,15 +4,19 @@ This backend is the Firebase Functions/Express foundation for identity, paid acc
 
 ## Local emulator boundary
 
-Use a demo emulator project for local inspection. This keeps local data separate from the existing production Firebase project (`soar-a711e`) and avoids live Firebase, billing, payment-provider, or production data operations.
+Use the demo emulator project `demo-soar-local` for local inspection. This keeps local data separate from the existing production Firebase project (`soar-a711e`) and avoids live Firebase, billing, payment-provider, or production data operations.
 
-The repository keeps the production binding in `.env.example`/root scripts, but local MVP inspection should use `firebase.local.json` and `--project demo-soar-local`:
+The repository keeps the production binding in `.env.example`/root scripts. For local MVP inspection, use the bounded backend helper instead of the plain Firebase CLI Firestore startup:
 
 ```bash
-export JAVA_HOME=/home/gab/agent-workspace/firstmate/data/soar-identity-foundation/java/jdk
-export PATH="$JAVA_HOME/bin:$PATH"
-npx firebase emulators:start --config firebase.local.json --project demo-soar-local --only auth,functions,firestore,storage
+# Optional when Java 21 is not already on PATH:
+# export JAVA_HOME=/path/to/jdk-21
+# export PATH="$JAVA_HOME/bin:$PATH"
+
+npm --workspace app/backend run emulators:start
 ```
+
+Stop it with `Ctrl-C`. The helper starts only loopback listeners and tears down only its own direct Firestore child process when it exits.
 
 Local service addresses:
 
@@ -20,22 +24,25 @@ Local service addresses:
 - Backend API base URL for the frontend: `http://127.0.0.1:15001/demo-soar-local/asia-southeast1/api`
 - Firebase Auth emulator: `127.0.0.1:19099`
 - Firestore emulator: `127.0.0.1:18080`
+- Firestore WebChannel port: `127.0.0.1:18081`
 - Storage emulator: `127.0.0.1:19199`
 
 The emulator command does not require Firebase CLI login for local demo resources. It is not evidence that production Firebase credentials are configured.
 
 `app/backend/functions.yaml` is a generated Firebase Functions manifest for the current `api` export. It keeps local Functions discovery on a supported path in environments where the Firebase Functions discovery server is not reachable over IPv4 loopback.
 
-## Current local blocker
+## Why there is a small local helper
 
-Keep emulator listeners loopback-only. In this WSL lane, the Firestore emulator from `firebase-tools` 15.32.1 / Firestore emulator 1.22.0 starts with `host: 127.0.0.1` and then exits with:
+Keep emulator listeners loopback-only. In this WSL lane, the Firestore emulator started by Firebase CLI from `firebase-tools` 15.32.1 exits on `host: 127.0.0.1` with:
 
 ```text
 java.lang.IllegalArgumentException: Failed to init the HTTP server.
 Caused by: java.net.SocketException: Invalid argument
 ```
 
-Binding Firestore to `0.0.0.0` avoids that emulator crash, but it is not used in the checked-in local config because it exposes the emulator beyond localhost. A direct Firestore emulator Java invocation with an explicit `--webchannel_port` also stays alive on `127.0.0.1`, which narrows the failure to Firebase CLI startup not passing a separate WebChannel port. `firebase-tools` 15.32.1 does not expose that setting through `firebase.json`, and a task-local `firebase-tools` 14.27.0 / Firestore emulator 1.19.8 counterfactual showed the same loopback crash. Until there is a supported loopback way to pass the WebChannel port through the Firebase CLI, only bounded Auth/Functions health checks are local-ready; Firestore/Storage-backed MVP inspection is blocked.
+Binding Firestore to `0.0.0.0` avoids that emulator crash, but it is not used in the checked-in local config because it exposes the emulator beyond localhost. A direct Firestore emulator Java invocation with an explicit `--webchannel_port` stays alive on `127.0.0.1`, which narrows the failure to Firebase CLI startup not passing a separate WebChannel port. The helper uses that direct Java invocation for Firestore only, loads the checked-in `firestore.rules`, then starts the existing Firebase CLI emulators for Auth, Functions, and Storage on loopback. It also preloads a tiny Firebase CLI registry shim so Storage rules can resolve the independently started Firestore emulator while preserving the real Storage rules authorization checks.
+
+This is a bounded local workaround for the reproduced Firestore loopback/WebChannel issue, not a production launcher or deployment path.
 
 ## Frontend environment handoff
 
@@ -54,12 +61,28 @@ Do not add production payment-provider secrets or service-account keys to fronte
 
 ## Checks
 
+General backend checks:
+
 ```bash
 npm run typecheck
 npm --workspace app/backend run test
 npm run build
 ```
 
-Storage rules tests use the active emulator project id when one is supplied by `firebase emulators:exec`, so Storage rules can correctly evaluate Firestore-backed entitlement and organization documents during cross-service tests. Preserve this project alignment if moving the tests to another emulator command.
+With `npm --workspace app/backend run emulators:start` running in another terminal, focused rules checks can be run against the loopback emulators:
+
+```bash
+GCLOUD_PROJECT=demo-soar-local \
+FIRESTORE_EMULATOR_HOST=127.0.0.1:18080 \
+FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:19199 \
+npm --workspace app/backend run test:rules:firestore
+
+GCLOUD_PROJECT=demo-soar-local \
+FIRESTORE_EMULATOR_HOST=127.0.0.1:18080 \
+FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:19199 \
+npm --workspace app/backend run test:rules:storage
+```
+
+Storage rules tests use the active emulator project id when one is supplied, so Storage rules can correctly evaluate Firestore-backed entitlement and organization documents. Preserve this project alignment if moving the tests to another emulator command.
 
 Any seeded users, organizations, or entitlements for demos must be created only in the emulator and labelled as demo data. Do not use seeded data as a payment or authentication bypass in production.
