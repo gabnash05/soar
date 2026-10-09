@@ -35,7 +35,7 @@ java.lang.IllegalArgumentException: Failed to init the HTTP server.
 Caused by: java.net.SocketException: Invalid argument
 ```
 
-Binding Firestore to `0.0.0.0` avoids that emulator crash, but it is not used in the checked-in local config because it exposes the emulator beyond localhost. Until the Firestore emulator loopback crash is resolved in the local environment, only bounded Auth/Functions health checks are local-ready; Firestore/Storage-backed MVP inspection is blocked.
+Binding Firestore to `0.0.0.0` avoids that emulator crash, but it is not used in the checked-in local config because it exposes the emulator beyond localhost. A direct Firestore emulator Java invocation with an explicit `--webchannel_port` also stays alive on `127.0.0.1`, which narrows the failure to Firebase CLI startup not passing a separate WebChannel port. `firebase-tools` 15.32.1 does not expose that setting through `firebase.json`, and a task-local `firebase-tools` 14.27.0 / Firestore emulator 1.19.8 counterfactual showed the same loopback crash. Until there is a supported loopback way to pass the WebChannel port through the Firebase CLI, only bounded Auth/Functions health checks are local-ready; Firestore/Storage-backed MVP inspection is blocked.
 
 ## Frontend environment handoff
 
