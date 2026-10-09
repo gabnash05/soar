@@ -4,7 +4,17 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 
-const projectId = `soar-storage-rules-${Date.now()}`;
+const projectId = process.env.GCLOUD_PROJECT ?? `soar-storage-rules-${Date.now()}`;
+
+function emulatorHostPort(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = new URL(`http://${value}`);
+  return { host: parsed.hostname, port: Number(parsed.port) };
+}
+
 let testEnv: RulesTestEnvironment;
 
 const future = Timestamp.fromDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
@@ -73,10 +83,12 @@ beforeAll(async () => {
   testEnv = await initializeTestEnvironment({
     projectId,
     firestore: {
-      rules: readFileSync(resolve(process.cwd(), '../../firestore.rules'), 'utf8')
+      rules: readFileSync(resolve(process.cwd(), '../../firestore.rules'), 'utf8'),
+      ...emulatorHostPort(process.env.FIRESTORE_EMULATOR_HOST)
     },
     storage: {
-      rules: readFileSync(resolve(process.cwd(), '../../storage.rules'), 'utf8')
+      rules: readFileSync(resolve(process.cwd(), '../../storage.rules'), 'utf8'),
+      ...emulatorHostPort(process.env.FIREBASE_STORAGE_EMULATOR_HOST)
     }
   });
 });
