@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ButtonLink, Card, StateBlock, StatusChip } from '../../components/ui';
+import { Button, ButtonLink, Card, StateBlock, StatusChip } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { WorkflowDataClient } from '../workflows/contracts';
 import {
-  AnnouncementSection,
   DateEntriesSection,
   OfficerDashboardBlock,
   OfficerOrganizationPicker,
@@ -20,7 +19,7 @@ import {
 import { getApprovedOfficerGrants } from '../workflows/workflowUtils';
 
 export function OrganizationSettingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
-  const grants = getApprovedOfficerGrants(session);
+  const grants = useMemo(() => getApprovedOfficerGrants(session), [session]);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedOrganizationId = searchParams.get('organizationId') ?? '';
   const initialOrganizationId = useMemo(
@@ -40,6 +39,7 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
   }, [grants, initialOrganizationId, requestedOrganizationId, selectedOrganizationId]);
 
   const selectedGrant = grants.find((grant) => grant.organizationId === selectedOrganizationId);
+  const profileFormId = selectedGrant ? `profile-recruitment-form-${selectedGrant.organizationId}` : undefined;
 
   if (!grants.length) {
     return (
@@ -49,7 +49,7 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
         description="This settings page appears only after an organization-specific officer grant is active."
         session={session}
       >
-        <StateBlock title="No organization access" symbol="🔒">
+        <StateBlock title="No organization access" symbol="0">
           Your account does not currently manage an organization.
         </StateBlock>
       </WorkflowPageFrame>
@@ -65,9 +65,14 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
     <WorkflowPageFrame
       eyebrow="Organization settings"
       title="Manage organization details."
-      description="Update public profile details, recruitment copy, organization image, announcements, and posted dates for organizations where your officer grant applies."
+      description="Update public profile details, recruitment copy, organization image, and posted dates for organizations where your officer grant applies."
       session={session}
-      actions={selectedGrant ? <ButtonLink to={`/app/organizations/${selectedGrant.organizationId}`} variant="secondary">View public profile</ButtonLink> : undefined}
+      actions={selectedGrant && profileFormId ? (
+        <>
+          <Button type="submit" form={profileFormId} variant="primary">Save profile</Button>
+          <ButtonLink to={`/app/organizations/${selectedGrant.organizationId}`} variant="secondary">View public profile</ButtonLink>
+        </>
+      ) : undefined}
     >
       <SourceNotice client={client} />
       <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={changeOrganization} session={session} />
@@ -84,11 +89,9 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
               </div>
               <div className="component-row">
                 <StatusChip tone="approved">Management access</StatusChip>
-                <ButtonLink to={`/app/organizations/${dashboard.organization.id}`} variant="secondary">View public profile</ButtonLink>
               </div>
             </Card>
-            <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
-            <AnnouncementSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
+            <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} formId={profileFormId} />
             <DateEntriesSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
           </section>
         )}

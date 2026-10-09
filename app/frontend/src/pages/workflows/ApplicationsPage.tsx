@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { ButtonLink, LoadingBlock, StateBlock } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { WorkflowDataClient } from './contracts';
@@ -19,7 +20,7 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
         actions={<ButtonLink to="/app/meetings" variant="primary">Open meetings</ButtonLink>}
       >
         <SourceNotice client={client} message={sourceMessage} />
-        <StateBlock title="No sponsor application tracker" symbol="—">
+        <StateBlock title="No sponsor application tracker" symbol="0">
           Sponsor accounts do not use the student application tracker.
         </StateBlock>
       </WorkflowPageFrame>
@@ -52,7 +53,7 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
           headers={['Organization', 'Opportunity', 'Stage', 'Last updated']}
           rows={data.map((application) => (
             <tr key={application.id}>
-              <td>{application.organizationName}</td>
+              <td><Link className="org-author-link" to={`/app/organizations/${application.organizationId}`}>{application.organizationName}</Link></td>
               <td>{application.opportunityTitle}</td>
               <td><StageChip stage={application.stage} /></td>
               <td>{new Date(application.updatedAt).toLocaleString()}</td>

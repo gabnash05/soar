@@ -65,7 +65,7 @@ const GuardLayout = ({
   if (session && requireStudent && !isStudentAccount(session)) {
     return (
       <main className="page-narrow">
-        <StateBlock symbol="—" title="Student-only area">
+        <StateBlock symbol="0" title="Student-only area">
           Sponsors can browse organizations and manage meeting requests, but application tools are for student accounts.
         </StateBlock>
       </main>
@@ -75,7 +75,7 @@ const GuardLayout = ({
   if (session && requireOfficerGrant && !hasApprovedOfficerGrant(session)) {
     return (
       <main className="page-narrow">
-        <StateBlock symbol="↗" title="Officer access not active">
+        <StateBlock symbol="!" title="Officer access not active">
 Organization management controls appear only where your account has access.
         </StateBlock>
       </main>

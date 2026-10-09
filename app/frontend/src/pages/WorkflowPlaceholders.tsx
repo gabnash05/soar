@@ -2,7 +2,7 @@ import { useParams } from 'react-router-dom';
 import { ButtonLink, Card, CardHeader, StateBlock, StatusChip } from '../components/ui';
 
 const UnavailableWorkflow = ({ title, children }: { title: string; children: string }) => (
-  <StateBlock symbol="⌁" title={title} actions={<ButtonLink to="/settings/access" variant="secondary">View access status</ButtonLink>}>
+  <StateBlock symbol="!" title={title} actions={<ButtonLink to="/settings/access" variant="secondary">View access status</ButtonLink>}>
     {children}
   </StateBlock>
 );

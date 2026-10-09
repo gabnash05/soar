@@ -111,7 +111,7 @@ export function RouteUnavailableState({ loading, session }: { loading: boolean; 
   }
   if (session.access.status !== 'active') {
     return (
-      <StateBlock title="Access is not active" symbol="₱" actions={<ButtonLink to="/settings/access" variant="primary">Review access</ButtonLink>}>
+      <StateBlock title="Access is not active" symbol="PHP" actions={<ButtonLink to="/settings/access" variant="primary">Review access</ButtonLink>}>
         Main SOAR pages stay locked until annual access is active. Saved records remain available after renewal.
       </StateBlock>
     );
@@ -154,7 +154,7 @@ export function OrganizationAvatar({ name, logoUrl }: { name: string; logoUrl?: 
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join('');
-  return <span className="org-avatar">{logoUrl ? <img src={logoUrl} alt={`${name} logo`} /> : initials || 'SO'}</span>;
+  return <span className="org-avatar">{logoUrl ? <img src={logoUrl} alt={`${name} logo`} loading="lazy" decoding="async" /> : initials || 'SO'}</span>;
 }
 
 export function ResultMessage({ result }: { result: WorkflowMutationResult<unknown> | string | null }) {
@@ -275,13 +275,13 @@ export function AnnouncementCard({
       </div>
       {announcement.image ? (
         <figure className="image-frame">
-          <img src={announcement.image.url} alt={announcement.image.alt} />
+          <img src={announcement.image.url} alt={announcement.image.alt} loading="lazy" decoding="async" />
         </figure>
       ) : null}
       <p>{announcement.body}</p>
       <div className="component-row">
         <Button type="button" variant={announcement.viewerHasLiked ? 'primary' : 'secondary'} disabled={busy} onClick={toggleLike} aria-pressed={announcement.viewerHasLiked}>
-          {announcement.viewerHasLiked ? '♥ Liked' : '♡ Like'} {announcement.likeCount}
+          {announcement.viewerHasLiked ? 'Liked' : 'Like'} {announcement.likeCount}
         </Button>
         <Button type="button" variant="quiet" onClick={() => setCommentsOpen((open) => !open)}>
           {commentsOpen ? 'Hide comments' : 'Open comments'} ({announcement.comments.length})

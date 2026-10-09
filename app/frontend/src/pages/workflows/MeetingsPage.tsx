@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, ButtonLink, Card, CardHeader, LoadingBlock } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { MeetingRequestInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
@@ -122,7 +123,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
               {options.map((entry) => (
                 <li key={entry.id}>
                   <div className="feed-copy">
-                    <strong>{entry.organizationName} · {entry.title}</strong>
+                    <strong><Link className="org-author-link" to={`/app/organizations/${entry.organizationId}`}>{entry.organizationName}</Link> · {entry.title}</strong>
                     <span>{formatDateEntry(entry)} · {entry.details}</span>
                   </div>
                 </li>
@@ -138,7 +139,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
           headers={['Organization', 'Meeting title', 'Requested date/time', 'Status', 'Meaning']}
           rows={requests.map((request) => (
             <tr key={request.id}>
-              <td>{request.organizationName}</td>
+              <td><Link className="org-author-link" to={`/app/organizations/${request.organizationId}`}>{request.organizationName}</Link></td>
               <td>{request.meetingTitle}</td>
               <td>{request.requestedDate}, {request.requestedTime}</td>
               <td><MeetingStatusChip status={request.status} /></td>
