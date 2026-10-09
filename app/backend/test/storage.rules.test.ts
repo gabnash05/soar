@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 
-const projectId = `soar-storage-rules-${Date.now()}`;
+const projectId = process.env.GCLOUD_PROJECT ?? `soar-storage-rules-${Date.now()}`;
 let testEnv: RulesTestEnvironment;
 
 const future = Timestamp.fromDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
