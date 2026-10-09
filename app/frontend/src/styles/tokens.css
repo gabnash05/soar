@@ -15,6 +15,8 @@
   --color-blue-soft: oklch(96% 0.035 245);
   --color-orange-soft: oklch(96% 0.045 55);
   --color-danger-soft: oklch(96% 0.035 25);
+  --gradient-brand: linear-gradient(135deg, var(--color-navy) 0%, var(--color-blue-deep) 58%, var(--color-blue) 100%);
+  --gradient-brand-quiet: linear-gradient(150deg, var(--color-navy) 0%, var(--color-blue-deep) 72%, var(--color-blue) 118%);
   --shadow-soft: 0 1px 2px oklch(25.35% 0.1007 278 / 0.05), 0 6px 16px oklch(25.35% 0.1007 278 / 0.04);
   --shadow-floating: 0 14px 34px oklch(25.35% 0.1007 278 / 0.1);
   --radius-sm: 6px;

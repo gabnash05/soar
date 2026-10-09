@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ButtonLink, Card, CardHeader, LoadingBlock } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { WorkflowDataClient } from './contracts';
@@ -41,20 +42,25 @@ export function DirectoryView({ session, client }: { session: UserSession; clien
         <EmptyState title="No organizations match this search">Clear the search or try a different organization name.</EmptyState>
       ) : null}
       <section className="grid grid-3" aria-label="Organization directory results">
-        {filtered.map((organization) => (
-          <Card key={organization.id} className="org-card">
-            <div className="org-head">
-              <OrganizationAvatar name={organization.name} logoUrl={organization.logoUrl} />
-              <div>
-                <h2>{organization.name}</h2>
-                <p className="card-note">Recruitment: {organization.recruitmentTitle}</p>
+        {filtered.map((organization) => {
+          const organizationPath = `/app/organizations/${organization.id}`;
+          return (
+            <Card key={organization.id} className="org-card">
+              <div className="org-head">
+                <Link className="org-avatar-link" to={organizationPath} aria-label={`Open ${organization.name} profile`}>
+                  <OrganizationAvatar name={organization.name} logoUrl={organization.logoUrl} />
+                </Link>
+                <div>
+                  <h2><Link className="org-author-link" to={organizationPath}>{organization.name}</Link></h2>
+                  <p className="card-note">Recruitment: {organization.recruitmentTitle}</p>
+                </div>
               </div>
-            </div>
-            <p>{organization.shortDescription}</p>
-            <p className="card-note">Contact: {organization.contactEmail}</p>
-            <ButtonLink to={`/app/organizations/${organization.id}`} variant="secondary">View profile</ButtonLink>
-          </Card>
-        ))}
+              <p>{organization.shortDescription}</p>
+              <p className="card-note">Contact: {organization.contactEmail}</p>
+              <ButtonLink to={organizationPath} variant="secondary">View profile</ButtonLink>
+            </Card>
+          );
+        })}
       </section>
     </WorkflowPageFrame>
   );

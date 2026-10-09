@@ -33,7 +33,7 @@ function toProfileInput(dashboard: OfficerDashboard): OrganizationProfileInput {
   };
 }
 
-export function ProfileRecruitmentSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
+export function ProfileRecruitmentSection({ dashboard, session, client, onChanged, formId = `profile-recruitment-form-${dashboard.organization.id}` }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; formId?: string }) {
   const [form, setForm] = useState<OrganizationProfileInput>(() => toProfileInput(dashboard));
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -54,7 +54,7 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
       <CardHeader title="Organization profile" eyebrow="Public details">
         Update the profile, recruitment copy, contact email, and logo shown to students and sponsors.
       </CardHeader>
-      <form className="content-stack" onSubmit={submit}>
+      <form id={formId} className="content-stack" onSubmit={submit}>
         <div className="grid grid-2">
           <div className="field"><label className="label-row" htmlFor="org-name">Organization name</label><input id="org-name" className="control" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div>
           <div className="field"><label className="label-row" htmlFor="org-contact">Contact email</label><input id="org-contact" className="control" type="email" value={form.contactEmail} onChange={(event) => setForm((current) => ({ ...current, contactEmail: event.target.value }))} /></div>
@@ -77,7 +77,23 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
   );
 }
 
-export function AnnouncementSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
+export function AnnouncementComposer({
+  organizationId,
+  organizationName,
+  session,
+  client,
+  onChanged,
+  context,
+  title = 'Create announcement',
+}: {
+  organizationId: string;
+  organizationName?: string;
+  session: UserSession;
+  client: WorkflowDataClient;
+  onChanged: () => void;
+  context?: ReactNode;
+  title?: string;
+}) {
   const [body, setBody] = useState('');
   const [image, setImage] = useState<AnnouncementInput['image']>();
   const [imageError, setImageError] = useState('');
@@ -87,7 +103,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged }: {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
-    const next = await client.publishAnnouncement({ organizationId: dashboard.organization.id, body, image }, session);
+    const next = await client.publishAnnouncement({ organizationId, body, image }, session);
     setResult(next);
     setBusy(false);
     if (next.ok) {
@@ -98,10 +114,11 @@ export function AnnouncementSection({ dashboard, session, client, onChanged }: {
   };
 
   return (
-    <Card>
-      <CardHeader title="Announcements" eyebrow="Organization content">
-        Publish updates that appear on the feed and this organization profile.
+    <Card id="announcement-composer">
+      <CardHeader title={title} eyebrow="Organization content">
+        Publish updates for {organizationName ?? 'your organization'} that appear on the announcements feed and the organization profile.
       </CardHeader>
+      {context}
       <form className="content-stack" onSubmit={submit}>
         <div className="field"><label className="label-row" htmlFor="announcement-body">Post text</label><textarea id="announcement-body" className="control textarea" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write an announcement for students and sponsors." /></div>
         <div className="field">
@@ -133,22 +150,36 @@ export function AnnouncementSection({ dashboard, session, client, onChanged }: {
         <div className="button-row"><Button type="submit" disabled={busy}>Publish announcement</Button></div>
         <ResultMessage result={result} />
       </form>
-      {dashboard.announcements.length ? (
-        <ul className="feed-list">
-          {dashboard.announcements.map((announcement) => (
-            <li key={announcement.id}>
-              <div className="feed-copy"><strong>{announcement.body}</strong><span>{new Date(announcement.createdAt).toLocaleDateString()}</span></div>
-              <Button type="button" variant="danger" onClick={async () => {
-                if (!window.confirm('Delete this announcement?')) return;
-                const next = await client.deleteAnnouncement(announcement.id, dashboard.organization.id, session);
-                setResult(next);
-                if (next.ok) onChanged();
-              }}>Delete</Button>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="card-note">No announcements yet.</p>}
     </Card>
+  );
+}
+
+export function AnnouncementSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
+  const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
+
+  return (
+    <section className="content-stack">
+      <AnnouncementComposer organizationId={dashboard.organization.id} organizationName={dashboard.organization.name} session={session} client={client} onChanged={onChanged} />
+      <Card>
+        <CardHeader title="Published announcements" />
+        {dashboard.announcements.length ? (
+          <ul className="feed-list">
+            {dashboard.announcements.map((announcement) => (
+              <li key={announcement.id}>
+                <div className="feed-copy"><strong>{announcement.body}</strong><span>{new Date(announcement.createdAt).toLocaleDateString()}</span></div>
+                <Button type="button" variant="danger" onClick={async () => {
+                  if (!window.confirm('Delete this announcement?')) return;
+                  const next = await client.deleteAnnouncement(announcement.id, dashboard.organization.id, session);
+                  setResult(next);
+                  if (next.ok) onChanged();
+                }}>Delete</Button>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="card-note">No announcements yet.</p>}
+        <ResultMessage result={result} />
+      </Card>
+    </section>
   );
 }
 

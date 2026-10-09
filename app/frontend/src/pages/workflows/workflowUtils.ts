@@ -53,7 +53,7 @@ export function compareDateEntries(a: DateEntry, b: DateEntry): number {
 }
 
 export function formatDateEntry(entry: DateEntry): string {
-  const time = entry.startTime ? ` · ${entry.startTime}${entry.endTime ? `–${entry.endTime}` : ''}` : '';
+  const time = entry.startTime ? ` · ${entry.startTime}${entry.endTime ? `-${entry.endTime}` : ''}` : '';
   return `${entry.date}${time}`;
 }
 

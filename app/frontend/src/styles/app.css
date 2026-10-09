@@ -116,7 +116,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
   opacity: 0.16;
 }
 .entry-hero { display: grid; gap: clamp(20px, 4vw, 56px); align-items: stretch; }
-.entry-hero__copy { position: relative; overflow: hidden; min-height: min(560px, calc(100vh - 112px)); display: flex; flex-direction: column; justify-content: center; padding: clamp(28px, 5vw, 64px); border-radius: 22px; background: var(--color-navy); color: var(--color-white); box-shadow: var(--shadow-floating); }
+.entry-hero__copy { position: relative; overflow: hidden; min-height: min(560px, calc(100vh - 112px)); display: flex; flex-direction: column; justify-content: center; padding: clamp(28px, 5vw, 64px); border-radius: 22px; background: var(--gradient-brand); color: var(--color-white); box-shadow: var(--shadow-floating); }
 .entry-hero__copy .eyebrow { color: var(--color-gold); }
 .entry-hero__copy h1 { max-width: 12ch; margin: 0 0 14px; color: var(--color-white); font: 650 clamp(3rem, 7vw, 5.6rem)/1.02 var(--font-display); letter-spacing: -0.04em; }
 .entry-hero__copy p:not(.eyebrow) { max-width: 60ch; color: oklch(100% 0 0 / 0.78); font-size: 18px; }
@@ -157,7 +157,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .topbar-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .mobile-menu-button { display: none; }
 .app-layout { display: grid; grid-template-columns: 248px minmax(0, 1fr); width: min(1480px, 100%); margin: 0 auto; }
-.app-sidebar { position: sticky; top: 72px; align-self: start; min-height: calc(100vh - 72px); display: flex; flex-direction: column; gap: 16px; padding: 22px 14px; background: var(--color-navy); color: var(--color-white); }
+.app-sidebar { position: sticky; top: 72px; align-self: start; min-height: calc(100vh - 72px); display: flex; flex-direction: column; gap: 16px; padding: 22px 14px; background: var(--gradient-brand-quiet); color: var(--color-white); }
 .sidebar-profile { display: flex; gap: 10px; align-items: center; padding: 0 8px 8px; }
 .sidebar-profile .soar-logo { width: 34px; height: 34px; }
 .sidebar-profile strong { display: block; font-family: var(--font-display); }
@@ -174,7 +174,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
 .bottom-nav { display: none; }
 
 .page-stack { display: grid; gap: 18px; }
-.page-header { position: relative; overflow: hidden; min-width: 0; padding: clamp(16px, 3vw, 24px); border: 1px solid oklch(100% 0 0 / 0.16); border-radius: 18px; background: linear-gradient(135deg, var(--color-blue-deep), var(--color-blue)); color: var(--color-white); }
+.page-header { position: relative; overflow: hidden; min-width: 0; padding: clamp(16px, 3vw, 24px); border: 1px solid oklch(100% 0 0 / 0.16); border-radius: 18px; background: var(--gradient-brand); color: var(--color-white); }
 .page-header::after { content: ""; position: absolute; inset: -42px -24px auto auto; width: 210px; height: 150px; pointer-events: none; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='190' viewBox='0 0 260 190' fill='none'%3E%3Cpath d='M18 140c35 33 98 42 140 18 36-21 35-53 0-66-29-10-69 5-94-14-30-23-12-68 32-76 40-8 84 11 112 44' stroke='white' stroke-width='11' stroke-linecap='round' opacity='.68'/%3E%3Cpath d='M188 16h42v42M228 18l-54 54' stroke='%23FCB315' stroke-width='9' stroke-linecap='round' stroke-linejoin='round' opacity='.78'/%3E%3C/svg%3E") center/contain no-repeat; opacity: 0.15; }
 .page-header > * { position: relative; z-index: 1; }
 .page-header .eyebrow { color: var(--color-gold); }
@@ -266,7 +266,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; }
   padding: clamp(16px, 3vw, 24px);
   border: 1px solid oklch(100% 0 0 / 0.16);
   border-radius: 18px;
-  background: linear-gradient(135deg, var(--color-blue-deep), var(--color-blue));
+  background: var(--gradient-brand);
   color: var(--color-white);
 }
 .workflow-header::after { content: ""; position: absolute; inset: -44px -22px auto auto; width: 230px; height: 165px; pointer-events: none; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='190' viewBox='0 0 260 190' fill='none'%3E%3Cpath d='M18 140c35 33 98 42 140 18 36-21 35-53 0-66-29-10-69 5-94-14-30-23-12-68 32-76 40-8 84 11 112 44' stroke='white' stroke-width='11' stroke-linecap='round' opacity='.68'/%3E%3Cpath d='M188 16h42v42M228 18l-54 54' stroke='%23FCB315' stroke-width='9' stroke-linecap='round' stroke-linejoin='round' opacity='.78'/%3E%3C/svg%3E") center/contain no-repeat; opacity: 0.16; }

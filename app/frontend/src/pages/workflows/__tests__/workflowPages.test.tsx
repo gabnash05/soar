@@ -57,6 +57,8 @@ describe('SOAR workflow pages', () => {
     renderInRouter(<DirectoryView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
     expect(await screen.findByText('Robotics Guild')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Robotics Guild' })).toHaveAttribute('href', '/app/organizations/robotics');
+    expect(screen.getByRole('link', { name: /Open Robotics Guild profile/i })).toHaveAttribute('href', '/app/organizations/robotics');
     await user.type(screen.getByLabelText(/search by organization name/i), 'no match');
 
     expect(screen.getByText(/No organizations match this search/i)).toBeInTheDocument();
@@ -128,6 +130,29 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByText(/Open organization profile/i)).not.toBeInTheDocument();
   });
 
+  it('surfaces officer announcement posting at the top of the announcements page with grant context', async () => {
+    const user = userEvent.setup();
+    const multiOfficerSession = {
+      ...officerSession,
+      officerGrants: [
+        ...officerSession.officerGrants,
+        { organizationId: 'literary', organizationName: 'Literary Circle', status: 'approved' as const },
+      ],
+    };
+    renderInRouter(<FeedView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />);
+
+    await user.click(screen.getByRole('button', { name: /Post announcement/i }));
+    const organizationSelector = screen.getByLabelText(/Posting organization/i);
+    expect(organizationSelector).toHaveValue('robotics');
+
+    await user.selectOptions(organizationSelector, 'literary');
+    await user.type(screen.getByLabelText(/Post text/i), 'Open mic crew orientation starts Friday.');
+    await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));
+
+    expect(await screen.findByText(/Announcement published in demo mode/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Open mic crew orientation starts Friday/i)).toBeInTheDocument();
+  });
+
   it('guards organization settings to approved officer grants and supports managed organization context', async () => {
     const user = userEvent.setup();
     const multiOfficerSession = {
@@ -140,6 +165,8 @@ describe('SOAR workflow pages', () => {
     renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />);
 
     expect(await screen.findByText(/Manage organization details/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /View public profile/i })).toHaveLength(1);
+    expect(screen.queryByLabelText(/Post text/i)).not.toBeInTheDocument();
     const organizationSelector = screen.getByLabelText(/^Organization$/i);
     expect(organizationSelector).toHaveValue('robotics');
     expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Robotics Guild');
