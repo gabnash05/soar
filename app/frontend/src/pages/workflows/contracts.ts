@@ -20,6 +20,10 @@ export interface WorkflowMutationResult<T = undefined> {
 export interface WorkflowImage {
   url: string;
   alt: string;
+  file?: File;
+  storagePath?: string;
+  contentType?: string;
+  sizeBytes?: number;
 }
 
 export interface AnnouncementComment {
@@ -73,6 +77,7 @@ export interface OrganizationSummary {
   slug: string;
   name: string;
   logoUrl?: string;
+  logoPath?: string;
   shortDescription: string;
   contactEmail: string;
   recruitmentTitle: string;
@@ -132,6 +137,8 @@ export interface OrganizationProfileInput {
   organizationId: string;
   name: string;
   logoUrl?: string;
+  logoPath?: string;
+  logoFile?: File;
   description: string;
   shortDescription: string;
   contactEmail: string;

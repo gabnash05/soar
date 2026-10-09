@@ -108,6 +108,7 @@ function summaryFromOrganization(data: DocumentData) {
 
 function recruitmentFromOrganization(data: DocumentData) {
   return {
+    opportunityId: data.recruitment?.opportunityId ?? '',
     title: data.recruitment?.title ?? '',
     requirements: data.recruitment?.requirements ?? '',
     instructions: data.recruitment?.instructions ?? '',
@@ -253,6 +254,7 @@ export async function updateOrganizationProfile(user: DecodedIdToken, orgIdParam
   if (input.recruitment !== undefined) {
     const previous = organization.recruitment ?? {};
     update.recruitment = {
+      ...(previous.opportunityId ? { opportunityId: previous.opportunityId } : {}),
       title: input.recruitment.title ?? previous.title ?? '',
       requirements: input.recruitment.requirements ?? previous.requirements ?? '',
       instructions: input.recruitment.instructions ?? previous.instructions ?? '',

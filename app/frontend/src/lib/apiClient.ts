@@ -1,4 +1,4 @@
-import { ServiceUnavailableError } from './contracts';
+import { ServiceUnavailableError, ValidationProblemError, type ApiProblem } from './contracts';
 import { getFirebaseConfigStatus, getFirebaseRuntime } from './firebase';
 
 export interface ApiResponse<T> {
@@ -41,13 +41,23 @@ export const apiFetch = async <T>(path: string, init?: RequestInit): Promise<T> 
 
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`;
+    let problem: Partial<ApiProblem> & { problems?: Record<string, string> } = {};
     try {
-      const body = (await response.json()) as { message?: string; code?: string };
-      if (body.message) message = body.message;
+      problem = (await response.json()) as typeof problem;
+      if (problem.message) message = problem.message;
     } catch {
       // Keep status-based message.
     }
-    throw new Error(message);
+
+    if (problem.code === 'validation_problem') {
+      throw new ValidationProblemError(message, problem.problems ?? {});
+    }
+
+    const error = new Error(message) as Error & { code?: string; action?: string; status?: number };
+    error.code = problem.code;
+    error.action = problem.action;
+    error.status = response.status;
+    throw error;
   }
 
   if (response.status === 204) return undefined as T;

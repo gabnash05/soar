@@ -1,13 +1,10 @@
 import {
-  EmailAuthProvider,
-  reauthenticateWithCredential,
   reload,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   updateProfile,
-  verifyBeforeUpdateEmail,
 } from '@firebase/auth';
 import {
   type AccessEntitlement,
@@ -54,13 +51,14 @@ type RawAccess = Omit<Partial<AccessEntitlement>, 'status'> & {
 
 const normalizeAccess = (access: RawAccess): AccessEntitlement => {
   const status = access.status === 'none' ? 'missing' : access.status;
+  const normalizedStatus = status ?? (access.active ? 'active' : 'missing');
   return {
-    status: status ?? (access.active ? 'active' : 'missing'),
+    status: normalizedStatus,
     annualFeePhp: 10,
     startsAt: access.startsAt,
     expiresAt: access.expiresAt ?? access.accessExpiresAt,
     lastPaymentReference: access.lastPaymentReference ?? access.latestPaymentId ?? undefined,
-    renewalAvailable: access.renewalAvailable ?? status !== 'active',
+    renewalAvailable: access.renewalAvailable ?? normalizedStatus !== 'active',
   };
 };
 
@@ -171,13 +169,14 @@ const createProductionGateway = (): BackendGateway => ({
   async requestEmailChange(input) {
     const { auth } = getFirebaseRuntime();
     if (!auth.currentUser || !auth.currentUser.email) throw new Error('Sign in before changing email.');
-    const credential = EmailAuthProvider.credential(auth.currentUser.email, input.currentPassword);
-    await reauthenticateWithCredential(auth.currentUser, credential);
-    await verifyBeforeUpdateEmail(auth.currentUser, input.newEmail);
     await apiFetch('/account/email-change', {
       method: 'POST',
       headers: await authHeaders(),
-      body: JSON.stringify({ newEmail: input.newEmail }),
+      body: JSON.stringify({
+        newEmail: input.newEmail,
+        currentPassword: input.currentPassword,
+        continueUrl: window.location.origin,
+      }),
     });
   },
 });
