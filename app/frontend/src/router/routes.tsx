@@ -75,7 +75,7 @@ const GuardLayout = ({
   if (session && requireOfficerGrant && !hasApprovedOfficerGrant(session)) {
     return (
       <main className="page-narrow">
-        <StateBlock symbol="↗" title="Officer access not active">
+        <StateBlock symbol="!" title="Officer access not active">
 Organization management controls appear only where your account has access.
         </StateBlock>
       </main>

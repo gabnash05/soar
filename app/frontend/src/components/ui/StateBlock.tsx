@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 export const StateBlock = ({
-  symbol = '•',
+  symbol = 'i',
   title,
   children,
   actions,
@@ -24,7 +24,8 @@ export const StateBlock = ({
 );
 
 export const LoadingBlock = ({ label = 'Loading' }: { label?: string }) => (
-  <div className="state-card" aria-label={label}>
+  <div className="state-card" role="status" aria-live="polite">
+    <span className="sr-only">{label}</span>
     <div className="skeleton" aria-hidden="true">
       <i />
       <i />

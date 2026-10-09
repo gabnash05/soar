@@ -49,7 +49,7 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
         description="This settings page appears only after an organization-specific officer grant is active."
         session={session}
       >
-        <StateBlock title="No organization access" symbol="🔒">
+        <StateBlock title="No organization access" symbol="0">
           Your account does not currently manage an organization.
         </StateBlock>
       </WorkflowPageFrame>

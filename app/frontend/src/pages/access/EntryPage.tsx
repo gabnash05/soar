@@ -26,7 +26,7 @@ export const EntryPage = () => (
     </section>
 
     <section className="entry-grid" aria-label="SOAR capabilities">
-      <Card>
+      <Card className="entry-card-primary">
         <StatusChip tone="approved">Students</StatusChip>
         <h2>Track applications honestly</h2>
         <p>Opening an external form never counts as a submission. Students explicitly confirm in SOAR after returning from the form.</p>

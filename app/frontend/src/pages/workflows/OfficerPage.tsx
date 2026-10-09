@@ -435,7 +435,7 @@ export function OfficerView({ session, client }: { session: UserSession; client:
         description="Controls appear on organization, application, and meeting pages when your account has access for that organization."
         session={session}
       >
-        <StateBlock title="No organization access" symbol="🔒">
+        <StateBlock title="No organization access" symbol="0">
           Your account does not currently manage an organization.
         </StateBlock>
       </WorkflowPageFrame>
