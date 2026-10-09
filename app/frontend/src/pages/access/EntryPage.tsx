@@ -20,19 +20,9 @@ export const EntryPage = () => (
           <ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>
         </div>
         <p className="entry-note">
-          Payment is required before account creation. Expired accounts keep records and can still sign in to renew.
+          PHP10 annual access is required before account creation. Expired accounts can still sign in to renew.
         </p>
       </div>
-      <Card className="entry-flow-card" aria-labelledby="flow-title">
-        <p className="eyebrow">Approved flow</p>
-        <h2 id="flow-title">Payment first, then verified account</h2>
-        <ol className="flow-list">
-          <li><span>1</span><strong>Choose student or sponsor</strong><small>Officers begin as student accounts with student ID.</small></li>
-          <li><span>2</span><strong>Complete PHP10 checkout</strong><small>Pending, failed, or cancelled payments stay locked.</small></li>
-          <li><span>3</span><strong>Create account and verify email</strong><small>Main app unlocks after trusted access and verification.</small></li>
-          <li><span>4</span><strong>Use role-aware workspace</strong><small>Sponsors have no application tools; officers see granted organizations only.</small></li>
-        </ol>
-      </Card>
     </section>
 
     <section className="entry-grid" aria-label="SOAR capabilities">
@@ -49,13 +39,13 @@ export const EntryPage = () => (
       <Card>
         <StatusChip tone="progress">Officers</StatusChip>
         <h2>Organization grants only</h2>
-        <p>Approved owners and officers manage their own organization. There is no broad admin dashboard or separate officer signup.</p>
+        <p>Officers manage only the organizations where they have access, with controls placed on the relevant pages.</p>
       </Card>
     </section>
 
     <footer className="entry-footer">
       <Link to="/recovery">Forgot password?</Link>
-      <span>Designed from the approved SOAR wireframe and customized v2 design system.</span>
+      <span>SOAR keeps organization discovery, applications, meetings, and access in one workspace.</span>
     </footer>
   </main>
 );

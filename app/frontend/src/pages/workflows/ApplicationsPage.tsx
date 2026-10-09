@@ -1,6 +1,7 @@
 import { ButtonLink, LoadingBlock, StateBlock } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { WorkflowDataClient } from './contracts';
+import { OfficerApplicationsReview } from './OfficerPage';
 import { EmptyState, ErrorState, RouteUnavailableState, SourceNotice, StageChip, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
 import { isSponsor } from './workflowUtils';
 
@@ -12,13 +13,13 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
       <WorkflowPageFrame
         eyebrow="Applications"
         title="Application tools are for students."
-        description="Sponsors can browse organizations and request meetings, but the approved scope excludes sponsor application workflows."
+        description="Sponsors can browse organizations and request meetings."
         session={session}
         actions={<ButtonLink to="/app/meetings" variant="primary">Open meetings</ButtonLink>}
       >
         <SourceNotice client={client} message={sourceMessage} />
         <StateBlock title="No sponsor application tracker" symbol="—">
-          Sponsor accounts do not show application tools, application counters, or sponsor-only workflows.
+          Sponsor accounts do not use the student application tracker.
         </StateBlock>
       </WorkflowPageFrame>
     );
@@ -28,14 +29,11 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
     <WorkflowPageFrame
       eyebrow="Application tracker"
       title="Track each recruitment opportunity once."
-      description="External forms remain outside SOAR. A row appears only after explicit submission confirmation, then officers update Pending, Under review, Accepted, or Declined."
+      description="A row appears after you confirm an external form submission, then organization officers update Pending, Under review, Accepted, or Declined."
       session={session}
       actions={<ButtonLink to="/app/directory" variant="primary">Find organizations</ButtonLink>}
     >
       <SourceNotice client={client} message={sourceMessage} />
-      <div className="notice-card card">
-        <p><strong>Unique opportunity rule:</strong> SOAR should prevent duplicate entries for the same student and recruitment opportunity/position.</p>
-      </div>
       {loading ? <LoadingBlock label="Loading application tracker" /> : null}
       {error ? <ErrorState onRetry={reload}>{error}</ErrorState> : null}
       {!loading && !error && data?.length === 0 ? (
@@ -55,6 +53,7 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
           ))}
         />
       ) : null}
+      <OfficerApplicationsReview session={session} client={client} />
     </WorkflowPageFrame>
   );
 }

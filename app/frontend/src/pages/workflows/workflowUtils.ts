@@ -113,7 +113,7 @@ export function getAccessCopy(status: AccessStatus): string {
 }
 
 export function getUnavailableCopy(): string {
-  return 'Workflow services are not connected yet. This page will not claim that sample saves are live backend persistence.';
+  return 'This section is temporarily unavailable. Please try again later.';
 }
 
 export function todayIsoDate(): string {

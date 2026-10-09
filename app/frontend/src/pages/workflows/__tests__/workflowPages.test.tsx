@@ -105,16 +105,17 @@ describe('SOAR workflow pages', () => {
     expect(within(table).getAllByText(/Not a confirmed booking/i).length).toBeGreaterThan(0);
   });
 
-  it('locks officer controls without a grant and lets an approved officer update applicant stage', async () => {
-    renderInRouter(<OfficerView session={studentSession} client={createFixtureWorkflowDataClient()} />);
-    expect(screen.getByText(/Officer controls locked/i)).toBeInTheDocument();
-
+  it('keeps officer controls on relevant pages and scoped to the managed organization', async () => {
     const user = userEvent.setup();
-    renderInRouter(<OfficerView session={officerSession} client={createFixtureWorkflowDataClient()} />);
+
+    renderInRouter(<OfficerView session={studentSession} client={createFixtureWorkflowDataClient()} />);
+    expect(screen.getByText(/No organization access/i)).toBeInTheDocument();
+
+    renderInRouter(<ApplicationsView session={officerSession} client={createFixtureWorkflowDataClient()} />);
     const stageSelect = await screen.findByLabelText(/Stage for Mara Santos/i);
     await user.selectOptions(stageSelect, 'Declined');
-
-    expect(await screen.findByText(/Application moved to Declined/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Application moved to Declined in demo mode/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Open Mic Crew/i)).not.toBeInTheDocument();
   });
 
   it('validates comments and updates like affordance on the feed', async () => {
@@ -127,6 +128,6 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByText(/Enter a comment before posting/i)).toBeInTheDocument();
 
     await user.click(screen.getAllByRole('button', { name: /Like/i })[0]);
-    await waitFor(() => expect(screen.getByText(/Liked in workflow fixture mode/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Liked in demo mode/i)).toBeInTheDocument());
   });
 });

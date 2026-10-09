@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Button, Card, CardHeader, LoadingBlock } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { MeetingRequestInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
+import { OfficerMeetingReview } from './OfficerPage';
 import { EmptyState, ErrorState, MeetingStatusChip, ResultMessage, RouteUnavailableState, SourceNotice, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
 import { formatDateEntry, todayIsoDate } from './workflowUtils';
 
@@ -47,7 +48,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
     <WorkflowPageFrame
       eyebrow="Meetings"
       title="Requests stay pending until an officer decides."
-      description="Students, sponsors, and officers can request posted meeting/interview availability. Pending requests are not confirmed bookings."
+      description="Request posted meeting/interview availability and track the status. Pending requests are not confirmed bookings."
       session={session}
     >
       <SourceNotice client={client} message={optionsQuery.sourceMessage || requestsQuery.sourceMessage} />
@@ -145,6 +146,8 @@ export function MeetingsView({ session, client }: { session: UserSession; client
       ) : !requestsQuery.loading && !requestsQuery.error ? (
         <EmptyState title="No meeting requests yet">Submitted requests will appear here as Pending until the organization approves or declines them.</EmptyState>
       ) : null}
+
+      <OfficerMeetingReview session={session} client={client} />
     </WorkflowPageFrame>
   );
 }

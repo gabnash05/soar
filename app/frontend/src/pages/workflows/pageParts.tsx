@@ -86,20 +86,14 @@ export function WorkflowPageFrame({
   children: ReactNode;
 }) {
   return (
-    <main className="workflow-page app-page" data-testid="workflow-page">
-      <section className="hero workflow-hero">
+    <main className="workflow-page app-page page-stack" data-testid="workflow-page">
+      <section className="workflow-header">
         <div>
           <p className="eyebrow">{eyebrow}</p>
           <h1>{title}</h1>
           <p>{description}</p>
-          {session ? (
-            <p className="hero-meta">
-              <StatusChip tone={session.access.status === 'active' ? 'approved' : 'attention'}>{session.access.status}</StatusChip>{' '}
-              <span>{session.displayName}</span>
-            </p>
-          ) : null}
         </div>
-        {actions ? <div className="hero-actions">{actions}</div> : null}
+        {actions ? <div className="section-actions">{actions}</div> : null}
       </section>
       {children}
     </main>
@@ -111,31 +105,28 @@ export function RouteUnavailableState({ loading, session }: { loading: boolean; 
   if (!session) {
     return (
       <StateBlock title="Sign in required" symbol="!" actions={<ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>}>
-        Workflow pages rely on the shared authenticated session and route guards from the frontend foundation.
+        Sign in to continue to this SOAR section.
       </StateBlock>
     );
   }
   if (session.access.status !== 'active') {
     return (
       <StateBlock title="Access is not active" symbol="₱" actions={<ButtonLink to="/settings/access" variant="primary">Review access</ButtonLink>}>
-        Main workflow pages stay locked for pending, failed, cancelled, missing, or expired access. Saved records should be retained for renewal.
+        Main SOAR pages stay locked until annual access is active. Saved records remain available after renewal.
       </StateBlock>
     );
   }
   return null;
 }
 
-export function SourceNotice({ message, client }: { message?: string | null; client: WorkflowDataClient }) {
-  const copy = message || (client.mode === 'fixture'
-    ? 'Development fixture mode: sample workflow state is local only.'
-    : client.mode === 'production'
-      ? 'Configured backend services are in use. Failed saves or empty data are shown directly.'
-      : getUnavailableCopy());
+export function SourceNotice({ client }: { message?: string | null; client: WorkflowDataClient }) {
+  if (client.mode === 'production') return null;
+  const copy = client.mode === 'fixture'
+    ? 'Demo mode: sample accounts, payments, and workflow changes are simulated locally.'
+    : getUnavailableCopy();
   return (
     <Card className="notice-card">
-      <p>
-        <strong>{client.label}:</strong> {copy}
-      </p>
+      <p>{copy}</p>
     </Card>
   );
 }

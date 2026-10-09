@@ -39,7 +39,7 @@ export const LoginPage = () => {
         <p className="card-note">Entry, renewal, recovery, and settings remain available even when annual access expires.</p>
         {gateway.mode === 'fixture' ? (
           <div className="notice compact">
-            Fixture emails: student@example.edu, officer@example.edu, sponsor@example.com, expired@example.edu, unverified@example.edu.
+Demo accounts: student@example.edu, officer@example.edu, sponsor@example.com, expired@example.edu, unverified@example.edu.
           </div>
         ) : null}
         {error ? <div className="form-error" role="alert">{error}</div> : null}

@@ -99,8 +99,8 @@ const getPaymentStatus = (intentId: string): CheckoutStatus => {
     amountPhp: 10,
     providerReference: active ? `fixture-provider-${intentId}` : undefined,
     message: active
-      ? 'Confirmed by the named development fixture. Production must use backend provider confirmation.'
-      : 'Waiting for provider confirmation. Account creation stays locked until this is confirmed.',
+      ? 'Demo payment confirmed locally.'
+      : 'Waiting for payment confirmation. Account creation stays locked until this is confirmed.',
     canCreateAccount: active,
     fixture: true,
   };
@@ -134,7 +134,7 @@ export const markFixtureRenewalConfirmedFromUrl = (renewalId: string | null, fix
 
 export const createFixtureGateway = (): BackendGateway => ({
   mode: 'fixture',
-  label: 'Development fixture mode',
+  label: 'Demo mode',
 
   async reloadSession() {
     return readSession();
@@ -157,7 +157,7 @@ export const createFixtureGateway = (): BackendGateway => ({
 
   async sendPasswordRecovery(email) {
     if (!email.includes('@')) {
-      throw new ValidationProblemError('Enter a valid email for the recovery fixture.', { email: 'Email is required.' });
+      throw new ValidationProblemError('Enter a valid email for recovery.', { email: 'Email is required.' });
     }
   },
 
@@ -174,7 +174,7 @@ export const createFixtureGateway = (): BackendGateway => ({
       status: 'pending',
       amountPhp: 10,
       expiresAt: futureIso(1),
-      providerLabel: 'Development fixture checkout',
+      providerLabel: 'Demo checkout',
       fixture: true,
     };
   },
@@ -187,7 +187,7 @@ export const createFixtureGateway = (): BackendGateway => ({
     validateRegistration(input);
     const checkout = getPaymentStatus(input.intentId);
     if (!checkout.canCreateAccount) {
-      throw new Error('Fixture payment is still pending. Use the fixture checkout confirmation link before creating an account.');
+      throw new Error('Payment is still pending. Use the demo confirmation link before creating an account.');
     }
     const session = makeFixtureSession(input.email, {
       displayName: input.displayName,
@@ -217,7 +217,7 @@ export const createFixtureGateway = (): BackendGateway => ({
       checkoutUrl: `/settings/access?renewalId=${encodeURIComponent(renewalId)}&fixtureStatus=confirmed`,
       status: 'pending',
       amountPhp: 10,
-      providerLabel: 'Development fixture renewal',
+      providerLabel: 'Demo renewal',
       fixture: true,
     };
   },

@@ -67,16 +67,16 @@ export const RegistrationIntentPage = () => {
           <p className="eyebrow">Payment before account creation</p>
           <h1>Start annual access</h1>
           <p className="card-note">
-            SOAR costs PHP10 per account for one year. Account creation stays locked until the backend confirms a successful provider checkout.
+SOAR costs PHP10 per account for one year. Account creation unlocks after a successful checkout.
           </p>
           <div className="notice compact">
             Officers do not choose a separate signup. Register as a student with student ID; organization owners or admins grant officer access later.
           </div>
-          {gateway.mode === 'fixture' ? <div className="notice compact warning">Development fixture checkout uses a local confirmation URL and does not create a real charge.</div> : null}
+          {gateway.mode === 'fixture' ? <div className="notice compact warning">Demo checkout is simulated locally and does not create a real charge.</div> : null}
           <ol className="mini-steps">
-            <li><strong>Intent</strong><span>We create a registration payment intent.</span></li>
+            <li><strong>Account type</strong><span>Choose student or sponsor.</span></li>
             <li><strong>Checkout</strong><span>Pay the PHP10 annual access fee.</span></li>
-            <li><strong>Status</strong><span>Only confirmed payment unlocks account details.</span></li>
+            <li><strong>Create account</strong><span>Complete your details after payment is confirmed.</span></li>
           </ol>
         </div>
         <form onSubmit={handleSubmit} className="form-grid" noValidate>
