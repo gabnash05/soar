@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, ButtonLink, Card, CardHeader, LoadingBlock, StateBlock } from '../../components/ui';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
+import { validateWorkflowImageFile } from '../../lib/storageUploads';
 import { createEmptyOfficerDateEntry } from './adapters';
 import type { AnnouncementInput, DateEntryInput, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
@@ -23,6 +24,7 @@ function toProfileInput(dashboard: OfficerDashboard): OrganizationProfileInput {
     organizationId: dashboard.organization.id,
     name: dashboard.organization.name,
     logoUrl: dashboard.organization.logoUrl,
+    logoPath: dashboard.organization.logoPath,
     description: dashboard.organization.description,
     shortDescription: dashboard.organization.shortDescription,
     contactEmail: dashboard.organization.contactEmail,
@@ -35,10 +37,14 @@ function toProfileInput(dashboard: OfficerDashboard): OrganizationProfileInput {
 
 export function ProfileRecruitmentSection({ dashboard, session, client, onChanged, formId = `profile-recruitment-form-${dashboard.organization.id}` }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; formId?: string }) {
   const [form, setForm] = useState<OrganizationProfileInput>(() => toProfileInput(dashboard));
+  const [logoError, setLogoError] = useState('');
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => setForm(toProfileInput(dashboard)), [dashboard]);
+  useEffect(() => {
+    setForm(toProfileInput(dashboard));
+    setLogoError('');
+  }, [dashboard]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -62,7 +68,28 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
         <div className="field"><label className="label-row" htmlFor="org-short">Short description</label><input id="org-short" className="control" value={form.shortDescription} onChange={(event) => setForm((current) => ({ ...current, shortDescription: event.target.value }))} /></div>
         <div className="field"><label className="label-row" htmlFor="org-description">Profile description</label><textarea id="org-description" className="control textarea" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
         <div className="grid grid-2">
-          <div className="field"><label className="label-row" htmlFor="logo-url">Logo or profile image URL <span>Optional</span></label><input id="logo-url" className="control" value={form.logoUrl ?? ''} onChange={(event) => setForm((current) => ({ ...current, logoUrl: event.target.value }))} placeholder="https://…" /></div>
+          <div className="field">
+            <label className="label-row" htmlFor="logo-file">Logo image <span>Optional</span></label>
+            <input
+              id="logo-file"
+              className="control"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                setLogoError('');
+                if (!file) return;
+                try {
+                  validateWorkflowImageFile(file);
+                  setForm((current) => ({ ...current, logoFile: file, logoUrl: URL.createObjectURL(file) }));
+                } catch (error) {
+                  setLogoError(error instanceof Error ? error.message : 'Choose a valid image.');
+                }
+              }}
+            />
+            {logoError ? <span className="help error" role="alert">{logoError}</span> : <span className="help">PNG, JPEG, GIF, or WebP. Maximum 5 MB. Existing logo stays if no file is selected.</span>}
+            {form.logoUrl ? <figure className="image-frame"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
+          </div>
           <div className="field"><label className="label-row" htmlFor="external-form">External form URL <span>Optional</span></label><input id="external-form" className="control" type="url" value={form.externalFormUrl ?? ''} onChange={(event) => setForm((current) => ({ ...current, externalFormUrl: event.target.value }))} /></div>
         </div>
         <div className="field"><label className="label-row" htmlFor="recruitment-title">Recruitment title</label><input id="recruitment-title" className="control" value={form.recruitmentTitle} onChange={(event) => setForm((current) => ({ ...current, recruitmentTitle: event.target.value }))} /></div>
@@ -133,18 +160,15 @@ export function AnnouncementComposer({
               setImageError('');
               setImage(undefined);
               if (!file) return;
-              if (!file.type.startsWith('image/')) {
-                setImageError('Use a PNG, JPEG, GIF, or WebP image.');
-                return;
+              try {
+                validateWorkflowImageFile(file);
+                setImage({ url: URL.createObjectURL(file), alt: file.name, file });
+              } catch (error) {
+                setImageError(error instanceof Error ? error.message : 'Choose a valid image.');
               }
-              if (file.size > 2 * 1024 * 1024) {
-                setImageError('Use an image smaller than 2 MB.');
-                return;
-              }
-              setImage({ url: URL.createObjectURL(file), alt: file.name });
             }}
           />
-          {imageError ? <span className="help error" role="alert">{imageError}</span> : <span className="help">PNG, JPEG, GIF, or WebP. Maximum 2 MB.</span>}
+          {imageError ? <span className="help error" role="alert">{imageError}</span> : <span className="help">PNG, JPEG, GIF, or WebP. Maximum 5 MB.</span>}
         </div>
         {image ? <figure className="image-frame"><img src={image.url} alt={image.alt} /></figure> : null}
         <div className="button-row"><Button type="submit" disabled={busy}>Publish announcement</Button></div>

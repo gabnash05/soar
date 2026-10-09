@@ -29,6 +29,24 @@ Local service addresses:
 
 The emulator command does not require Firebase CLI login for local demo resources. It is not evidence that production Firebase credentials are configured.
 
+With the local emulators already running, seed deterministic demo accounts and workflow records in another terminal:
+
+```bash
+GCLOUD_PROJECT=demo-soar-local \
+FIRESTORE_EMULATOR_HOST=127.0.0.1:18080 \
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:19099 \
+npm --workspace app/backend run emulators:seed
+```
+
+The seed command refuses non-loopback hosts and refuses any project id other than `demo-soar-local`. It creates synthetic organizations, announcements, date entries, applications, meeting requests, officer grants and active entitlements labelled `emulator-simulated`. Those entitlements are a local MVP convenience only; they are not production payment evidence or a production bypass.
+
+Seeded demo sign-ins all use password `SoarDemo123!`:
+
+- `student@example.test` — student tracker/request flows.
+- `sponsor@example.test` — sponsor meeting request flows, no application tracker.
+- `owner@example.test` — student account with owner access for seeded organizations.
+- `officer@example.test` — student account with Robotics Guild officer grant.
+
 `app/backend/functions.yaml` is a generated Firebase Functions manifest for the current `api` export. It keeps local Functions discovery on a supported path in environments where the Firebase Functions discovery server is not reachable over IPv4 loopback.
 
 ## Why there is a small local helper
@@ -51,10 +69,14 @@ For local emulator inspection, set the frontend to call the emulated backend and
 ```dotenv
 VITE_SOAR_USE_FIXTURES=false
 VITE_SOAR_API_BASE_URL=http://127.0.0.1:15001/demo-soar-local/asia-southeast1/api
-VITE_FIREBASE_PROJECT_ID=demo-soar-local
+VITE_FIREBASE_API_KEY=demo-web-api-key
 VITE_FIREBASE_AUTH_DOMAIN=demo-soar-local.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=demo-soar-local
 VITE_FIREBASE_STORAGE_BUCKET=demo-soar-local.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=000000000000
+VITE_FIREBASE_APP_ID=1:000000000000:web:demosoarlocal
 VITE_FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:19099
+VITE_FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:19199
 ```
 
 Do not add production payment-provider secrets or service-account keys to frontend env files.

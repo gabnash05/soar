@@ -1,5 +1,6 @@
 import { apiFetch, authHeaders } from '../../lib/apiClient';
 import type { ApplicationStage, MeetingStatus, UserSession } from '../../lib/contracts';
+import { storageDownloadUrl, uploadToStorageTarget, type ImageUploadTarget } from '../../lib/storageUploads';
 import type {
   Announcement,
   AnnouncementComment,
@@ -35,6 +36,34 @@ const asRecord = (value: unknown): AnyRecord => (value && typeof value === 'obje
 const activeHeaders = async () => ({ headers: await authHeaders() });
 const bodyInit = async (body: unknown, method = 'POST'): Promise<RequestInit> => ({ method, headers: await authHeaders(), body: JSON.stringify(body) });
 
+async function safeStorageUrl(storagePath: string): Promise<string> {
+  if (!storagePath) return '';
+  try {
+    return await storageDownloadUrl(storagePath);
+  } catch {
+    return '';
+  }
+}
+
+function slugPart(value: string): string {
+  const slug = value.trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'recruitment';
+}
+
+function recruitmentOpportunityId(organizationId: string, title: string, explicitId: string): string {
+  return explicitId || `${organizationId}-${slugPart(title || 'Recruitment')}`;
+}
+
+function imageMetadata(file: File) {
+  return {
+    fileName: file.name,
+    contentType: file.type,
+    sizeBytes: file.size,
+  };
+}
+
 function listItems<T>(value: T[] | ListEnvelope<T>): T[] {
   if (Array.isArray(value)) return value;
   return value.items ?? value.data ?? [];
@@ -63,19 +92,28 @@ function toBackendMeetingStatus(status: Exclude<MeetingStatus, 'Pending'>): Excl
   return status;
 }
 
-function mapAnnouncement(raw: unknown): Announcement {
+async function mapAnnouncement(raw: unknown): Promise<Announcement> {
   const item = asRecord(raw);
   const image = asRecord(item.image);
-  const imageUrl = pickString(item.imageUrl || image.url);
+  const imageStoragePath = pickString(image.storagePath || item.imageStoragePath);
+  const imageUrl = pickString(item.imageUrl || image.url) || await safeStorageUrl(imageStoragePath);
+  const logoStoragePath = pickString(item.organizationLogoPath || item.logoPath);
+  const organizationLogoUrl = pickString(item.organizationLogoUrl || item.logoUrl) || await safeStorageUrl(logoStoragePath);
   const comments = pickArray<unknown>(item.comments).map(mapComment);
   return {
     id: pickString(item.id || item.announcementId),
     organizationId: pickString(item.organizationId || item.orgId),
     organizationName: pickString(item.organizationName),
-    organizationLogoUrl: pickString(item.organizationLogoUrl || item.logoUrl) || undefined,
+    organizationLogoUrl: organizationLogoUrl || undefined,
     createdAt: pickString(item.createdAt || item.publishedAt || item.updatedAt, new Date().toISOString()),
     body: pickString(item.body || item.text),
-    image: imageUrl ? { url: imageUrl, alt: pickString(item.imageAlt || image.alt, 'Announcement image') } : undefined,
+    image: imageUrl ? {
+      url: imageUrl,
+      alt: pickString(item.imageAlt || image.alt, 'Announcement image'),
+      storagePath: imageStoragePath || undefined,
+      contentType: pickString(image.contentType) || undefined,
+      sizeBytes: pickNumber(image.sizeBytes, 0) || undefined,
+    } : undefined,
     likeCount: pickNumber(item.likeCount, 0),
     viewerHasLiked: pickBoolean(item.viewerHasLiked, false),
     comments,
@@ -108,37 +146,41 @@ function mapDateEntry(raw: unknown): DateEntry {
   };
 }
 
-function mapOrganizationSummary(raw: unknown): OrganizationSummary {
+async function mapOrganizationSummary(raw: unknown): Promise<OrganizationSummary> {
   const item = asRecord(raw);
   const recruitment = asRecord(item.recruitment);
+  const logoPath = pickString(item.logoPath || asRecord(item.logo).storagePath);
+  const logoUrl = pickString(item.logoUrl || item.logoDownloadUrl) || await safeStorageUrl(logoPath);
   return {
     id: pickString(item.id || item.orgId || item.organizationId),
     slug: pickString(item.slug),
     name: pickString(item.name),
-    logoUrl: pickString(item.logoUrl || item.logoDownloadUrl) || undefined,
+    logoUrl: logoUrl || undefined,
+    logoPath: logoPath || undefined,
     shortDescription: pickString(item.shortDescription),
     contactEmail: pickString(item.contactEmail),
     recruitmentTitle: pickString(item.recruitmentTitle || recruitment.title),
   };
 }
 
-function mapOrganizationProfile(raw: unknown): OrganizationProfile {
+async function mapOrganizationProfile(raw: unknown): Promise<OrganizationProfile> {
   const item = asRecord(raw);
-  const summary = mapOrganizationSummary(item);
+  const summary = await mapOrganizationSummary(item);
   const recruitment = asRecord(item.recruitment);
+  const title = pickString(recruitment.title || item.recruitmentTitle);
   return {
     ...summary,
     description: pickString(item.description),
     recruitment: {
-      id: pickString(recruitment.id || recruitment.opportunityId, `${summary.id}-recruitment`),
+      id: recruitmentOpportunityId(summary.id, title, pickString(recruitment.id || recruitment.opportunityId)),
       organizationId: summary.id,
-      title: pickString(recruitment.title || item.recruitmentTitle),
+      title,
       requirements: pickString(recruitment.requirements),
       instructions: pickString(recruitment.instructions),
       externalFormUrl: pickString(recruitment.externalFormUrl || recruitment.applicationLink) || undefined,
       audience: pickString(recruitment.audience) === 'meetings-only' ? 'meetings-only' : 'students',
     },
-    posts: pickArray<unknown>(item.posts || item.announcements).map(mapAnnouncement),
+    posts: await Promise.all(pickArray<unknown>(item.posts || item.announcements).map(mapAnnouncement)),
     dateEntries: pickArray<unknown>(item.dateEntries || item.calendarEntries).map(mapDateEntry),
   };
 }
@@ -185,13 +227,49 @@ function mutationResult<T>(message: string, data: T): WorkflowMutationResult<T> 
   return { ok: true, persisted: true, source: 'production', message, data };
 }
 
-function profileInputToBackend(input: OrganizationProfileInput) {
+async function createLogoUpload(input: OrganizationProfileInput): Promise<string | undefined> {
+  if (!input.logoFile) return input.logoPath;
+  const target = await apiFetch<ImageUploadTarget>(`/organizations/${encodeURIComponent(input.organizationId)}/logo-image-targets`, await bodyInit(imageMetadata(input.logoFile)));
+  const uploaded = await uploadToStorageTarget(target, input.logoFile, input.logoFile.name);
+  return uploaded.storagePath;
+}
+
+async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ announcementId?: string; image?: { storagePath: string; contentType: string; sizeBytes: number; alt?: string } }> {
+  if (!input.image?.file) {
+    if (input.image?.storagePath && input.image.contentType && input.image.sizeBytes) {
+      return {
+        image: {
+          storagePath: input.image.storagePath,
+          contentType: input.image.contentType,
+          sizeBytes: input.image.sizeBytes,
+          alt: input.image.alt,
+        },
+      };
+    }
+    return {};
+  }
+
+  const target = await apiFetch<ImageUploadTarget>(`/organizations/${encodeURIComponent(input.organizationId)}/announcements/image-targets`, await bodyInit(imageMetadata(input.image.file)));
+  const uploaded = await uploadToStorageTarget(target, input.image.file, input.image.alt || input.image.file.name);
+  return {
+    announcementId: target.announcementId,
+    image: {
+      storagePath: uploaded.storagePath,
+      contentType: uploaded.contentType,
+      sizeBytes: uploaded.sizeBytes,
+      alt: uploaded.alt,
+    },
+  };
+}
+
+async function profileInputToBackend(input: OrganizationProfileInput) {
+  const logoPath = await createLogoUpload(input);
   return {
     name: input.name,
     shortDescription: input.shortDescription,
     description: input.description,
     contactEmail: input.contactEmail,
-    logoUrl: input.logoUrl,
+    ...(logoPath !== undefined ? { logoPath } : {}),
     recruitment: {
       title: input.recruitmentTitle,
       requirements: input.recruitmentRequirements,
@@ -219,12 +297,12 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
 
     async listAnnouncements() {
       const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/announcements', await activeHeaders());
-      return queryResult(listItems(response).map(mapAnnouncement));
+      return queryResult(await Promise.all(listItems(response).map(mapAnnouncement)));
     },
 
     async toggleAnnouncementLike(announcementId, liked) {
       const response = await apiFetch<unknown>(`/announcements/${encodeURIComponent(announcementId)}/like`, await bodyInit(undefined, liked ? 'POST' : 'DELETE'));
-      return mutationResult(liked ? 'Announcement liked.' : 'Announcement like removed.', mapAnnouncement(response));
+      return mutationResult(liked ? 'Announcement liked.' : 'Announcement like removed.', await mapAnnouncement(response));
     },
 
     async addAnnouncementComment(announcementId, body) {
@@ -234,12 +312,12 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
 
     async listOrganizations() {
       const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/organizations', await activeHeaders());
-      return queryResult(listItems(response).map(mapOrganizationSummary));
+      return queryResult(await Promise.all(listItems(response).map(mapOrganizationSummary)));
     },
 
     async getOrganization(organizationId) {
       const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}`, await activeHeaders());
-      return queryResult(response ? mapOrganizationProfile(response) : undefined);
+      return queryResult(response ? await mapOrganizationProfile(response) : undefined);
     },
 
     async confirmExternalApplication(input: ApplicationConfirmationInput) {
@@ -281,8 +359,8 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
         apiFetch<ListEnvelope<unknown> | unknown[]>(`/requests/organizations/${encodeURIComponent(organizationId)}/meetings`, await activeHeaders()),
       ]);
       return queryResult<OfficerDashboard>({
-        organization: mapOrganizationProfile(organization),
-        announcements: listItems(announcements).map(mapAnnouncement),
+        organization: await mapOrganizationProfile(organization),
+        announcements: await Promise.all(listItems(announcements).map(mapAnnouncement)),
         applicants: listItems(applicants).map(mapApplication),
         dateEntries: listItems(dateEntries).map(mapDateEntry),
         meetingRequests: listItems(meetingRequests).map(mapMeetingRequest),
@@ -290,13 +368,15 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     },
 
     async saveOrganizationProfile(input: OrganizationProfileInput) {
-      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(input.organizationId)}`, await bodyInit(profileInputToBackend(input), 'PATCH'));
-      return mutationResult('Organization profile saved.', mapOrganizationProfile(response));
+      const payload = await profileInputToBackend(input);
+      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(input.organizationId)}`, await bodyInit(payload, 'PATCH'));
+      return mutationResult('Organization profile saved.', await mapOrganizationProfile(response));
     },
 
     async publishAnnouncement(input: AnnouncementInput) {
-      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(input.organizationId)}/announcements`, await bodyInit({ body: input.body, image: input.image }));
-      return mutationResult('Announcement published.', mapAnnouncement(response));
+      const upload = await createAnnouncementUpload(input);
+      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(input.organizationId)}/announcements`, await bodyInit({ body: input.body, ...upload }));
+      return mutationResult('Announcement published.', await mapAnnouncement(response));
     },
 
     async deleteAnnouncement(announcementId, organizationId) {
