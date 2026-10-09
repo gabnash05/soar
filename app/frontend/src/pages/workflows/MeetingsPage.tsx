@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Button, Card, CardHeader, LoadingBlock } from '../../components/ui';
+import { Button, ButtonLink, Card, CardHeader, LoadingBlock } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { MeetingRequestInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import { OfficerMeetingReview } from './OfficerPage';
 import { EmptyState, ErrorState, MeetingStatusChip, ResultMessage, RouteUnavailableState, SourceNotice, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
-import { formatDateEntry, todayIsoDate } from './workflowUtils';
+import { formatDateEntry, getApprovedOfficerGrants, todayIsoDate } from './workflowUtils';
 
 export function MeetingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const optionsQuery = useWorkflowQuery(() => client.listMeetingOptions(session), [client, session.uid]);
@@ -14,6 +14,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
   const [form, setForm] = useState<MeetingRequestInput>({ organizationId: '', dateEntryId: '', requestedDate: todayIsoDate(), requestedTime: '09:00', note: '' });
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const managedOrganizationId = getApprovedOfficerGrants(session)[0]?.organizationId;
 
   useEffect(() => {
     if (!form.dateEntryId && options.length) {
@@ -50,11 +51,13 @@ export function MeetingsView({ session, client }: { session: UserSession; client
       title="Requests stay pending until an officer decides."
       description="Request posted meeting/interview availability and track the status. Pending requests are not confirmed bookings."
       session={session}
+      actions={managedOrganizationId ? <ButtonLink to={`/settings/organization?organizationId=${managedOrganizationId}`} variant="secondary">Manage organization</ButtonLink> : undefined}
     >
       <SourceNotice client={client} message={optionsQuery.sourceMessage || requestsQuery.sourceMessage} />
       {optionsQuery.loading || requestsQuery.loading ? <LoadingBlock label="Loading meeting data" /> : null}
       {optionsQuery.error ? <ErrorState onRetry={optionsQuery.reload}>{optionsQuery.error}</ErrorState> : null}
       {requestsQuery.error ? <ErrorState onRetry={requestsQuery.reload}>{requestsQuery.error}</ErrorState> : null}
+      <OfficerMeetingReview session={session} client={client} />
 
       <section className="grid grid-2">
         <Card>
@@ -147,7 +150,6 @@ export function MeetingsView({ session, client }: { session: UserSession; client
         <EmptyState title="No meeting requests yet">Submitted requests will appear here as Pending until the organization approves or declines them.</EmptyState>
       ) : null}
 
-      <OfficerMeetingReview session={session} client={client} />
     </WorkflowPageFrame>
   );
 }

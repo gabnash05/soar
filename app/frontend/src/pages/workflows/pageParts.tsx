@@ -260,12 +260,16 @@ export function AnnouncementCard({
     }
   };
 
+  const organizationPath = `/app/organizations/${announcement.organizationId}`;
+
   return (
     <Card className="announcement-card">
       <div className="org-head">
-        <OrganizationAvatar name={announcement.organizationName} logoUrl={announcement.organizationLogoUrl} />
+        <Link className="org-avatar-link" to={organizationPath} aria-label={`Open ${announcement.organizationName} profile`}>
+          <OrganizationAvatar name={announcement.organizationName} logoUrl={announcement.organizationLogoUrl} />
+        </Link>
         <div>
-          <h2>{announcement.organizationName}</h2>
+          <h2><Link className="org-author-link" to={organizationPath}>{announcement.organizationName}</Link></h2>
           <p className="card-note">{new Date(announcement.createdAt).toLocaleDateString()} · newest announcements first</p>
         </div>
       </div>
@@ -282,7 +286,6 @@ export function AnnouncementCard({
         <Button type="button" variant="quiet" onClick={() => setCommentsOpen((open) => !open)}>
           {commentsOpen ? 'Hide comments' : 'Open comments'} ({announcement.comments.length})
         </Button>
-        <Link to={`/app/organizations/${announcement.organizationId}`}>Open organization profile</Link>
       </div>
       {commentsOpen ? (
         <form className="field" onSubmit={submitComment}>
