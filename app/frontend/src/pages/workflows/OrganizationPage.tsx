@@ -15,7 +15,6 @@ import {
   useWorkflowSession,
   WorkflowPageFrame,
 } from './pageParts';
-import { OfficerOrganizationManagement } from './OfficerPage';
 import { getApprovedOfficerGrants, getSafeHttpUrl, isSponsor, splitDateEntries } from './workflowUtils';
 
 function RecruitmentActions({ organization, session, client }: { organization: OrganizationProfile; session: UserSession; client: WorkflowDataClient }) {
@@ -92,13 +91,22 @@ export function OrganizationView({ organizationId, session, client }: { organiza
   const canManage = organization ? grants.some((grant) => grant.organizationId === organization.id) : false;
   const split = organization ? splitDateEntries(organization.dateEntries) : { events: [], availability: [] };
 
+  const headerActions = (
+    <>
+      {canManage ? <ButtonLink to={`/settings/organization?organizationId=${organization?.id ?? organizationId}`} variant="primary">Manage organization</ButtonLink> : null}
+      {canManage ? <ButtonLink to="/app/applications" variant="secondary">Review applications</ButtonLink> : null}
+      {canManage ? <ButtonLink to="/app/meetings" variant="secondary">Review meetings</ButtonLink> : null}
+      <ButtonLink to="/app/directory" variant="secondary">Back to directory</ButtonLink>
+    </>
+  );
+
   return (
     <WorkflowPageFrame
       eyebrow="Organization profile"
       title={organization?.name ?? 'Organization'}
       description="View organization details, recruitment requirements, announcements, public events, and meeting/interview availability."
       session={session}
-      actions={<ButtonLink to="/app/directory" variant="secondary">Back to directory</ButtonLink>}
+      actions={headerActions}
     >
       <SourceNotice client={client} message={sourceMessage} />
       {loading ? <LoadingBlock label="Loading organization profile" /> : null}
@@ -139,8 +147,6 @@ export function OrganizationView({ organizationId, session, client }: { organiza
             <DateEntryList title="Dated public events" entries={split.events} emptyCopy="No public event dates are posted for this organization yet." />
             <DateEntryList title="Meeting/interview availability" entries={split.availability} emptyCopy="No requestable meeting or interview availability is posted yet." />
           </section>
-
-          <OfficerOrganizationManagement organizationId={organization.id} session={session} client={client} />
 
           {organization.posts.length ? (
             <Card>

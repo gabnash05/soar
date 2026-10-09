@@ -291,7 +291,7 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
   );
 }
 
-function OfficerOrganizationPicker({ selectedOrganizationId, onChange, session }: { selectedOrganizationId: string; onChange: (value: string) => void; session: UserSession }) {
+export function OfficerOrganizationPicker({ selectedOrganizationId, onChange, session }: { selectedOrganizationId: string; onChange: (value: string) => void; session: UserSession }) {
   const grants = getApprovedOfficerGrants(session);
   if (grants.length <= 1) return null;
   return (
@@ -307,7 +307,7 @@ function OfficerOrganizationPicker({ selectedOrganizationId, onChange, session }
   );
 }
 
-function OfficerDashboardBlock({ organizationId, session, client, children }: { organizationId: string; session: UserSession; client: WorkflowDataClient; children: (dashboard: OfficerDashboard, reload: () => Promise<void>) => ReactNode }) {
+export function OfficerDashboardBlock({ organizationId, session, client, children }: { organizationId: string; session: UserSession; client: WorkflowDataClient; children: (dashboard: OfficerDashboard, reload: () => Promise<void>) => ReactNode }) {
   const dashboardQuery = useWorkflowQuery(
     () => organizationId ? client.getOfficerDashboard(organizationId, session) : Promise.resolve({ data: undefined, source: client.mode, message: 'Choose an organization.' }),
     [client, organizationId, session.uid],
@@ -332,22 +332,14 @@ export function OfficerOrganizationManagement({ organizationId, session, client 
   if (!isApprovedOfficerFor(session, organizationId)) return null;
 
   return (
-    <section className="content-stack" aria-label="Organization management">
-      <Card>
-        <CardHeader title="Manage this organization" eyebrow="Your access">
-          These controls are shown because your account has management access for this organization.
-        </CardHeader>
-      </Card>
-      <OfficerDashboardBlock organizationId={organizationId} session={session} client={client}>
-        {(dashboard, reload) => (
-          <section className="content-stack">
-            <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
-            <AnnouncementSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
-            <DateEntriesSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
-          </section>
-        )}
-      </OfficerDashboardBlock>
-    </section>
+    <Card className="notice-card">
+      <CardHeader title="Organization management" eyebrow="Your access">
+        Edit profile details, announcements, and dated entries from the dedicated Manage Organization sidebar tab.
+      </CardHeader>
+      <div className="button-row">
+        <ButtonLink to={`/settings/organization?organizationId=${encodeURIComponent(organizationId)}`} variant="primary">Manage organization</ButtonLink>
+      </div>
+    </Card>
   );
 }
 

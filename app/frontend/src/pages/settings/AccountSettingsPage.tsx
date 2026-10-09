@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { Button, Card, CardHeader, Field, StatusChip, TextInput } from '../../components/ui';
+import { Button, ButtonLink, Card, CardHeader, Field, StatusChip, TextInput } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 
 export const AccountSettingsPage = () => {
@@ -94,7 +94,10 @@ export const AccountSettingsPage = () => {
             {approvedGrants.map((grant) => (
               <div className="grant-row" key={grant.organizationId}>
                 <div><strong>{grant.organizationName}</strong><span>Organization management access</span></div>
-                <StatusChip tone="approved">Active</StatusChip>
+                <div className="component-row">
+                  <StatusChip tone="approved">Active</StatusChip>
+                  <ButtonLink to={`/settings/organization?organizationId=${grant.organizationId}`} variant="secondary">Manage organization</ButtonLink>
+                </div>
               </div>
             ))}
           </div>

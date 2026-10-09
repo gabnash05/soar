@@ -20,7 +20,7 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
       {!loading && !error && data?.length === 0 ? (
         <EmptyState title="No announcements yet">When officers publish announcements, the newest posts will appear here.</EmptyState>
       ) : null}
-      <section className="content-stack" aria-label="Announcement feed">
+      <section className="content-stack feed-column" aria-label="Announcement feed">
         {data?.map((announcement) => (
           <AnnouncementCard key={announcement.id} announcement={announcement} session={session} client={client} onChanged={reload} />
         ))}

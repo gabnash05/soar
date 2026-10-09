@@ -3,10 +3,11 @@ import type { UserSession } from '../../lib/contracts';
 import type { WorkflowDataClient } from './contracts';
 import { OfficerApplicationsReview } from './OfficerPage';
 import { EmptyState, ErrorState, RouteUnavailableState, SourceNotice, StageChip, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
-import { isSponsor } from './workflowUtils';
+import { getApprovedOfficerGrants, isSponsor } from './workflowUtils';
 
 export function ApplicationsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const { data, loading, error, sourceMessage, reload } = useWorkflowQuery(() => client.listMyApplications(session), [client, session.uid]);
+  const managedOrganizationId = getApprovedOfficerGrants(session)[0]?.organizationId;
 
   if (isSponsor(session)) {
     return (
@@ -31,9 +32,15 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
       title="Track each recruitment opportunity once."
       description="A row appears after you confirm an external form submission, then organization officers update Pending, Under review, Accepted, or Declined."
       session={session}
-      actions={<ButtonLink to="/app/directory" variant="primary">Find organizations</ButtonLink>}
+      actions={(
+        <>
+          <ButtonLink to="/app/directory" variant="primary">Find organizations</ButtonLink>
+          {managedOrganizationId ? <ButtonLink to={`/settings/organization?organizationId=${managedOrganizationId}`} variant="secondary">Manage organization</ButtonLink> : null}
+        </>
+      )}
     >
       <SourceNotice client={client} message={sourceMessage} />
+      <OfficerApplicationsReview session={session} client={client} />
       {loading ? <LoadingBlock label="Loading application tracker" /> : null}
       {error ? <ErrorState onRetry={reload}>{error}</ErrorState> : null}
       {!loading && !error && data?.length === 0 ? (
@@ -53,7 +60,6 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
           ))}
         />
       ) : null}
-      <OfficerApplicationsReview session={session} client={client} />
     </WorkflowPageFrame>
   );
 }

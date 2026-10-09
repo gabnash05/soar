@@ -22,6 +22,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
       appNavRoutes.filter((route) => {
         if (route.requiresStudent && !student) return false;
         if (route.requiresOfficerGrant && !officer) return false;
+        if (route.requiresActiveAccess && !activeAccess) return false;
         if (!activeAccess && !allowLockedMain && route.to.startsWith('/app')) return false;
         return true;
       }),

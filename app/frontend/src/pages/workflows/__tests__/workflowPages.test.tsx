@@ -8,6 +8,7 @@ import { ApplicationsView } from '../ApplicationsPage';
 import { DirectoryView } from '../DirectoryPage';
 import { FeedView } from '../FeedPage';
 import { MeetingsView } from '../MeetingsPage';
+import { OrganizationSettingsView } from '../../settings/OrganizationSettingsPage';
 import { OfficerView } from '../OfficerPage';
 import { OrganizationView } from '../OrganizationPage';
 
@@ -116,6 +117,36 @@ describe('SOAR workflow pages', () => {
     await user.selectOptions(stageSelect, 'Declined');
     expect(await screen.findByText(/Application moved to Declined in demo mode/i)).toBeInTheDocument();
     expect(screen.queryByText(/Open Mic Crew/i)).not.toBeInTheDocument();
+  });
+
+  it('links feed post authors to organization profiles without a redundant profile button', async () => {
+    renderInRouter(<FeedView session={studentSession} client={createFixtureWorkflowDataClient()} />);
+
+    expect(await screen.findByText(/Tryouts and build night/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Robotics Guild' })).toHaveAttribute('href', '/app/organizations/robotics');
+    expect(screen.getByRole('link', { name: /Open Robotics Guild profile/i })).toHaveAttribute('href', '/app/organizations/robotics');
+    expect(screen.queryByText(/Open organization profile/i)).not.toBeInTheDocument();
+  });
+
+  it('guards organization settings to approved officer grants and supports managed organization context', async () => {
+    const user = userEvent.setup();
+    const multiOfficerSession = {
+      ...officerSession,
+      officerGrants: [
+        ...officerSession.officerGrants,
+        { organizationId: 'literary', organizationName: 'Literary Circle', status: 'approved' as const },
+      ],
+    };
+    renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />);
+
+    expect(await screen.findByText(/Manage organization details/i)).toBeInTheDocument();
+    const organizationSelector = screen.getByLabelText(/^Organization$/i);
+    expect(organizationSelector).toHaveValue('robotics');
+    expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Robotics Guild');
+
+    await user.selectOptions(organizationSelector, 'literary');
+    await waitFor(() => expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Literary Circle'));
+    expect(screen.queryByDisplayValue('Campus Health Alliance')).not.toBeInTheDocument();
   });
 
   it('validates comments and updates like affordance on the feed', async () => {

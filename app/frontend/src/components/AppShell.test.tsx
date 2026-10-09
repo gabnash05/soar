@@ -27,9 +27,10 @@ describe('AppShell navigation', () => {
     expect(screen.getByText(/sponsor account/i)).toBeInTheDocument();
     expect(screen.queryByText('Applications')).not.toBeInTheDocument();
     expect(screen.queryByText('Officer tools')).not.toBeInTheDocument();
+    expect(screen.queryByText('Manage Organization')).not.toBeInTheDocument();
   });
 
-  it('keeps officer grants visible without adding a catch-all tools tab', async () => {
+  it('shows Manage Organization only for active officer grants without adding a catch-all tools tab', async () => {
     renderShell(
       makeSession({
         officerGrants: [{ organizationId: 'coding', organizationName: 'Coding Society', status: 'active' }],
@@ -38,6 +39,7 @@ describe('AppShell navigation', () => {
 
     await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
     expect(screen.queryByText('Officer tools')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage Organization' })).toBeInTheDocument();
     expect(screen.getByText('Coding Society')).toBeInTheDocument();
   });
 });

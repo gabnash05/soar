@@ -17,6 +17,7 @@ import { RecoveryPage } from '../pages/access/RecoveryPage';
 import { RegistrationIntentPage } from '../pages/access/RegistrationIntentPage';
 import { AccessSettingsPage } from '../pages/settings/AccessSettingsPage';
 import { AccountSettingsPage } from '../pages/settings/AccountSettingsPage';
+import { OrganizationSettingsPage } from '../pages/settings/OrganizationSettingsPage';
 import {
   ApplicationsPage,
   DirectoryPage,
@@ -153,6 +154,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="/settings/account" replace /> },
           { path: 'account', element: <AccountSettingsPage /> },
           { path: 'access', element: <AccessSettingsPage /> },
+          { path: 'organization', element: <GuardLayout requireVerified requireActiveAccess requireOfficerGrant />, children: [{ index: true, element: <OrganizationSettingsPage /> }] },
         ],
       },
     ],
