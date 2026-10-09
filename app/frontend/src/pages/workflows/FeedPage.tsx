@@ -10,7 +10,7 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
     <WorkflowPageFrame
       eyebrow="Announcements"
       title="Campus updates without the clutter."
-      description="Newest organization posts appear here and on each organization profile. Images are cropped safely and interactions never hide failed saves."
+      description="Newest organization posts appear here and on each organization profile."
       session={session}
       actions={<ButtonLink to="/app/directory" variant="primary">Browse organizations</ButtonLink>}
     >

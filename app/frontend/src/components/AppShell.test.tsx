@@ -29,7 +29,7 @@ describe('AppShell navigation', () => {
     expect(screen.queryByText('Officer tools')).not.toBeInTheDocument();
   });
 
-  it('shows officer tools only for trusted active grants', async () => {
+  it('keeps officer grants visible without adding a catch-all tools tab', async () => {
     renderShell(
       makeSession({
         officerGrants: [{ organizationId: 'coding', organizationName: 'Coding Society', status: 'active' }],
@@ -37,7 +37,7 @@ describe('AppShell navigation', () => {
     );
 
     await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
-    expect(screen.getByText('Officer tools')).toBeInTheDocument();
+    expect(screen.queryByText('Officer tools')).not.toBeInTheDocument();
     expect(screen.getByText('Coding Society')).toBeInTheDocument();
   });
 });

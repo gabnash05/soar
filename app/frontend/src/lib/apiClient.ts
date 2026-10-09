@@ -10,7 +10,7 @@ export const apiBaseUrl = () => (import.meta.env.VITE_SOAR_API_BASE_URL || '').r
 export const assertApiBase = () => {
   const base = apiBaseUrl();
   if (!base) {
-    throw new ServiceUnavailableError('SOAR backend API is not configured. Set VITE_SOAR_API_BASE_URL or enable VITE_SOAR_USE_FIXTURES=true for local UI development.');
+    throw new ServiceUnavailableError('SOAR services are temporarily unavailable. Please try again later.');
   }
   return base;
 };

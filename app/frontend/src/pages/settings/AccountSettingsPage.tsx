@@ -48,7 +48,7 @@ export const AccountSettingsPage = () => {
       <header className="page-header">
         <p className="eyebrow">Personal settings</p>
         <h1>Account settings</h1>
-        <p>Manage personal account details. Payment status and officer permissions are read from trusted backend records and cannot be edited here.</p>
+        <p>Manage your profile, sign-in email, and organization permissions.</p>
       </header>
 
       {message ? <div className="form-success" role="status">{message}</div> : null}
@@ -56,7 +56,7 @@ export const AccountSettingsPage = () => {
 
       <div className="settings-grid">
         <Card>
-          <CardHeader title="Profile details" eyebrow="Allowed edit" >Name changes follow the approved 30-day cooldown.</CardHeader>
+          <CardHeader title="Profile" eyebrow="Personal details">Name changes are available once every 30 days.</CardHeader>
           <form className="form-grid" onSubmit={handleName}>
             <Field id="displayName" label="Full name">
               <TextInput id="displayName" value={displayName} onChange={(event) => setDisplayName(event.target.value)} required />
@@ -71,7 +71,7 @@ export const AccountSettingsPage = () => {
         </Card>
 
         <Card>
-          <CardHeader title="Email change" eyebrow="Verification required">Enter your current password. The saved email changes only after the new address is verified.</CardHeader>
+          <CardHeader title="Sign-in email" eyebrow="Verification required">Enter your current password. Your email changes after the new address is verified.</CardHeader>
           <form className="form-grid" onSubmit={handleEmail}>
             <Field id="currentEmail" label="Current email">
               <TextInput id="currentEmail" value={session.email} disabled readOnly />
@@ -88,18 +88,18 @@ export const AccountSettingsPage = () => {
       </div>
 
       <Card>
-        <CardHeader title="Organization permissions" eyebrow="Read only">Officer access is a scoped organization grant. It is not a demo role switch and cannot be self-assigned.</CardHeader>
+        <CardHeader title="Organization permissions" eyebrow="Account access">Officer access is granted per organization and cannot be self-assigned.</CardHeader>
         {approvedGrants.length ? (
           <div className="grant-list">
             {approvedGrants.map((grant) => (
               <div className="grant-row" key={grant.organizationId}>
-                <div><strong>{grant.organizationName}</strong><span>Organization-specific officer access</span></div>
-                <StatusChip tone="approved">Approved</StatusChip>
+                <div><strong>{grant.organizationName}</strong><span>Organization management access</span></div>
+                <StatusChip tone="approved">Active</StatusChip>
               </div>
             ))}
           </div>
         ) : (
-          <p className="empty-copy">No active officer grants. Initial owners are assigned by the project administrator; organization owners approve additional officers.</p>
+          <p className="empty-copy">No active officer grants.</p>
         )}
       </Card>
     </div>

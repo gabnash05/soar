@@ -15,6 +15,7 @@ import {
   useWorkflowSession,
   WorkflowPageFrame,
 } from './pageParts';
+import { OfficerOrganizationManagement } from './OfficerPage';
 import { getApprovedOfficerGrants, getSafeHttpUrl, isSponsor, splitDateEntries } from './workflowUtils';
 
 function RecruitmentActions({ organization, session, client }: { organization: OrganizationProfile; session: UserSession; client: WorkflowDataClient }) {
@@ -27,7 +28,7 @@ function RecruitmentActions({ organization, session, client }: { organization: O
     return (
       <Card>
         <CardHeader title="Applications hidden for sponsors" eyebrow="Sponsor access">
-          Sponsors can browse organization information and request meetings, but sponsor-only application tools are outside scope.
+  Sponsors can browse organization information and request meetings.
         </CardHeader>
         <ButtonLink to="/app/meetings" variant="primary">Request a meeting</ButtonLink>
       </Card>
@@ -79,7 +80,7 @@ function RecruitmentActions({ organization, session, client }: { organization: O
           2. I submitted the external form
         </Button>
       </div>
-      <p className="help">Confirmation stays locked before the external link is activated from SOAR. Production still needs backend duplicate prevention per student and opportunity.</p>
+      <p className="help">Confirmation stays locked until you open the external link from SOAR.</p>
       <ResultMessage result={result} />
     </Card>
   );
@@ -95,9 +96,9 @@ export function OrganizationView({ organizationId, session, client }: { organiza
     <WorkflowPageFrame
       eyebrow="Organization profile"
       title={organization?.name ?? 'Organization'}
-      description="Profiles show description, contact, recruitment requirements, posts, public dated events, and meeting/interview availability without turning external forms into in-site forms."
+      description="View organization details, recruitment requirements, announcements, public events, and meeting/interview availability."
       session={session}
-      actions={canManage ? <ButtonLink to="/app/officer" variant="primary">Manage approved organization</ButtonLink> : <ButtonLink to="/app/directory" variant="secondary">Back to directory</ButtonLink>}
+      actions={<ButtonLink to="/app/directory" variant="secondary">Back to directory</ButtonLink>}
     >
       <SourceNotice client={client} message={sourceMessage} />
       {loading ? <LoadingBlock label="Loading organization profile" /> : null}
@@ -110,7 +111,7 @@ export function OrganizationView({ organizationId, session, client }: { organiza
       {organization ? (
         <>
           <section className="grid grid-2 profile-grid">
-            <Card>
+            <Card className="org-profile-card">
               <div className="org-head">
                 <OrganizationAvatar name={organization.name} logoUrl={organization.logoUrl} />
                 <div>
@@ -121,15 +122,14 @@ export function OrganizationView({ organizationId, session, client }: { organiza
               <p>{organization.description}</p>
               <p><strong>Contact:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
               <p>
-                <StatusChip tone="info">Officer grants required for management</StatusChip>{' '}
-                {canManage ? <StatusChip tone="approved">You can manage this organization</StatusChip> : null}
+                {canManage ? <StatusChip tone="approved">Management access</StatusChip> : <StatusChip tone="info">Public profile</StatusChip>}
               </p>
             </Card>
             <Card>
               <CardHeader title={organization.recruitment.title} eyebrow="Recruitment opportunity" />
               <p><strong>Requirements:</strong> {organization.recruitment.requirements}</p>
               <p><strong>Instructions:</strong> {organization.recruitment.instructions}</p>
-              <p className="help">This is one unique opportunity. Duplicate confirmations for the same student and opportunity are blocked by the data layer and must be enforced by production services.</p>
+              <p className="help">Each student can track this opportunity once.</p>
             </Card>
           </section>
 
@@ -139,6 +139,8 @@ export function OrganizationView({ organizationId, session, client }: { organiza
             <DateEntryList title="Dated public events" entries={split.events} emptyCopy="No public event dates are posted for this organization yet." />
             <DateEntryList title="Meeting/interview availability" entries={split.availability} emptyCopy="No requestable meeting or interview availability is posted yet." />
           </section>
+
+          <OfficerOrganizationManagement organizationId={organization.id} session={session} client={client} />
 
           {organization.posts.length ? (
             <Card>

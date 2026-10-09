@@ -64,7 +64,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
           </span>
         </NavLink>
         <div className="topbar-meta">
-          {gateway.mode === 'fixture' ? <StatusChip tone="attention">Fixture mode</StatusChip> : null}
+          {gateway.mode === 'fixture' ? <StatusChip tone="attention">Demo mode</StatusChip> : null}
           <StatusChip tone={accessTone}>{accessLabel}</StatusChip>
         </div>
       </header>
@@ -82,7 +82,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
             <div className="sidebar-alert">Verify your email before using the main app.</div>
           ) : null}
           {!activeAccess ? (
-            <div className="sidebar-alert">Main workflow pages are locked until PHP10 annual access is active.</div>
+            <div className="sidebar-alert">Main SOAR pages are locked until PHP10 annual access is active.</div>
           ) : null}
           <nav className="app-nav" aria-label="SOAR sections">
             {navRoutes.map((route) => (

@@ -28,7 +28,7 @@ import {
 } from './workflowUtils';
 import { createProductionWorkflowDataClient } from './apiClient';
 
-const unavailableMessage = 'Workflow services for announcements, organizations, applications, meetings, and officer tools are not connected yet. No sample save is live backend persistence.';
+const unavailableMessage = 'This section is temporarily unavailable. Please try again later.';
 
 type BackendGatewayMode = 'production' | 'fixture';
 
@@ -384,7 +384,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       return {
         data: clone(announcements).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
         source: 'fixture',
-        message: 'Development fixture mode: visible UI state changes are local only.',
+        message: 'Demo mode: sample workflow changes are simulated locally.',
       };
     },
 
@@ -395,7 +395,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       announcement.viewerHasLiked = liked;
       if (liked && !wasLiked) announcement.likeCount += 1;
       if (!liked && wasLiked) announcement.likeCount = Math.max(0, announcement.likeCount - 1);
-      return success(liked ? 'Liked in workflow fixture mode.' : 'Like removed in workflow fixture mode.', clone(announcement));
+      return success(liked ? 'Liked in demo mode.' : 'Like removed in demo mode.', clone(announcement));
     },
 
     async addAnnouncementComment(announcementId, body, session) {
@@ -410,14 +410,14 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
         createdAt: new Date().toISOString(),
       };
       announcement.comments.push(comment);
-      return success('Comment added in workflow fixture mode only.', clone(comment));
+      return success('Comment added in demo mode.', clone(comment));
     },
 
     async listOrganizations() {
       return {
         data: clone(organizations.map(toSummary)),
         source: 'fixture',
-        message: 'Development fixture mode: organization records are local samples.',
+        message: 'Demo mode: organization records are local samples.',
       };
     },
 
@@ -426,7 +426,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       return {
         data: organization ? hydrateOrganization(organization) : undefined,
         source: 'fixture',
-        message: organization ? 'Development fixture mode: profile data is local.' : 'Organization not found in fixture data.',
+        message: organization ? 'Demo mode: profile data is local.' : 'Organization not found in demo data.',
       };
     },
 
@@ -453,7 +453,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
         updatedAt: now,
       };
       applications.unshift(application);
-      return success('External submission confirmation recorded in fixture mode as Pending. Production must enforce duplicates server-side.', clone(application));
+      return success('External submission confirmation recorded as Pending in demo mode.', clone(application));
     },
 
     async listMyApplications(session) {
@@ -461,7 +461,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       return {
         data: clone(data),
         source: 'fixture',
-        message: isSponsor(session) ? 'Sponsors do not have application tracker data.' : 'Development fixture mode: tracker rows are local samples.',
+        message: isSponsor(session) ? 'Sponsors do not have application tracker data.' : 'Demo mode: tracker rows are local samples.',
       };
     },
 
@@ -469,7 +469,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       return {
         data: clone(dateEntries.filter((entry) => entry.kind === 'availability').sort(compareDateEntries)),
         source: 'fixture',
-        message: 'Development fixture mode: availability is local sample data.',
+        message: 'Demo mode: availability is local sample data.',
       };
     },
 
@@ -477,7 +477,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       return {
         data: clone(meetingRequests.filter((request) => request.requesterUid === session.uid)),
         source: 'fixture',
-        message: 'Development fixture mode: requests are local samples and Pending is not booked.',
+        message: 'Demo mode: requests are local samples and Pending is not booked.',
       };
     },
 
@@ -506,7 +506,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
         updatedAt: new Date().toISOString(),
       };
       meetingRequests.unshift(request);
-      return success('Meeting request created as Pending in fixture mode. It is not a confirmed booking.', clone(request));
+      return success('Meeting request created as Pending in demo mode. It is not a confirmed booking.', clone(request));
     },
 
     async getOfficerDashboard(organizationId, session) {
@@ -522,7 +522,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
         dateEntries: dateEntries.filter((entry) => entry.organizationId === organization.id).sort(compareDateEntries),
         meetingRequests: meetingRequests.filter((request) => request.organizationId === organization.id),
       };
-      return { data: clone(dashboard), source: 'fixture', message: 'Development fixture mode: officer actions are local only.' };
+      return { data: clone(dashboard), source: 'fixture', message: 'Demo mode: officer actions are simulated locally.' };
     },
 
     async saveOrganizationProfile(input, session) {
@@ -543,7 +543,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       organization.recruitment.requirements = input.recruitmentRequirements.trim();
       organization.recruitment.instructions = input.recruitmentInstructions.trim();
       organization.recruitment.externalFormUrl = input.externalFormUrl?.trim();
-      return success('Organization profile saved in workflow fixture mode only.', hydrateOrganization(organization));
+      return success('Organization profile saved in demo mode.', hydrateOrganization(organization));
     },
 
     async publishAnnouncement(input, session) {
@@ -566,7 +566,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
         comments: [],
       };
       announcements.unshift(announcement);
-      return success('Announcement published in workflow fixture mode only.', clone(announcement));
+      return success('Announcement published in demo mode.', clone(announcement));
     },
 
     async deleteAnnouncement(announcementId, organizationId, session) {
@@ -575,7 +575,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       const before = announcements.length;
       announcements = announcements.filter((announcement) => announcement.id !== announcementId || announcement.organizationId !== organizationId);
       if (announcements.length === before) return failure('not-found', 'Announcement not found.');
-      return { ok: true, persisted: true, source: 'fixture', message: 'Announcement deleted in workflow fixture mode only.' };
+      return { ok: true, persisted: true, source: 'fixture', message: 'Announcement deleted in demo mode.' };
     },
 
     async updateApplicationStage(applicationId, stage: ApplicationStage, organizationId, session) {
@@ -585,7 +585,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       if (!application) return failure('not-found', 'Application not found.');
       application.stage = stage;
       application.updatedAt = new Date().toISOString();
-      return success(`Application moved to ${stage} in workflow fixture mode only.`, clone(application));
+      return success(`Application moved to ${stage} in demo mode.`, clone(application));
     },
 
     async saveDateEntry(input, session) {
@@ -613,7 +613,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       entry.endTime = input.endTime;
       entry.details = input.details.trim();
       if (!existing) dateEntries.push(entry);
-      return success(`${entry.kind === 'event' ? 'Event' : 'Meeting availability'} saved in workflow fixture mode only.`, clone(entry));
+      return success(`${entry.kind === 'event' ? 'Event' : 'Meeting availability'} saved in demo mode.`, clone(entry));
     },
 
     async deleteDateEntry(dateEntryId, organizationId, session) {
@@ -622,7 +622,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       const before = dateEntries.length;
       dateEntries = dateEntries.filter((entry) => entry.id !== dateEntryId || entry.organizationId !== organizationId);
       if (dateEntries.length === before) return failure('not-found', 'Date entry not found.');
-      return { ok: true, persisted: true, source: 'fixture', message: 'Date entry removed in workflow fixture mode only.' };
+      return { ok: true, persisted: true, source: 'fixture', message: 'Date entry removed in demo mode.' };
     },
 
     async decideMeetingRequest(meetingRequestId, status: Exclude<MeetingStatus, 'Pending'>, organizationId, session) {
@@ -632,7 +632,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       if (!request) return failure('not-found', 'Meeting request not found.');
       request.status = status;
       request.updatedAt = new Date().toISOString();
-      return success(`Meeting request ${status.toLocaleLowerCase()} in workflow fixture mode only.`, clone(request));
+      return success(`Meeting request ${status.toLocaleLowerCase()} in demo mode.`, clone(request));
     },
   };
 }

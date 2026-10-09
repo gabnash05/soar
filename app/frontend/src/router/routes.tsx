@@ -22,7 +22,6 @@ import {
   DirectoryPage,
   FeedPage,
   MeetingsPage,
-  OfficerPage,
   OrganizationPage,
 } from '../pages/workflows';
 
@@ -76,7 +75,7 @@ const GuardLayout = ({
     return (
       <main className="page-narrow">
         <StateBlock symbol="↗" title="Officer access not active">
-          Officer tools appear only after an approved organization-specific grant. Ask your current organization owner or project administrator if this looks wrong.
+Organization management controls appear only where your account has access.
         </StateBlock>
       </main>
     );
@@ -170,7 +169,6 @@ export const router = createBrowserRouter([
           { path: 'organizations/:organizationId', element: <OrganizationPage /> },
           { path: 'applications', element: <GuardLayout requireStudent />, children: [{ index: true, element: <ApplicationsPage /> }] },
           { path: 'meetings', element: <MeetingsPage /> },
-          { path: 'officer', element: <GuardLayout requireStudent requireOfficerGrant />, children: [{ index: true, element: <OfficerPage /> }] },
         ],
       },
     ],

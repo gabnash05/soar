@@ -14,12 +14,12 @@ export function DirectoryView({ session, client }: { session: UserSession; clien
     <WorkflowPageFrame
       eyebrow="Directory"
       title="Find an organization by name."
-      description="The approved UX keeps directory discovery simple: searchable organization names, readable cards, profile links, and a clear no-results state."
+      description="Search organization names, review quick details, and open a profile when you find a match."
       session={session}
     >
       <SourceNotice client={client} message={sourceMessage} />
       <Card>
-        <CardHeader title="Organization name search">No category filters are included in the approved scope.</CardHeader>
+        <CardHeader title="Organization name search">Search by organization name.</CardHeader>
         <div className="field">
           <label className="label-row" htmlFor="organization-search">Search by organization name</label>
           <input
@@ -35,7 +35,7 @@ export function DirectoryView({ session, client }: { session: UserSession; clien
       {loading ? <LoadingBlock label="Loading organizations" /> : null}
       {error ? <ErrorState onRetry={reload}>{error}</ErrorState> : null}
       {!loading && !error && data?.length === 0 ? (
-        <EmptyState title="Organizations are not available">Directory records will appear here once workflow services are connected.</EmptyState>
+        <EmptyState title="Organizations are not available">Directory records will appear here when they are available.</EmptyState>
       ) : null}
       {!loading && !error && data && data.length > 0 && filtered.length === 0 ? (
         <EmptyState title="No organizations match this search">Clear the search or try a different organization name.</EmptyState>

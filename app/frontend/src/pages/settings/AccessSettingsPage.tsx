@@ -26,7 +26,7 @@ export const AccessSettingsPage = () => {
     const fixtureStatus = searchParams.get('fixtureStatus');
     if (gateway.mode === 'fixture' && renewalId && fixtureStatus === 'confirmed') {
       markFixtureRenewalConfirmedFromUrl(renewalId, fixtureStatus);
-      void reloadSession().then(() => setMessage('Development fixture renewal applied. Production renewals require provider webhook confirmation.'));
+      void reloadSession().then(() => setMessage('Demo renewal applied locally.'));
     }
   }, [gateway.mode, reloadSession, searchParams]);
 
@@ -78,7 +78,7 @@ export const AccessSettingsPage = () => {
 
       <div className="settings-grid">
         <Card>
-          <CardHeader title="Access details" eyebrow="Read only">These values come from backend entitlement records and are not editable in the browser.</CardHeader>
+          <CardHeader title="Access details" eyebrow="Annual plan">These values come from your secure access record.</CardHeader>
           <dl className="summary-list">
             <div><dt>Annual fee</dt><dd>PHP{session.access.annualFeePhp}</dd></div>
             <div><dt>Status</dt><dd>{session.access.status}</dd></div>
@@ -88,15 +88,15 @@ export const AccessSettingsPage = () => {
           </dl>
         </Card>
         <Card>
-          <CardHeader title="Locked paths" eyebrow="Access boundary">Expired users can still use sign-in, password recovery, renewal, and settings. Main workflows remain locked.</CardHeader>
+          <CardHeader title="When access expires" eyebrow="Available actions">You can still sign in, recover your password, renew access, and manage settings.</CardHeader>
           <ul className="check-list">
             <li>Entry and sign-in stay available.</li>
             <li>Password recovery stays available.</li>
             <li>Payment renewal stays available.</li>
             <li>Personal settings stay available for recovery and account management.</li>
-            <li>Directory, applications, meetings, and officer tools require active access.</li>
+            <li>Directory, applications, meetings, and organization management require active access.</li>
           </ul>
-          {gateway.mode === 'fixture' ? <div className="notice compact warning">Fixture renewals are local development aids only and do not prove live billing readiness.</div> : null}
+          {gateway.mode === 'fixture' ? <div className="notice compact warning">Demo renewals are simulated locally.</div> : null}
         </Card>
       </div>
     </div>

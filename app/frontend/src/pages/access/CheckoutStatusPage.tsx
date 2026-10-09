@@ -106,7 +106,7 @@ export const CheckoutStatusPage = () => {
               </dl>
             </div>
           ) : null}
-          {gateway.mode === 'fixture' ? <div className="notice compact warning">Fixture mode confirms only the named local development URL. It is not production payment evidence.</div> : null}
+          {gateway.mode === 'fixture' ? <div className="notice compact warning">Demo payment confirmation is simulated locally.</div> : null}
           <div className="auth-links"><Link to="/register">Start over</Link><Link to="/login">Sign in instead</Link></div>
         </div>
 
