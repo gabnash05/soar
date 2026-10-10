@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, ButtonLink, Card, CardHeader, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
+import { Button, ButtonLink, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
 import { useAuth, useBackendGateway } from '../../context/AuthContext';
 import type { ApplicationStage, MeetingStatus, UserSession } from '../../lib/contracts';
 import { getWorkflowDataClientForGatewayMode, unavailableWorkflowDataClient } from './adapters';
@@ -125,9 +125,9 @@ export function SourceNotice({ client }: { message?: string | null; client: Work
     ? 'Demo mode: sample accounts, payments, and workflow changes are simulated locally.'
     : getUnavailableCopy();
   return (
-    <Card className="notice-card">
+    <aside className="surface-notice" role="note">
       <p>{copy}</p>
-    </Card>
+    </aside>
   );
 }
 
@@ -147,14 +147,25 @@ export function ErrorState({ title = 'We could not load this', children, onRetry
   );
 }
 
-export function OrganizationAvatar({ name, logoUrl }: { name: string; logoUrl?: string }) {
-  const initials = name
+function organizationInitials(name: string) {
+  return name
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
-    .join('');
-  return <span className="org-avatar">{logoUrl ? <img src={logoUrl} alt={`${name} logo`} loading="lazy" decoding="async" /> : initials || 'SO'}</span>;
+    .join('') || 'SO';
+}
+
+export function OrganizationAvatar({ name, logoUrl }: { name: string; logoUrl?: string }) {
+  return <span className="org-avatar">{logoUrl ? <img src={logoUrl} alt={`${name} logo`} loading="lazy" decoding="async" /> : organizationInitials(name)}</span>;
+}
+
+export function OrganizationIdentityArt({ name, logoUrl, className = '' }: { name: string; logoUrl?: string; className?: string }) {
+  return (
+    <div className={`org-identity-art ${className}`.trim()}>
+      {logoUrl ? <img src={logoUrl} alt={`${name} logo`} loading="lazy" decoding="async" /> : <span>{organizationInitials(name)}</span>}
+    </div>
+  );
 }
 
 export function ResultMessage({ result }: { result: WorkflowMutationResult<unknown> | string | null }) {
@@ -170,10 +181,12 @@ export function ResultMessage({ result }: { result: WorkflowMutationResult<unkno
 
 export function DateEntryList({ title, entries, emptyCopy }: { title: string; entries: DateEntry[]; emptyCopy: string }) {
   return (
-    <Card>
-      <CardHeader title={title} />
+    <section className="surface-section compact-section">
+      <header className="section-heading">
+        <h2>{title}</h2>
+      </header>
       {entries.length ? (
-        <ul className="feed-list">
+        <ul className="feed-list divided-list">
           {entries.map((entry) => (
             <li key={entry.id}>
               <div className="feed-date" aria-hidden="true">
@@ -188,9 +201,9 @@ export function DateEntryList({ title, entries, emptyCopy }: { title: string; en
           ))}
         </ul>
       ) : (
-        <p className="card-note">{emptyCopy}</p>
+        <p className="section-note">{emptyCopy}</p>
       )}
-    </Card>
+    </section>
   );
 }
 
@@ -263,14 +276,14 @@ export function AnnouncementCard({
   const organizationPath = `/app/organizations/${announcement.organizationId}`;
 
   return (
-    <Card className="announcement-card">
+    <article className="announcement-card feed-item">
       <div className="org-head">
         <Link className="org-avatar-link" to={organizationPath} aria-label={`Open ${announcement.organizationName} profile`}>
           <OrganizationAvatar name={announcement.organizationName} logoUrl={announcement.organizationLogoUrl} />
         </Link>
         <div>
           <h2><Link className="org-author-link" to={organizationPath}>{announcement.organizationName}</Link></h2>
-          <p className="card-note">{new Date(announcement.createdAt).toLocaleDateString()} · newest announcements first</p>
+          <p className="section-note">{new Date(announcement.createdAt).toLocaleDateString()} · newest announcements first</p>
         </div>
       </div>
       {announcement.image ? (
@@ -288,12 +301,12 @@ export function AnnouncementCard({
         </Button>
       </div>
       {commentsOpen ? (
-        <form className="field" onSubmit={submitComment}>
+        <form className="field comment-form" onSubmit={submitComment}>
           <label className="label-row" htmlFor={`comment-${announcement.id}`}>Add comment</label>
           <textarea id={`comment-${announcement.id}`} className="control textarea" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Keep comments respectful and specific." />
           <Button type="submit" variant="secondary" disabled={busy}>Add comment</Button>
           {announcement.comments.length ? (
-            <ul>
+            <ul className="comment-list">
               {announcement.comments.map((item) => (
                 <li key={item.id}><strong>{item.authorName}:</strong> {item.body}</li>
               ))}
@@ -302,6 +315,6 @@ export function AnnouncementCard({
         </form>
       ) : null}
       <ResultMessage result={result} />
-    </Card>
+    </article>
   );
 }

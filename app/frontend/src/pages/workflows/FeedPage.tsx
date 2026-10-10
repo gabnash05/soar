@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, ButtonLink, LoadingBlock } from '../../components/ui';
+import { Button, ButtonLink, LoadingBlock, ModalDialog } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
-import type { WorkflowDataClient } from './contracts';
+import type { WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import { AnnouncementComposer } from './OfficerPage';
-import { AnnouncementCard, EmptyState, ErrorState, RouteUnavailableState, SourceNotice, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame } from './pageParts';
+import { AnnouncementCard, EmptyState, ErrorState, ResultMessage, RouteUnavailableState, SourceNotice, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame } from './pageParts';
 import { getApprovedOfficerGrants } from './workflowUtils';
 
 export function FeedView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const { data, loading, error, sourceMessage, reload } = useWorkflowQuery(() => client.listAnnouncements(session), [client, session.uid]);
   const officerGrants = useMemo(() => getApprovedOfficerGrants(session), [session]);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [composerDirty, setComposerDirty] = useState(false);
+  const [composerResult, setComposerResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState(officerGrants[0]?.organizationId ?? '');
 
   useEffect(() => {
@@ -35,7 +37,10 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
       actions={(
         <>
           {canPostAnnouncement ? (
-            <Button type="button" variant="primary" aria-controls="announcement-composer" onClick={() => setComposerOpen(true)}>
+            <Button type="button" variant="primary" aria-controls="announcement-composer" onClick={() => {
+              setComposerResult(null);
+              setComposerOpen(true);
+            }}>
               Post announcement
             </Button>
           ) : null}
@@ -44,27 +49,33 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
       )}
     >
       <SourceNotice client={client} message={sourceMessage} />
-      {composerOpen && selectedGrant ? (
-        <AnnouncementComposer
-          organizationId={selectedGrant.organizationId}
-          organizationName={selectedGrant.organizationName}
-          session={session}
-          client={client}
-          onChanged={reload}
-          context={(
-            officerGrants.length > 1 ? (
-              <div className="field">
-                <label className="label-row" htmlFor="announcement-organization">Posting organization</label>
-                <select id="announcement-organization" className="control" value={selectedGrant.organizationId} onChange={(event) => setSelectedOrganizationId(event.target.value)}>
-                  {officerGrants.map((grant) => <option key={grant.organizationId} value={grant.organizationId}>{grant.organizationName}</option>)}
-                </select>
-              </div>
-            ) : (
-              <p className="notice compact">Posting as {selectedGrant.organizationName}.</p>
-            )
-          )}
-        />
-      ) : null}
+      {!composerOpen ? <ResultMessage result={composerResult} /> : null}
+      <ModalDialog open={composerOpen && Boolean(selectedGrant)} title="Post announcement" dirty={composerDirty} onClose={() => setComposerOpen(false)}>
+        {composerOpen && selectedGrant ? (
+          <AnnouncementComposer
+            organizationId={selectedGrant.organizationId}
+            organizationName={selectedGrant.organizationName}
+            session={session}
+            client={client}
+            onChanged={reload}
+            onDirtyChange={setComposerDirty}
+            onResult={setComposerResult}
+            onSubmitted={() => setComposerOpen(false)}
+            context={(
+              officerGrants.length > 1 ? (
+                <div className="field">
+                  <label className="label-row" htmlFor="announcement-organization">Posting organization</label>
+                  <select id="announcement-organization" className="control" value={selectedGrant.organizationId} onChange={(event) => setSelectedOrganizationId(event.target.value)}>
+                    {officerGrants.map((grant) => <option key={grant.organizationId} value={grant.organizationId}>{grant.organizationName}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <p className="notice compact">Posting as {selectedGrant.organizationName}.</p>
+              )
+            )}
+          />
+        ) : null}
+      </ModalDialog>
       {loading ? <LoadingBlock label="Loading announcements" /> : null}
       {error ? <ErrorState onRetry={reload}>{error}</ErrorState> : null}
       {!loading && !error && data?.length === 0 ? (

@@ -6,6 +6,9 @@ import { useAuth } from '../context/AuthContext';
 import { hasActiveAccess, hasApprovedOfficerGrant, isStudentAccount } from '../lib/contracts';
 import { appNavRoutes } from '../router/nav';
 
+const firstApprovedGrant = (session: NonNullable<ReturnType<typeof useAuth>['session']>) =>
+  session.officerGrants.find((grant) => grant.status === 'active' || grant.status === 'approved');
+
 export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolean }) => {
   const { session, signOut, gateway } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -40,6 +43,14 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
   };
 
   if (!session) return <Outlet />;
+
+  const defaultManagedGrant = firstApprovedGrant(session);
+  const resolveRouteTo = (to: string) => {
+    if (to === '/settings/organization' && defaultManagedGrant) {
+      return `/settings/organization?organizationId=${encodeURIComponent(defaultManagedGrant.organizationId)}`;
+    }
+    return to;
+  };
 
   const accessTone = activeAccess ? 'approved' : session.access.status === 'expired' ? 'attention' : 'danger';
   const accessLabel = activeAccess ? 'Active access' : session.access.status === 'expired' ? 'Expired access' : 'Access locked';
@@ -86,22 +97,28 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
             <div className="sidebar-alert">Main SOAR pages are locked until PHP10 annual access is active.</div>
           ) : null}
           <nav className="app-nav" aria-label="SOAR sections">
-            {navRoutes.map((route) => (
-              <NavLink
-                key={route.to}
-                to={route.to}
-                end={route.to === '/app'}
-                onClick={() => setMobileOpen(false)}
-                className={({ isActive }) => (isActive ? 'active' : undefined)}
-              >
-                {route.label}
-              </NavLink>
-            ))}
+            {navRoutes.map((route) => {
+              const to = resolveRouteTo(route.to);
+              return (
+                <NavLink
+                  key={route.to}
+                  to={to}
+                  end={route.to === '/app'}
+                  onClick={() => setMobileOpen(false)}
+                  className={({ isActive }) => (isActive ? 'active' : undefined)}
+                >
+                  {route.label}
+                </NavLink>
+              );
+            })}
           </nav>
-          {officer ? (
+          {officer && defaultManagedGrant ? (
             <div className="grant-card">
               <span>Officer permission</span>
-              <strong>{session.officerGrants.find((grant) => grant.status === 'active' || grant.status === 'approved')?.organizationName}</strong>
+              <strong>{defaultManagedGrant.organizationName}</strong>
+              <NavLink to={resolveRouteTo('/settings/organization')} onClick={() => setMobileOpen(false)}>
+                Manage this organization
+              </NavLink>
             </div>
           ) : null}
           <Button type="button" variant="secondary" onClick={handleSignOut} disabled={signingOut}>
@@ -117,11 +134,14 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
       </div>
 
       <nav className="bottom-nav" aria-label="Mobile SOAR navigation">
-        {navRoutes.slice(0, 5).map((route) => (
-          <NavLink key={route.to} to={route.to} end={route.to === '/app'}>
-            {route.shortLabel}
-          </NavLink>
-        ))}
+        {navRoutes.slice(0, 5).map((route) => {
+          const to = resolveRouteTo(route.to);
+          return (
+            <NavLink key={route.to} to={to} end={route.to === '/app'}>
+              {route.shortLabel}
+            </NavLink>
+          );
+        })}
         <ButtonLink to="/settings/account" variant="quiet">More</ButtonLink>
       </nav>
     </div>
