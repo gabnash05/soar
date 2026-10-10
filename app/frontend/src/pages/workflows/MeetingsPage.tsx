@@ -1,32 +1,34 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, ButtonLink, Card, CardHeader, LoadingBlock } from '../../components/ui';
+import { Button, LoadingBlock, ModalDialog } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
-import type { MeetingRequestInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
+import type { DateEntry, MeetingRequestInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import { OfficerMeetingReview } from './OfficerPage';
 import { EmptyState, ErrorState, MeetingStatusChip, ResultMessage, RouteUnavailableState, SourceNotice, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
-import { formatDateEntry, getApprovedOfficerGrants, todayIsoDate } from './workflowUtils';
+import { formatDateEntry, todayIsoDate } from './workflowUtils';
+
+const requestInputFromOption = (option?: DateEntry): MeetingRequestInput => ({
+  organizationId: option?.organizationId ?? '',
+  dateEntryId: option?.id ?? '',
+  requestedDate: option?.date ?? todayIsoDate(),
+  requestedTime: option?.startTime ?? '09:00',
+  note: '',
+});
 
 export function MeetingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const optionsQuery = useWorkflowQuery(() => client.listMeetingOptions(session), [client, session.uid]);
   const requestsQuery = useWorkflowQuery(() => client.listMyMeetingRequests(session), [client, session.uid]);
   const options = optionsQuery.data ?? [];
   const requests = requestsQuery.data ?? [];
-  const [form, setForm] = useState<MeetingRequestInput>({ organizationId: '', dateEntryId: '', requestedDate: todayIsoDate(), requestedTime: '09:00', note: '' });
+  const [form, setForm] = useState<MeetingRequestInput>(() => requestInputFromOption());
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
-  const managedOrganizationId = getApprovedOfficerGrants(session)[0]?.organizationId;
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestDirty, setRequestDirty] = useState(false);
 
   useEffect(() => {
     if (!form.dateEntryId && options.length) {
-      const first = options[0];
-      setForm((current) => ({
-        ...current,
-        organizationId: first.organizationId,
-        dateEntryId: first.id,
-        requestedDate: first.date,
-        requestedTime: first.startTime ?? '09:00',
-      }));
+      setForm(requestInputFromOption(options[0]));
     }
   }, [form.dateEntryId, options]);
 
@@ -37,13 +39,36 @@ export function MeetingsView({ session, client }: { session: UserSession; client
 
   const selectedOption = options.find((option) => option.id === form.dateEntryId);
 
+  const patchForm = (patch: Partial<MeetingRequestInput>) => {
+    setForm((current) => ({ ...current, ...patch }));
+    setRequestDirty(true);
+  };
+
+  const openRequestDialog = () => {
+    setResult(null);
+    setRequestDirty(false);
+    if (!form.dateEntryId && options[0]) setForm(requestInputFromOption(options[0]));
+    setRequestOpen(true);
+  };
+
+  const closeRequestDialog = () => {
+    setRequestOpen(false);
+    setRequestDirty(false);
+    setForm(requestInputFromOption(options[0]));
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
     const next = await client.requestMeeting(form, session);
     setResult(next);
     setBusy(false);
-    if (next.ok) await requestsQuery.reload();
+    if (next.ok) {
+      setRequestOpen(false);
+      setRequestDirty(false);
+      setForm(requestInputFromOption(options[0]));
+      await requestsQuery.reload();
+    }
   };
 
   return (
@@ -52,85 +77,92 @@ export function MeetingsView({ session, client }: { session: UserSession; client
       title="Requests stay pending until an officer decides."
       description="Request posted meeting/interview availability and track the status. Pending requests are not confirmed bookings."
       session={session}
-      actions={managedOrganizationId ? <ButtonLink to={`/settings/organization?organizationId=${managedOrganizationId}`} variant="secondary">Manage organization</ButtonLink> : undefined}
+      actions={<Button type="button" variant="primary" disabled={!options.length} onClick={openRequestDialog}>Request meeting</Button>}
     >
       <SourceNotice client={client} message={optionsQuery.sourceMessage || requestsQuery.sourceMessage} />
+      {!requestOpen ? <ResultMessage result={result} /> : null}
       {optionsQuery.loading || requestsQuery.loading ? <LoadingBlock label="Loading meeting data" /> : null}
       {optionsQuery.error ? <ErrorState onRetry={optionsQuery.reload}>{optionsQuery.error}</ErrorState> : null}
       {requestsQuery.error ? <ErrorState onRetry={requestsQuery.reload}>{requestsQuery.error}</ErrorState> : null}
       <OfficerMeetingReview session={session} client={client} />
 
-      <section className="grid grid-2">
-        <Card>
-          <CardHeader title="Request a meeting/interview" eyebrow="Posted availability only">
-            Public dated events are informational; only meeting/interview availability can be requested.
-          </CardHeader>
-          {options.length ? (
-            <form className="content-stack" onSubmit={submit}>
-              <div className="field">
-                <label className="label-row" htmlFor="meeting-option">Posted availability</label>
-                <select
-                  id="meeting-option"
-                  className="control"
-                  value={form.dateEntryId}
-                  onChange={(event) => {
-                    const next = options.find((option) => option.id === event.target.value);
-                    setForm((current) => ({
-                      ...current,
-                      organizationId: next?.organizationId ?? '',
-                      dateEntryId: event.target.value,
-                      requestedDate: next?.date ?? current.requestedDate,
-                      requestedTime: next?.startTime ?? current.requestedTime,
-                    }));
-                  }}
-                >
-                  {Object.entries(groupedOptions).map(([organizationName, entries]) => (
-                    <optgroup key={organizationName} label={organizationName}>
-                      {entries.map((entry) => (
-                        <option key={entry.id} value={entry.id}>{entry.title} · {formatDateEntry(entry)}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </div>
-              {selectedOption ? <p className="help">{selectedOption.details}</p> : null}
-              <div className="grid grid-2">
+      <ModalDialog open={requestOpen} title="Request a meeting/interview" dirty={requestDirty} onClose={closeRequestDialog}>
+        {requestOpen ? (
+          <form className="content-stack dialog-form" onSubmit={submit}>
+            <p className="section-note">Public dated events are informational; only meeting/interview availability can be requested.</p>
+            {options.length ? (
+              <>
                 <div className="field">
-                  <label className="label-row" htmlFor="meeting-date">Requested date</label>
-                  <input id="meeting-date" className="control" type="date" value={form.requestedDate} onChange={(event) => setForm((current) => ({ ...current, requestedDate: event.target.value }))} />
+                  <label className="label-row" htmlFor="meeting-option">Posted availability</label>
+                  <select
+                    data-autofocus
+                    id="meeting-option"
+                    className="control"
+                    value={form.dateEntryId}
+                    onChange={(event) => {
+                      const next = options.find((option) => option.id === event.target.value);
+                      patchForm({
+                        organizationId: next?.organizationId ?? '',
+                        dateEntryId: event.target.value,
+                        requestedDate: next?.date ?? form.requestedDate,
+                        requestedTime: next?.startTime ?? form.requestedTime,
+                      });
+                    }}
+                  >
+                    {Object.entries(groupedOptions).map(([organizationName, entries]) => (
+                      <optgroup key={organizationName} label={organizationName}>
+                        {entries.map((entry) => (
+                          <option key={entry.id} value={entry.id}>{entry.title} · {formatDateEntry(entry)}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
                 </div>
-                <div className="field">
-                  <label className="label-row" htmlFor="meeting-time">Requested time</label>
-                  <input id="meeting-time" className="control" type="time" value={form.requestedTime} onChange={(event) => setForm((current) => ({ ...current, requestedTime: event.target.value }))} />
-                </div>
-              </div>
-              <div className="field">
-                <label className="label-row" htmlFor="meeting-note">Short note <span>Optional</span></label>
-                <textarea id="meeting-note" className="control textarea" value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} placeholder="What do you want to discuss?" />
-              </div>
-              <Button type="submit" variant="primary" disabled={busy}>Send request as Pending</Button>
-              <ResultMessage result={result} />
-            </form>
-          ) : (
-            <EmptyState title="No meeting availability posted">Organizations must post availability before users can request meetings or interviews.</EmptyState>
-          )}
-        </Card>
-
-        <Card>
-          <CardHeader title="Available meeting/interview dates" />
-          {options.length ? (
-            <ul className="feed-list">
-              {options.map((entry) => (
-                <li key={entry.id}>
-                  <div className="feed-copy">
-                    <strong><Link className="org-author-link" to={`/app/organizations/${entry.organizationId}`}>{entry.organizationName}</Link> · {entry.title}</strong>
-                    <span>{formatDateEntry(entry)} · {entry.details}</span>
+                {selectedOption ? <p className="help">{selectedOption.details}</p> : null}
+                <div className="grid grid-2">
+                  <div className="field">
+                    <label className="label-row" htmlFor="meeting-date">Requested date</label>
+                    <input id="meeting-date" className="control" type="date" value={form.requestedDate} onChange={(event) => patchForm({ requestedDate: event.target.value })} />
                   </div>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="card-note">No availability records are loaded.</p>}
-        </Card>
+                  <div className="field">
+                    <label className="label-row" htmlFor="meeting-time">Requested time</label>
+                    <input id="meeting-time" className="control" type="time" value={form.requestedTime} onChange={(event) => patchForm({ requestedTime: event.target.value })} />
+                  </div>
+                </div>
+                <div className="field">
+                  <label className="label-row" htmlFor="meeting-note">Short note <span>Optional</span></label>
+                  <textarea id="meeting-note" className="control textarea" value={form.note} onChange={(event) => patchForm({ note: event.target.value })} placeholder="What do you want to discuss?" />
+                </div>
+                <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Sending…' : 'Send request as Pending'}</Button>
+                <ResultMessage result={result} />
+              </>
+            ) : (
+              <EmptyState title="No meeting availability posted">Organizations must post availability before users can request meetings or interviews.</EmptyState>
+            )}
+          </form>
+        ) : null}
+      </ModalDialog>
+
+      <section className="surface-section compact-section">
+        <header className="section-heading inline-heading">
+          <div>
+            <h2>Available meeting/interview dates</h2>
+            <p>Choose a posted availability window, then send a request from the action above.</p>
+          </div>
+          {options.length ? <Button type="button" variant="secondary" onClick={openRequestDialog}>Request from this list</Button> : null}
+        </header>
+        {options.length ? (
+          <ul className="feed-list divided-list">
+            {options.map((entry) => (
+              <li key={entry.id}>
+                <div className="feed-copy">
+                  <strong><Link className="org-author-link" to={`/app/organizations/${entry.organizationId}`}>{entry.organizationName}</Link> · {entry.title}</strong>
+                  <span>{formatDateEntry(entry)} · {entry.details}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="section-note">No availability records are loaded.</p>}
       </section>
 
       {requests.length ? (

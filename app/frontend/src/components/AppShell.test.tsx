@@ -39,7 +39,9 @@ describe('AppShell navigation', () => {
 
     await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
     expect(screen.queryByText('Officer tools')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Manage Organization' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Manage Organization' })).toHaveAttribute('href', '/settings/organization?organizationId=coding');
+    expect(screen.getByRole('link', { name: 'Manage' })).toHaveAttribute('href', '/settings/organization?organizationId=coding');
+    expect(screen.getByRole('link', { name: /Manage this organization/i })).toHaveAttribute('href', '/settings/organization?organizationId=coding');
     expect(screen.getByText('Coding Society')).toBeInTheDocument();
   });
 });

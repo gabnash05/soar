@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Button, ButtonLink, Card, CardHeader, LoadingBlock, StateBlock } from '../../components/ui';
+import { Button, ButtonLink, LoadingBlock, ModalDialog, StateBlock } from '../../components/ui';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
 import { validateWorkflowImageFile } from '../../lib/storageUploads';
 import { createEmptyOfficerDateEntry } from './adapters';
-import type { AnnouncementInput, DateEntryInput, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
+import type { AnnouncementInput, DateEntry, DateEntryInput, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
   ErrorState,
   MeetingStatusChip,
@@ -56,10 +56,14 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
   };
 
   return (
-    <Card>
-      <CardHeader title="Organization profile" eyebrow="Public details">
-        Update the profile, recruitment copy, contact email, and logo shown to students and sponsors.
-      </CardHeader>
+    <section className="surface-section profile-form-section">
+      <header className="section-heading inline-heading">
+        <div>
+          <h2>Organization profile and recruitment</h2>
+          <p>Update the public profile, recruitment copy, contact email, and logo shown to students and sponsors.</p>
+        </div>
+        <Button type="submit" form={formId} disabled={busy}>Save profile</Button>
+      </header>
       <form id={formId} className="content-stack" onSubmit={submit}>
         <div className="grid grid-2">
           <div className="field"><label className="label-row" htmlFor="org-name">Organization name</label><input id="org-name" className="control" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div>
@@ -88,7 +92,7 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
               }}
             />
             {logoError ? <span className="help error" role="alert">{logoError}</span> : <span className="help">PNG, JPEG, GIF, or WebP. Maximum 5 MB. Existing logo stays if no file is selected.</span>}
-            {form.logoUrl ? <figure className="image-frame"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
+            {form.logoUrl ? <figure className="image-frame logo-preview"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
           </div>
           <div className="field"><label className="label-row" htmlFor="external-form">External form URL <span>Optional</span></label><input id="external-form" className="control" type="url" value={form.externalFormUrl ?? ''} onChange={(event) => setForm((current) => ({ ...current, externalFormUrl: event.target.value }))} /></div>
         </div>
@@ -97,10 +101,9 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
           <div className="field"><label className="label-row" htmlFor="recruitment-requirements">Requirements</label><textarea id="recruitment-requirements" className="control textarea" value={form.recruitmentRequirements} onChange={(event) => setForm((current) => ({ ...current, recruitmentRequirements: event.target.value }))} /></div>
           <div className="field"><label className="label-row" htmlFor="recruitment-instructions">Instructions</label><textarea id="recruitment-instructions" className="control textarea" value={form.recruitmentInstructions} onChange={(event) => setForm((current) => ({ ...current, recruitmentInstructions: event.target.value }))} /></div>
         </div>
-        <div className="button-row"><Button type="submit" disabled={busy}>Save profile and recruitment</Button></div>
         <ResultMessage result={result} />
       </form>
-    </Card>
+    </section>
   );
 }
 
@@ -112,6 +115,9 @@ export function AnnouncementComposer({
   onChanged,
   context,
   title = 'Create announcement',
+  onDirtyChange,
+  onResult,
+  onSubmitted,
 }: {
   organizationId: string;
   organizationName?: string;
@@ -120,34 +126,45 @@ export function AnnouncementComposer({
   onChanged: () => void;
   context?: ReactNode;
   title?: string;
+  onDirtyChange?: (dirty: boolean) => void;
+  onResult?: (result: WorkflowMutationResult<unknown>) => void;
+  onSubmitted?: () => void;
 }) {
   const [body, setBody] = useState('');
   const [image, setImage] = useState<AnnouncementInput['image']>();
   const [imageError, setImageError] = useState('');
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const dirty = Boolean(body.trim() || image);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
     const next = await client.publishAnnouncement({ organizationId, body, image }, session);
     setResult(next);
+    onResult?.(next);
     setBusy(false);
     if (next.ok) {
       setBody('');
       setImage(undefined);
       onChanged();
+      onSubmitted?.();
     }
   };
 
   return (
-    <Card id="announcement-composer">
-      <CardHeader title={title} eyebrow="Organization content">
-        Publish updates for {organizationName ?? 'your organization'} that appear on the announcements feed and the organization profile.
-      </CardHeader>
+    <section id="announcement-composer" className="dialog-form">
+      <header className="section-heading">
+        <h2>{title}</h2>
+        <p>Publish updates for {organizationName ?? 'your organization'} that appear on the announcements feed and the organization profile.</p>
+      </header>
       {context}
       <form className="content-stack" onSubmit={submit}>
-        <div className="field"><label className="label-row" htmlFor="announcement-body">Post text</label><textarea id="announcement-body" className="control textarea" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write an announcement for students and sponsors." /></div>
+        <div className="field"><label className="label-row" htmlFor="announcement-body">Post text</label><textarea data-autofocus id="announcement-body" className="control textarea" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write an announcement for students and sponsors." /></div>
         <div className="field">
           <label className="label-row" htmlFor="announcement-image">Optional image</label>
           <input
@@ -174,35 +191,56 @@ export function AnnouncementComposer({
         <div className="button-row"><Button type="submit" disabled={busy}>Publish announcement</Button></div>
         <ResultMessage result={result} />
       </form>
-    </Card>
+    </section>
   );
 }
 
 export function AnnouncementSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
+  const [composerResult, setComposerResult] = useState<WorkflowMutationResult<unknown> | null>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerDirty, setComposerDirty] = useState(false);
 
   return (
-    <section className="content-stack">
-      <AnnouncementComposer organizationId={dashboard.organization.id} organizationName={dashboard.organization.name} session={session} client={client} onChanged={onChanged} />
-      <Card>
-        <CardHeader title="Published announcements" />
-        {dashboard.announcements.length ? (
-          <ul className="feed-list">
-            {dashboard.announcements.map((announcement) => (
-              <li key={announcement.id}>
-                <div className="feed-copy"><strong>{announcement.body}</strong><span>{new Date(announcement.createdAt).toLocaleDateString()}</span></div>
-                <Button type="button" variant="danger" onClick={async () => {
-                  if (!window.confirm('Delete this announcement?')) return;
-                  const next = await client.deleteAnnouncement(announcement.id, dashboard.organization.id, session);
-                  setResult(next);
-                  if (next.ok) onChanged();
-                }}>Delete</Button>
-              </li>
-            ))}
-          </ul>
-        ) : <p className="card-note">No announcements yet.</p>}
-        <ResultMessage result={result} />
-      </Card>
+    <section className="surface-section">
+      <header className="section-heading inline-heading">
+        <div>
+          <h2>Published announcements</h2>
+          <p>Create announcements on the Announcements page or here when managing this organization.</p>
+        </div>
+        <Button type="button" onClick={() => setComposerOpen(true)}>Post announcement</Button>
+      </header>
+      <ModalDialog open={composerOpen} title="Post announcement" dirty={composerDirty} onClose={() => setComposerOpen(false)}>
+        {composerOpen ? (
+          <AnnouncementComposer
+            organizationId={dashboard.organization.id}
+            organizationName={dashboard.organization.name}
+            session={session}
+            client={client}
+            onChanged={onChanged}
+            onDirtyChange={setComposerDirty}
+            onResult={setComposerResult}
+            onSubmitted={() => setComposerOpen(false)}
+          />
+        ) : null}
+      </ModalDialog>
+      <ResultMessage result={composerResult} />
+      {dashboard.announcements.length ? (
+        <ul className="feed-list divided-list">
+          {dashboard.announcements.map((announcement) => (
+            <li key={announcement.id}>
+              <div className="feed-copy"><strong>{announcement.body}</strong><span>{new Date(announcement.createdAt).toLocaleDateString()}</span></div>
+              <Button type="button" variant="danger" onClick={async () => {
+                if (!window.confirm('Delete this announcement?')) return;
+                const next = await client.deleteAnnouncement(announcement.id, dashboard.organization.id, session);
+                setResult(next);
+                if (next.ok) onChanged();
+              }}>Delete</Button>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="section-note">No announcements yet.</p>}
+      <ResultMessage result={result} />
     </section>
   );
 }
@@ -210,10 +248,11 @@ export function AnnouncementSection({ dashboard, session, client, onChanged }: {
 export function ApplicantsSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   return (
-    <Card>
-      <CardHeader title="Applications to review" eyebrow="Recruitment">
-        Update a student's tracker after reviewing the external application materials your organization uses.
-      </CardHeader>
+    <section className="surface-section">
+      <header className="section-heading">
+        <h2>Applications to review</h2>
+        <p>Update a student's tracker after reviewing the external application materials your organization uses.</p>
+      </header>
       {dashboard.applicants.length ? (
         <WorkflowTable
           caption="Applicants for this organization"
@@ -240,9 +279,9 @@ export function ApplicantsSection({ dashboard, session, client, onChanged }: { d
             </tr>
           ))}
         />
-      ) : <p className="card-note">No applicants are waiting for this organization.</p>}
+      ) : <p className="section-note">No applicants are waiting for this organization.</p>}
       <ResultMessage result={result} />
-    </Card>
+    </section>
   );
 }
 
@@ -250,8 +289,33 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
   const [form, setForm] = useState<DateEntryInput>(() => createEmptyOfficerDateEntry(dashboard.organization.id));
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
-  useEffect(() => setForm(createEmptyOfficerDateEntry(dashboard.organization.id)), [dashboard.organization.id]);
+  useEffect(() => {
+    setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+    setDialogOpen(false);
+    setDirty(false);
+  }, [dashboard.organization.id]);
+
+  const patchForm = (patch: Partial<DateEntryInput>) => {
+    setForm((current) => ({ ...current, ...patch }));
+    setDirty(true);
+  };
+
+  const openCreate = () => {
+    setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+    setResult(null);
+    setDirty(false);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (entry: DateEntry) => {
+    setForm({ id: entry.id, organizationId: entry.organizationId, kind: entry.kind, title: entry.title, date: entry.date, startTime: entry.startTime, endTime: entry.endTime, details: entry.details });
+    setResult(null);
+    setDirty(false);
+    setDialogOpen(true);
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -261,36 +325,48 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
     setBusy(false);
     if (next.ok) {
       setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+      setDirty(false);
+      setDialogOpen(false);
       onChanged();
     }
   };
 
   return (
-    <Card>
-      <CardHeader title="Events and availability" eyebrow="Dated entries">
-        Post public events or meeting/interview availability for this organization.
-      </CardHeader>
-      <form className="content-stack" onSubmit={submit}>
-        <div className="grid grid-2">
-          <div className="field"><label className="label-row" htmlFor="entry-kind">Entry type</label><select id="entry-kind" className="control" value={form.kind} onChange={(event) => setForm((current) => ({ ...current, kind: event.target.value as DateEntryInput['kind'] }))}><option value="event">Public event</option><option value="availability">Meeting/interview availability</option></select></div>
-          <div className="field"><label className="label-row" htmlFor="entry-title">Title</label><input id="entry-title" className="control" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} /></div>
+    <section className="surface-section">
+      <header className="section-heading inline-heading">
+        <div>
+          <h2>Events and availability</h2>
+          <p>Post public events or meeting/interview availability for this organization.</p>
         </div>
-        <div className="grid grid-3">
-          <div className="field"><label className="label-row" htmlFor="entry-date">Date</label><input id="entry-date" className="control" type="date" value={form.date} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} /></div>
-          <div className="field"><label className="label-row" htmlFor="entry-start">Start time <span>Optional</span></label><input id="entry-start" className="control" type="time" value={form.startTime ?? ''} onChange={(event) => setForm((current) => ({ ...current, startTime: event.target.value }))} /></div>
-          <div className="field"><label className="label-row" htmlFor="entry-end">End time <span>Optional</span></label><input id="entry-end" className="control" type="time" value={form.endTime ?? ''} onChange={(event) => setForm((current) => ({ ...current, endTime: event.target.value }))} /></div>
-        </div>
-        <div className="field"><label className="label-row" htmlFor="entry-details">Short details</label><textarea id="entry-details" className="control textarea" value={form.details} onChange={(event) => setForm((current) => ({ ...current, details: event.target.value }))} /></div>
-        <div className="button-row"><Button type="submit" disabled={busy}>Add or save entry</Button></div>
-        <ResultMessage result={result} />
-      </form>
+        <Button type="button" onClick={openCreate}>Add dated entry</Button>
+      </header>
+      <ModalDialog open={dialogOpen} title={form.id ? 'Edit dated entry' : 'Add dated entry'} dirty={dirty} onClose={() => {
+        setDialogOpen(false);
+        setDirty(false);
+        setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+      }}>
+        <form className="content-stack dialog-form" onSubmit={submit}>
+          <div className="grid grid-2">
+            <div className="field"><label className="label-row" htmlFor="entry-kind">Entry type</label><select data-autofocus id="entry-kind" className="control" value={form.kind} onChange={(event) => patchForm({ kind: event.target.value as DateEntryInput['kind'] })}><option value="event">Public event</option><option value="availability">Meeting/interview availability</option></select></div>
+            <div className="field"><label className="label-row" htmlFor="entry-title">Title</label><input id="entry-title" className="control" value={form.title} onChange={(event) => patchForm({ title: event.target.value })} /></div>
+          </div>
+          <div className="grid grid-3">
+            <div className="field"><label className="label-row" htmlFor="entry-date">Date</label><input id="entry-date" className="control" type="date" value={form.date} onChange={(event) => patchForm({ date: event.target.value })} /></div>
+            <div className="field"><label className="label-row" htmlFor="entry-start">Start time <span>Optional</span></label><input id="entry-start" className="control" type="time" value={form.startTime ?? ''} onChange={(event) => patchForm({ startTime: event.target.value })} /></div>
+            <div className="field"><label className="label-row" htmlFor="entry-end">End time <span>Optional</span></label><input id="entry-end" className="control" type="time" value={form.endTime ?? ''} onChange={(event) => patchForm({ endTime: event.target.value })} /></div>
+          </div>
+          <div className="field"><label className="label-row" htmlFor="entry-details">Short details</label><textarea id="entry-details" className="control textarea" value={form.details} onChange={(event) => patchForm({ details: event.target.value })} /></div>
+          <div className="button-row"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save dated entry'}</Button></div>
+          <ResultMessage result={result} />
+        </form>
+      </ModalDialog>
       {dashboard.dateEntries.length ? (
-        <ul className="feed-list">
+        <ul className="feed-list divided-list">
           {dashboard.dateEntries.map((entry) => (
             <li key={entry.id}>
               <div className="feed-copy"><strong>{entry.title}</strong><span>{entry.kind === 'event' ? 'Public event' : 'Meeting/interview availability'} · {formatDateEntry(entry)} · {entry.details}</span></div>
               <div className="component-row">
-                <Button type="button" variant="secondary" onClick={() => setForm({ id: entry.id, organizationId: entry.organizationId, kind: entry.kind, title: entry.title, date: entry.date, startTime: entry.startTime, endTime: entry.endTime, details: entry.details })}>Edit</Button>
+                <Button type="button" variant="secondary" onClick={() => openEdit(entry)}>Edit</Button>
                 <Button type="button" variant="danger" onClick={async () => {
                   if (!window.confirm('Remove this dated entry?')) return;
                   const next = await client.deleteDateEntry(entry.id, dashboard.organization.id, session);
@@ -301,18 +377,20 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
             </li>
           ))}
         </ul>
-      ) : <p className="card-note">No dated entries yet.</p>}
-    </Card>
+      ) : <p className="section-note">No dated entries yet.</p>}
+      {!dialogOpen ? <ResultMessage result={result} /> : null}
+    </section>
   );
 }
 
 export function MeetingDecisionsSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   return (
-    <Card>
-      <CardHeader title="Meeting requests to review" eyebrow="Organization decisions">
-        Approve or decline requests for this organization.
-      </CardHeader>
+    <section className="surface-section">
+      <header className="section-heading">
+        <h2>Meeting requests to review</h2>
+        <p>Approve or decline requests for this organization.</p>
+      </header>
       {dashboard.meetingRequests.length ? (
         <WorkflowTable
           caption="Meeting requests for this organization"
@@ -340,9 +418,9 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
             </tr>
           ))}
         />
-      ) : <p className="card-note">No meeting requests for this organization.</p>}
+      ) : <p className="section-note">No meeting requests for this organization.</p>}
       <ResultMessage result={result} />
-    </Card>
+    </section>
   );
 }
 
@@ -350,15 +428,14 @@ export function OfficerOrganizationPicker({ selectedOrganizationId, onChange, se
   const grants = getApprovedOfficerGrants(session);
   if (grants.length <= 1) return null;
   return (
-    <Card>
-      <CardHeader title="Managed organization" />
+    <section className="organization-switcher" aria-label="Managed organization">
       <div className="field">
         <label className="label-row" htmlFor="managed-organization">Organization</label>
         <select id="managed-organization" className="control" value={selectedOrganizationId} onChange={(event) => onChange(event.target.value)}>
           {grants.map((grant) => <option key={grant.organizationId} value={grant.organizationId}>{grant.organizationName}</option>)}
         </select>
       </div>
-    </Card>
+    </section>
   );
 }
 
@@ -387,14 +464,11 @@ export function OfficerOrganizationManagement({ organizationId, session, client 
   if (!isApprovedOfficerFor(session, organizationId)) return null;
 
   return (
-    <Card className="notice-card">
-      <CardHeader title="Organization management" eyebrow="Your access">
-        Edit profile details, announcements, and dated entries from the dedicated Manage Organization sidebar tab.
-      </CardHeader>
-      <div className="button-row">
-        <ButtonLink to={`/settings/organization?organizationId=${encodeURIComponent(organizationId)}`} variant="primary">Manage organization</ButtonLink>
-      </div>
-    </Card>
+    <aside className="surface-notice" role="note">
+      <strong>Organization management</strong>
+      <p>Edit profile details, announcements, and dated entries from the dedicated Manage Organization sidebar tab.</p>
+      <ButtonLink to={`/settings/organization?organizationId=${encodeURIComponent(organizationId)}`} variant="primary">Manage organization</ButtonLink>
+    </aside>
   );
 }
 
@@ -410,11 +484,10 @@ export function OfficerApplicationsReview({ session, client }: { session: UserSe
 
   return (
     <section className="content-stack" aria-label="Applications to review">
-      <Card>
-        <CardHeader title="Review applications" eyebrow="Officer access">
-          Application review appears here for organizations you manage.
-        </CardHeader>
-      </Card>
+      <header className="section-heading">
+        <h2>Officer applicant review</h2>
+        <p>Review applicants only for organizations where your grant applies.</p>
+      </header>
       <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={setSelectedOrganizationId} session={session} />
       <OfficerDashboardBlock organizationId={selectedOrganizationId} session={session} client={client}>
         {(dashboard, reload) => <ApplicantsSection dashboard={dashboard} session={session} client={client} onChanged={reload} />}
@@ -435,11 +508,10 @@ export function OfficerMeetingReview({ session, client }: { session: UserSession
 
   return (
     <section className="content-stack" aria-label="Meeting requests to review">
-      <Card>
-        <CardHeader title="Review meeting requests" eyebrow="Officer access">
-          Meeting decisions appear here for organizations you manage.
-        </CardHeader>
-      </Card>
+      <header className="section-heading">
+        <h2>Officer meeting decisions</h2>
+        <p>Approve or decline meeting requests for organizations where your grant applies.</p>
+      </header>
       <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={setSelectedOrganizationId} session={session} />
       <OfficerDashboardBlock organizationId={selectedOrganizationId} session={session} client={client}>
         {(dashboard, reload) => <MeetingDecisionsSection dashboard={dashboard} session={session} client={client} onChanged={reload} />}
@@ -470,26 +542,26 @@ export function OfficerView({ session, client }: { session: UserSession; client:
     <WorkflowPageFrame
       eyebrow="Organization management"
       title="Manage work where it happens."
-      description="Use organization profiles for content, applications for applicant review, and meetings for request decisions."
+      description="Use direct organization management for profile and dates, Applications for applicants, Meetings for requests, and Announcements for posts."
       session={session}
     >
       <SourceNotice client={client} />
-      <section className="grid grid-3" aria-label="Management shortcuts">
+      <section className="management-shortcuts" aria-label="Management shortcuts">
         {grants.map((grant) => (
-          <Card key={grant.organizationId} className="org-card">
+          <article key={grant.organizationId} className="management-shortcut">
             <div className="org-head">
               <OrganizationAvatar name={grant.organizationName} />
               <div>
                 <h2>{grant.organizationName}</h2>
-                <p className="card-note">Management access</p>
+                <p className="section-note">Management access</p>
               </div>
             </div>
             <div className="button-row">
-              <ButtonLink to={`/app/organizations/${grant.organizationId}`} variant="secondary">Profile content</ButtonLink>
+              <ButtonLink to={`/settings/organization?organizationId=${encodeURIComponent(grant.organizationId)}`} variant="primary">Manage profile and dates</ButtonLink>
               <ButtonLink to="/app/applications" variant="secondary">Applications</ButtonLink>
               <ButtonLink to="/app/meetings" variant="secondary">Meetings</ButtonLink>
             </div>
-          </Card>
+          </article>
         ))}
       </section>
     </WorkflowPageFrame>

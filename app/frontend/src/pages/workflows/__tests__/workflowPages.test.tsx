@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import { vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
@@ -49,7 +50,7 @@ const officerSession: UserSession = {
   officerGrants: [{ organizationId: 'robotics', organizationName: 'Robotics Guild', status: 'approved', grantedBy: 'owner-1', grantedAt: '2026-01-10T00:00:00.000Z' }],
 };
 
-const renderInRouter = (ui: ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
+const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => render(<MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>);
 
 describe('SOAR workflow pages', () => {
   it('filters the organization directory by name and shows no-results copy', async () => {
@@ -96,6 +97,7 @@ describe('SOAR workflow pages', () => {
     renderInRouter(<MeetingsView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
     await screen.findAllByText(/Build Team interview window/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
     await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
     expect(await screen.findByText(/repeated identical request/i)).toBeInTheDocument();
 
@@ -115,6 +117,8 @@ describe('SOAR workflow pages', () => {
     expect(screen.getByText(/No organization access/i)).toBeInTheDocument();
 
     renderInRouter(<ApplicationsView session={officerSession} client={createFixtureWorkflowDataClient()} />);
+    expect(screen.queryByRole('link', { name: /Manage organization/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Find organizations/i })).toHaveAttribute('href', '/app/directory');
     const stageSelect = await screen.findByLabelText(/Stage for Mara Santos/i);
     await user.selectOptions(stageSelect, 'Declined');
     expect(await screen.findByText(/Application moved to Declined in demo mode/i)).toBeInTheDocument();
@@ -128,6 +132,46 @@ describe('SOAR workflow pages', () => {
     expect(screen.getByRole('link', { name: 'Robotics Guild' })).toHaveAttribute('href', '/app/organizations/robotics');
     expect(screen.getByRole('link', { name: /Open Robotics Guild profile/i })).toHaveAttribute('href', '/app/organizations/robotics');
     expect(screen.queryByText(/Open organization profile/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps public organization profiles public-facing even for managers', async () => {
+    renderInRouter(<OrganizationView organizationId="robotics" session={officerSession} client={createFixtureWorkflowDataClient()} />);
+
+    expect(await screen.findByRole('heading', { name: /Robotics Guild/i, level: 1 })).toBeInTheDocument();
+    expect(screen.getByText(/You manage this organization/i)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Manage organization/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Review applications/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Review meetings/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Request meeting/i })).toHaveAttribute('href', '/app/meetings');
+  });
+
+  it('uses prominent organization identity areas in the directory and profile', async () => {
+    const { container: directoryContainer } = renderInRouter(<DirectoryView session={studentSession} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByText('Robotics Guild')).toBeInTheDocument();
+    expect(directoryContainer.querySelector('.org-identity-art')).toHaveTextContent('RG');
+
+    const { container: profileContainer } = renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByText(/Builds robots, runs workshops/i)).toBeInTheDocument();
+    expect(profileContainer.querySelector('.profile-identity-art')).toHaveTextContent('RG');
+  });
+
+  it('protects dirty announcement dialogs and returns focus to the trigger', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    renderInRouter(<FeedView session={officerSession} client={createFixtureWorkflowDataClient()} />);
+
+    const trigger = await screen.findByRole('button', { name: /Post announcement/i });
+    await user.click(trigger);
+    await user.type(screen.getByLabelText(/Post text/i), 'Draft update');
+
+    await user.click(screen.getByRole('button', { name: /Close Post announcement/i }));
+    expect(confirm).toHaveBeenCalledWith('Discard unsaved changes?');
+    expect(screen.getByLabelText(/Post text/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Close Post announcement/i }));
+    await waitFor(() => expect(screen.queryByLabelText(/Post text/i)).not.toBeInTheDocument());
+    await waitFor(() => expect(trigger).toHaveFocus());
+    confirm.mockRestore();
   });
 
   it('surfaces officer announcement posting at the top of the announcements page with grant context', async () => {
@@ -162,9 +206,9 @@ describe('SOAR workflow pages', () => {
         { organizationId: 'literary', organizationName: 'Literary Circle', status: 'approved' as const },
       ],
     };
-    renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />);
+    renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics']);
 
-    expect(await screen.findByText(/Manage organization details/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Manage Robotics Guild/i })).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: /View public profile/i })).toHaveLength(1);
     expect(screen.queryByLabelText(/Post text/i)).not.toBeInTheDocument();
     const organizationSelector = screen.getByLabelText(/^Organization$/i);

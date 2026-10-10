@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Button, ButtonLink, Card, CardHeader, ExternalButtonLink, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
+import { Button, ButtonLink, ExternalButtonLink, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { OrganizationProfile, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
@@ -8,6 +8,7 @@ import {
   EmptyState,
   ErrorState,
   OrganizationAvatar,
+  OrganizationIdentityArt,
   ResultMessage,
   RouteUnavailableState,
   SourceNotice,
@@ -25,12 +26,13 @@ function RecruitmentActions({ organization, session, client }: { organization: O
 
   if (isSponsor(session)) {
     return (
-      <Card>
-        <CardHeader title="Applications hidden for sponsors" eyebrow="Sponsor access">
-  Sponsors can browse organization information and request meetings.
-        </CardHeader>
+      <section className="surface-section compact-section">
+        <header className="section-heading">
+          <h2>Applications hidden for sponsors</h2>
+          <p>Sponsors can browse organization information and request meetings.</p>
+        </header>
         <ButtonLink to="/app/meetings" variant="primary">Request a meeting</ButtonLink>
-      </Card>
+      </section>
     );
   }
 
@@ -50,10 +52,11 @@ function RecruitmentActions({ organization, session, client }: { organization: O
   };
 
   return (
-    <Card>
-      <CardHeader title="External application confirmation" eyebrow="Two separate actions">
-        Opening the external form is not a SOAR submission. Confirm only after you personally submitted the external form.
-      </CardHeader>
+    <section className="surface-section compact-section" id="application-confirmation">
+      <header className="section-heading">
+        <h2>External application confirmation</h2>
+        <p>Opening the external form is not a SOAR submission. Confirm only after you personally submitted the external form.</p>
+      </header>
       <div className="component-row">
         {safeUrl ? (
           <ExternalButtonLink
@@ -81,7 +84,7 @@ function RecruitmentActions({ organization, session, client }: { organization: O
       </div>
       <p className="help">Confirmation stays locked until you open the external link from SOAR.</p>
       <ResultMessage result={result} />
-    </Card>
+    </section>
   );
 }
 
@@ -93,9 +96,7 @@ export function OrganizationView({ organizationId, session, client }: { organiza
 
   const headerActions = (
     <>
-      {canManage ? <ButtonLink to={`/settings/organization?organizationId=${organization?.id ?? organizationId}`} variant="primary">Manage organization</ButtonLink> : null}
-      {canManage ? <ButtonLink to="/app/applications" variant="secondary">Review applications</ButtonLink> : null}
-      {canManage ? <ButtonLink to="/app/meetings" variant="secondary">Review meetings</ButtonLink> : null}
+      <ButtonLink to="/app/meetings" variant="primary">Request meeting</ButtonLink>
       <ButtonLink to="/app/directory" variant="secondary">Back to directory</ButtonLink>
     </>
   );
@@ -118,27 +119,32 @@ export function OrganizationView({ organizationId, session, client }: { organiza
       ) : null}
       {organization ? (
         <>
-          <section className="grid grid-2 profile-grid">
-            <Card className="org-profile-card">
+          <section className="organization-profile-hero">
+            <OrganizationIdentityArt name={organization.name} logoUrl={organization.logoUrl} className="profile-identity-art" />
+            <div className="profile-hero-copy">
               <div className="org-head">
                 <OrganizationAvatar name={organization.name} logoUrl={organization.logoUrl} />
                 <div>
                   <h2>{organization.name}</h2>
-                  <p className="card-note">{organization.shortDescription}</p>
+                  <p className="section-note">{organization.shortDescription}</p>
                 </div>
               </div>
               <p>{organization.description}</p>
               <p><strong>Contact:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
               <p>
-                {canManage ? <StatusChip tone="approved">Management access</StatusChip> : <StatusChip tone="info">Public profile</StatusChip>}
+                {canManage ? <StatusChip tone="approved">You manage this organization</StatusChip> : <StatusChip tone="info">Public profile</StatusChip>}
               </p>
-            </Card>
-            <Card>
-              <CardHeader title={organization.recruitment.title} eyebrow="Recruitment opportunity" />
-              <p><strong>Requirements:</strong> {organization.recruitment.requirements}</p>
-              <p><strong>Instructions:</strong> {organization.recruitment.instructions}</p>
-              <p className="help">Each student can track this opportunity once.</p>
-            </Card>
+            </div>
+          </section>
+
+          <section className="surface-section compact-section" id="recruitment">
+            <header className="section-heading">
+              <h2>{organization.recruitment.title}</h2>
+              <p>Recruitment opportunity</p>
+            </header>
+            <p><strong>Requirements:</strong> {organization.recruitment.requirements}</p>
+            <p><strong>Instructions:</strong> {organization.recruitment.instructions}</p>
+            <p className="help">Each student can track this opportunity once.</p>
           </section>
 
           <RecruitmentActions organization={organization} session={session} client={client} />
@@ -149,9 +155,11 @@ export function OrganizationView({ organizationId, session, client }: { organiza
           </section>
 
           {organization.posts.length ? (
-            <Card>
-              <CardHeader title="Organization announcements" />
-              <ul className="feed-list">
+            <section className="surface-section compact-section">
+              <header className="section-heading">
+                <h2>Organization announcements</h2>
+              </header>
+              <ul className="feed-list divided-list">
                 {organization.posts.map((post) => (
                   <li key={post.id}>
                     <div className="feed-copy">
@@ -161,7 +169,7 @@ export function OrganizationView({ organizationId, session, client }: { organiza
                   </li>
                 ))}
               </ul>
-            </Card>
+            </section>
           ) : (
             <EmptyState title="No organization posts yet">Announcements published by approved officers will appear both here and in the main feed.</EmptyState>
           )}
