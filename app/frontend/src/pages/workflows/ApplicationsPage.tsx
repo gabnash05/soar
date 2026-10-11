@@ -1,13 +1,23 @@
 import { Link } from 'react-router-dom';
-import { ButtonLink, LoadingBlock, StateBlock } from '../../components/ui';
+import { ButtonLink, LoadingBlock, StateBlock, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { WorkflowDataClient } from './contracts';
 import { OfficerApplicationsReview } from './OfficerPage';
 import { EmptyState, ErrorState, RouteUnavailableState, SourceNotice, StageChip, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
-import { isSponsor } from './workflowUtils';
+import { getApprovedOfficerGrants, isSponsor } from './workflowUtils';
 
 export function ApplicationsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const { data, loading, error, sourceMessage, reload } = useWorkflowQuery(() => client.listMyApplications(session), [client, session.uid]);
+  const officerGrants = getApprovedOfficerGrants(session);
+  const hasOfficerReview = officerGrants.length > 0;
+  const tabItems = hasOfficerReview
+    ? [
+        { id: 'review', label: 'Review applicants', count: officerGrants.length },
+        { id: 'mine', label: 'My applications', count: data?.length },
+      ]
+    : [{ id: 'mine', label: 'My applications', count: data?.length }];
+  const { activeId, getTabTo } = useQueryTab(tabItems.map((item) => item.id), hasOfficerReview ? 'review' : 'mine');
+
   if (isSponsor(session)) {
     return (
       <WorkflowPageFrame
@@ -25,16 +35,8 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
     );
   }
 
-  return (
-    <WorkflowPageFrame
-      eyebrow="Application tracker"
-      title="Track each recruitment opportunity once."
-      description="A row appears after you confirm an external form submission, then organization officers update Pending, Under review, Accepted, or Declined."
-      session={session}
-      actions={<ButtonLink to="/app/directory" variant="primary">Find organizations</ButtonLink>}
-    >
-      <SourceNotice client={client} message={sourceMessage} />
-      <OfficerApplicationsReview session={session} client={client} />
+  const trackerContent = (
+    <>
       {loading ? <LoadingBlock label="Loading application tracker" /> : null}
       {error ? <ErrorState onRetry={reload}>{error}</ErrorState> : null}
       {!loading && !error && data?.length === 0 ? (
@@ -54,6 +56,29 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
           ))}
         />
       ) : null}
+    </>
+  );
+
+  return (
+    <WorkflowPageFrame
+      eyebrow="Application tracker"
+      title={hasOfficerReview ? 'Review applicants, then check your own tracker.' : 'Track each recruitment opportunity once.'}
+      description="Students confirm external submissions in SOAR; officers update stages only for organizations where their grant applies."
+      session={session}
+      actions={<ButtonLink to="/app/directory" variant="primary">Find organizations</ButtonLink>}
+    >
+      <SourceNotice client={client} message={sourceMessage} />
+      {hasOfficerReview ? (
+        <>
+          <SubtabNav label="Application tasks" baseId="applications" items={tabItems} activeId={activeId} getTabTo={getTabTo} />
+          <SubtabPanel baseId="applications" tabId="review" activeId={activeId}>
+            <OfficerApplicationsReview session={session} client={client} />
+          </SubtabPanel>
+          <SubtabPanel baseId="applications" tabId="mine" activeId={activeId} className="content-stack">
+            {trackerContent}
+          </SubtabPanel>
+        </>
+      ) : trackerContent}
     </WorkflowPageFrame>
   );
 }

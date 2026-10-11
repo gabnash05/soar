@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, LoadingBlock, ModalDialog } from '../../components/ui';
+import { Button, LoadingBlock, ModalDialog, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { DateEntry, MeetingRequestInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import { OfficerMeetingReview } from './OfficerPage';
 import { EmptyState, ErrorState, MeetingStatusChip, ResultMessage, RouteUnavailableState, SourceNotice, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
-import { formatDateEntry, todayIsoDate } from './workflowUtils';
+import { formatDateEntry, getApprovedOfficerGrants, todayIsoDate } from './workflowUtils';
 
 const requestInputFromOption = (option?: DateEntry): MeetingRequestInput => ({
   organizationId: option?.organizationId ?? '',
@@ -20,6 +20,14 @@ export function MeetingsView({ session, client }: { session: UserSession; client
   const requestsQuery = useWorkflowQuery(() => client.listMyMeetingRequests(session), [client, session.uid]);
   const options = optionsQuery.data ?? [];
   const requests = requestsQuery.data ?? [];
+  const officerGrants = getApprovedOfficerGrants(session);
+  const hasOfficerReview = officerGrants.length > 0;
+  const tabItems = [
+    ...(hasOfficerReview ? [{ id: 'review', label: 'Review requests', count: officerGrants.length }] : []),
+    { id: 'availability', label: 'Availability', count: options.length },
+    { id: 'mine', label: 'My requests', count: requests.length },
+  ];
+  const { activeId, getTabTo } = useQueryTab(tabItems.map((item) => item.id), hasOfficerReview ? 'review' : 'availability');
   const [form, setForm] = useState<MeetingRequestInput>(() => requestInputFromOption());
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -74,17 +82,18 @@ export function MeetingsView({ session, client }: { session: UserSession; client
   return (
     <WorkflowPageFrame
       eyebrow="Meetings"
-      title="Requests stay pending until an officer decides."
-      description="Request posted meeting/interview availability and track the status. Pending requests are not confirmed bookings."
+      title={hasOfficerReview ? 'Review meeting requests or switch to your own requests.' : 'Request meetings from posted availability.'}
+      description="Pending requests are not confirmed bookings. Use tabs to separate posted availability, personal statuses, and officer decisions."
       session={session}
-      actions={<Button type="button" variant="primary" disabled={!options.length} onClick={openRequestDialog}>Request meeting</Button>}
+      actions={activeId !== 'review' ? <Button type="button" variant="primary" disabled={!options.length} onClick={openRequestDialog}>Request meeting</Button> : undefined}
     >
       <SourceNotice client={client} message={optionsQuery.sourceMessage || requestsQuery.sourceMessage} />
       {!requestOpen ? <ResultMessage result={result} /> : null}
       {optionsQuery.loading || requestsQuery.loading ? <LoadingBlock label="Loading meeting data" /> : null}
       {optionsQuery.error ? <ErrorState onRetry={optionsQuery.reload}>{optionsQuery.error}</ErrorState> : null}
       {requestsQuery.error ? <ErrorState onRetry={requestsQuery.reload}>{requestsQuery.error}</ErrorState> : null}
-      <OfficerMeetingReview session={session} client={client} />
+
+      <SubtabNav label="Meeting tasks" baseId="meetings" items={tabItems} activeId={activeId} getTabTo={getTabTo} />
 
       <ModalDialog open={requestOpen} title="Request a meeting/interview" dirty={requestDirty} onClose={closeRequestDialog}>
         {requestOpen ? (
@@ -143,46 +152,55 @@ export function MeetingsView({ session, client }: { session: UserSession; client
         ) : null}
       </ModalDialog>
 
-      <section className="surface-section compact-section">
-        <header className="section-heading inline-heading">
-          <div>
-            <h2>Available meeting/interview dates</h2>
-            <p>Choose a posted availability window, then send a request from the action above.</p>
-          </div>
-          {options.length ? <Button type="button" variant="secondary" onClick={openRequestDialog}>Request from this list</Button> : null}
-        </header>
-        {options.length ? (
-          <ul className="feed-list divided-list">
-            {options.map((entry) => (
-              <li key={entry.id}>
-                <div className="feed-copy">
-                  <strong><Link className="org-author-link" to={`/app/organizations/${entry.organizationId}`}>{entry.organizationName}</Link> · {entry.title}</strong>
-                  <span>{formatDateEntry(entry)} · {entry.details}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : <p className="section-note">No availability records are loaded.</p>}
-      </section>
-
-      {requests.length ? (
-        <WorkflowTable
-          caption="My meeting request statuses"
-          headers={['Organization', 'Meeting title', 'Requested date/time', 'Status', 'Meaning']}
-          rows={requests.map((request) => (
-            <tr key={request.id}>
-              <td><Link className="org-author-link" to={`/app/organizations/${request.organizationId}`}>{request.organizationName}</Link></td>
-              <td>{request.meetingTitle}</td>
-              <td>{request.requestedDate}, {request.requestedTime}</td>
-              <td><MeetingStatusChip status={request.status} /></td>
-              <td>{request.status === 'Pending' ? 'Not a confirmed booking' : request.status === 'Approved' ? 'Confirmed by officer' : 'Declined by officer'}</td>
-            </tr>
-          ))}
-        />
-      ) : !requestsQuery.loading && !requestsQuery.error ? (
-        <EmptyState title="No meeting requests yet">Submitted requests will appear here as Pending until the organization approves or declines them.</EmptyState>
+      {hasOfficerReview ? (
+        <SubtabPanel baseId="meetings" tabId="review" activeId={activeId}>
+          <OfficerMeetingReview session={session} client={client} />
+        </SubtabPanel>
       ) : null}
 
+      <SubtabPanel baseId="meetings" tabId="availability" activeId={activeId}>
+        <section className="surface-section compact-section">
+          <header className="section-heading inline-heading">
+            <div>
+              <h2>Available meeting/interview dates</h2>
+              <p>Choose a posted availability window, then send a request from the action above.</p>
+            </div>
+            {options.length ? <Button type="button" variant="secondary" onClick={openRequestDialog}>Request from this list</Button> : null}
+          </header>
+          {options.length ? (
+            <ul className="feed-list divided-list">
+              {options.map((entry) => (
+                <li key={entry.id}>
+                  <div className="feed-copy">
+                    <strong><Link className="org-author-link" to={`/app/organizations/${entry.organizationId}`}>{entry.organizationName}</Link> · {entry.title}</strong>
+                    <span>{formatDateEntry(entry)} · {entry.details}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="section-note">No availability records are loaded.</p>}
+        </section>
+      </SubtabPanel>
+
+      <SubtabPanel baseId="meetings" tabId="mine" activeId={activeId}>
+        {requests.length ? (
+          <WorkflowTable
+            caption="My meeting request statuses"
+            headers={['Organization', 'Meeting title', 'Requested date/time', 'Status', 'Meaning']}
+            rows={requests.map((request) => (
+              <tr key={request.id}>
+                <td><Link className="org-author-link" to={`/app/organizations/${request.organizationId}`}>{request.organizationName}</Link></td>
+                <td>{request.meetingTitle}</td>
+                <td>{request.requestedDate}, {request.requestedTime}</td>
+                <td><MeetingStatusChip status={request.status} /></td>
+                <td>{request.status === 'Pending' ? 'Not a confirmed booking' : request.status === 'Approved' ? 'Confirmed by officer' : 'Declined by officer'}</td>
+              </tr>
+            ))}
+          />
+        ) : !requestsQuery.loading && !requestsQuery.error ? (
+          <EmptyState title="No meeting requests yet">Submitted requests will appear here as Pending until the organization approves or declines them.</EmptyState>
+        ) : null}
+      </SubtabPanel>
     </WorkflowPageFrame>
   );
 }

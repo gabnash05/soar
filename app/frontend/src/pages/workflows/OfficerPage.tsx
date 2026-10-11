@@ -35,16 +35,38 @@ function toProfileInput(dashboard: OfficerDashboard): OrganizationProfileInput {
   };
 }
 
-export function ProfileRecruitmentSection({ dashboard, session, client, onChanged, formId = `profile-recruitment-form-${dashboard.organization.id}` }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; formId?: string }) {
+function profileInputDirty(form: OrganizationProfileInput, dashboard: OfficerDashboard): boolean {
+  const original = toProfileInput(dashboard);
+  return Boolean(
+    form.logoFile ||
+    form.name !== original.name ||
+    form.logoUrl !== original.logoUrl ||
+    form.description !== original.description ||
+    form.shortDescription !== original.shortDescription ||
+    form.contactEmail !== original.contactEmail ||
+    form.recruitmentTitle !== original.recruitmentTitle ||
+    form.recruitmentRequirements !== original.recruitmentRequirements ||
+    form.recruitmentInstructions !== original.recruitmentInstructions ||
+    (form.externalFormUrl ?? '') !== (original.externalFormUrl ?? ''),
+  );
+}
+
+export function ProfileRecruitmentSection({ dashboard, session, client, onChanged, formId = `profile-recruitment-form-${dashboard.organization.id}`, onDirtyChange }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; formId?: string; onDirtyChange?: (dirty: boolean) => void }) {
   const [form, setForm] = useState<OrganizationProfileInput>(() => toProfileInput(dashboard));
   const [logoError, setLogoError] = useState('');
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const dirty = profileInputDirty(form, dashboard);
 
   useEffect(() => {
     setForm(toProfileInput(dashboard));
     setLogoError('');
-  }, [dashboard]);
+    onDirtyChange?.(false);
+  }, [dashboard, onDirtyChange]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -52,7 +74,10 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
     const next = await client.saveOrganizationProfile(form, session);
     setResult(next);
     setBusy(false);
-    if (next.ok) onChanged();
+    if (next.ok) {
+      onDirtyChange?.(false);
+      onChanged();
+    }
   };
 
   return (
@@ -195,7 +220,7 @@ export function AnnouncementComposer({
   );
 }
 
-export function AnnouncementSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
+export function AnnouncementSection({ dashboard, session, client, onChanged, allowPosting = true }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; allowPosting?: boolean }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [composerResult, setComposerResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -206,25 +231,29 @@ export function AnnouncementSection({ dashboard, session, client, onChanged }: {
       <header className="section-heading inline-heading">
         <div>
           <h2>Published announcements</h2>
-          <p>Create announcements on the Announcements page or here when managing this organization.</p>
+          <p>{allowPosting ? 'Create announcements for this organization.' : 'Review this organization\'s announcement history. Publish new posts from the Announcements feed.'}</p>
         </div>
-        <Button type="button" onClick={() => setComposerOpen(true)}>Post announcement</Button>
+        {allowPosting ? <Button type="button" onClick={() => setComposerOpen(true)}>Post announcement</Button> : null}
       </header>
-      <ModalDialog open={composerOpen} title="Post announcement" dirty={composerDirty} onClose={() => setComposerOpen(false)}>
-        {composerOpen ? (
-          <AnnouncementComposer
-            organizationId={dashboard.organization.id}
-            organizationName={dashboard.organization.name}
-            session={session}
-            client={client}
-            onChanged={onChanged}
-            onDirtyChange={setComposerDirty}
-            onResult={setComposerResult}
-            onSubmitted={() => setComposerOpen(false)}
-          />
-        ) : null}
-      </ModalDialog>
-      <ResultMessage result={composerResult} />
+      {allowPosting ? (
+        <>
+          <ModalDialog open={composerOpen} title="Post announcement" dirty={composerDirty} onClose={() => setComposerOpen(false)}>
+            {composerOpen ? (
+              <AnnouncementComposer
+                organizationId={dashboard.organization.id}
+                organizationName={dashboard.organization.name}
+                session={session}
+                client={client}
+                onChanged={onChanged}
+                onDirtyChange={setComposerDirty}
+                onResult={setComposerResult}
+                onSubmitted={() => setComposerOpen(false)}
+              />
+            ) : null}
+          </ModalDialog>
+          <ResultMessage result={composerResult} />
+        </>
+      ) : null}
       {dashboard.announcements.length ? (
         <ul className="feed-list divided-list">
           {dashboard.announcements.map((announcement) => (

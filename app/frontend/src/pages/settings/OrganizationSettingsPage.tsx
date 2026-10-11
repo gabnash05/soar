@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, ButtonLink, StateBlock, StatusChip } from '../../components/ui';
+import { Button, ButtonLink, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { WorkflowDataClient } from '../workflows/contracts';
 import {
+  AnnouncementSection,
   DateEntriesSection,
   OfficerDashboardBlock,
   OfficerOrganizationPicker,
@@ -19,15 +20,23 @@ import {
 } from '../workflows/pageParts';
 import { getApprovedOfficerGrants } from '../workflows/workflowUtils';
 
+const managementTabs = [
+  { id: 'details', label: 'Details' },
+  { id: 'announcements', label: 'Announcements' },
+  { id: 'dates', label: 'Dates & availability' },
+];
+
 export function OrganizationSettingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const grants = useMemo(() => getApprovedOfficerGrants(session), [session]);
   const [searchParams, setSearchParams] = useSearchParams();
+  const { activeId, getTabTo } = useQueryTab(managementTabs.map((item) => item.id), 'details');
   const requestedOrganizationId = searchParams.get('organizationId') ?? '';
   const initialOrganizationId = useMemo(
     () => grants.find((grant) => grant.organizationId === requestedOrganizationId)?.organizationId ?? grants[0]?.organizationId ?? '',
     [grants, requestedOrganizationId],
   );
   const [selectedOrganizationId, setSelectedOrganizationId] = useState(initialOrganizationId);
+  const [profileDirty, setProfileDirty] = useState(false);
 
   useEffect(() => {
     if (requestedOrganizationId && grants.some((grant) => grant.organizationId === requestedOrganizationId)) {
@@ -36,12 +45,15 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
     }
     if (initialOrganizationId) {
       if (selectedOrganizationId !== initialOrganizationId) setSelectedOrganizationId(initialOrganizationId);
-      setSearchParams({ organizationId: initialOrganizationId }, { replace: true });
+      const next = new URLSearchParams(searchParams);
+      next.set('organizationId', initialOrganizationId);
+      setSearchParams(next, { replace: true });
     }
-  }, [grants, initialOrganizationId, requestedOrganizationId, selectedOrganizationId, setSearchParams]);
+  }, [grants, initialOrganizationId, requestedOrganizationId, searchParams, selectedOrganizationId, setSearchParams]);
 
   const selectedGrant = grants.find((grant) => grant.organizationId === selectedOrganizationId);
   const profileFormId = selectedGrant ? `profile-recruitment-form-${selectedGrant.organizationId}` : undefined;
+  const handleProfileDirtyChange = useCallback((dirty: boolean) => setProfileDirty(dirty), []);
 
   if (!grants.length) {
     return (
@@ -59,20 +71,25 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
   }
 
   const changeOrganization = (organizationId: string) => {
+    if (organizationId === selectedOrganizationId) return;
+    if (profileDirty && !window.confirm('Switch organizations and discard unsaved profile changes?')) return;
+    setProfileDirty(false);
     setSelectedOrganizationId(organizationId);
-    setSearchParams({ organizationId });
+    const next = new URLSearchParams(searchParams);
+    next.set('organizationId', organizationId);
+    setSearchParams(next);
   };
 
   return (
     <WorkflowPageFrame
       eyebrow="Organization settings"
       title={selectedGrant ? `Manage ${selectedGrant.organizationName}.` : 'Manage organization details.'}
-      description="Update public profile details, recruitment copy, organization image, and posted dates for organizations where your officer grant applies."
+      description="Edit organization details first, then switch tabs for this organization's announcement history or date and availability management."
       session={session}
       actions={selectedGrant && profileFormId ? (
         <>
           <StatusChip tone="approved">Managing {selectedGrant.organizationName}</StatusChip>
-          <Button type="submit" form={profileFormId} variant="primary">Save profile</Button>
+          {activeId === 'details' ? <Button type="submit" form={profileFormId} variant="primary">Save profile</Button> : null}
           <ButtonLink to={`/app/organizations/${selectedGrant.organizationId}`} variant="secondary">View public profile</ButtonLink>
         </>
       ) : undefined}
@@ -80,28 +97,46 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
       <SourceNotice client={client} />
       <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={changeOrganization} session={session} />
       <OfficerDashboardBlock organizationId={selectedOrganizationId} session={session} client={client}>
-        {(dashboard, reload) => (
-          <section className="content-stack" aria-label="Managed organization settings">
-            <section className="organization-management-hero">
-              <OrganizationIdentityArt name={dashboard.organization.name} logoUrl={dashboard.organization.logoUrl} className="management-identity-art" />
-              <div className="profile-hero-copy">
-                <div className="org-head">
-                  <OrganizationAvatar name={dashboard.organization.name} logoUrl={dashboard.organization.logoUrl} />
-                  <div>
-                    <h2>{dashboard.organization.name}</h2>
-                    <p className="section-note">{dashboard.organization.shortDescription}</p>
+        {(dashboard, reload) => {
+          const tabsWithCounts = managementTabs.map((tab) => {
+            if (tab.id === 'announcements') return { ...tab, count: dashboard.announcements.length };
+            if (tab.id === 'dates') return { ...tab, count: dashboard.dateEntries.length };
+            return tab;
+          });
+          return (
+            <section className="content-stack" aria-label="Managed organization settings">
+              <section className="organization-management-hero">
+                <OrganizationIdentityArt name={dashboard.organization.name} logoUrl={dashboard.organization.logoUrl} className="management-identity-art" />
+                <div className="profile-hero-copy">
+                  <div className="org-head">
+                    <OrganizationAvatar name={dashboard.organization.name} logoUrl={dashboard.organization.logoUrl} />
+                    <div>
+                      <h2>{dashboard.organization.name}</h2>
+                      <p className="section-note">{dashboard.organization.shortDescription}</p>
+                    </div>
+                  </div>
+                  <p>Selected management context is retained in the URL and enforced by your organization grant.</p>
+                  <div className="component-row">
+                    <StatusChip tone="approved">Management access</StatusChip>
+                    {profileDirty ? <StatusChip tone="attention">Unsaved profile edits</StatusChip> : null}
                   </div>
                 </div>
-                <p>Selected management context is retained in the URL and enforced by your organization grant.</p>
-                <div className="component-row">
-                  <StatusChip tone="approved">Management access</StatusChip>
-                </div>
-              </div>
+              </section>
+
+              <SubtabNav label="Organization management tasks" baseId="organization-management" items={tabsWithCounts} activeId={activeId} getTabTo={getTabTo} />
+
+              <SubtabPanel baseId="organization-management" tabId="details" activeId={activeId}>
+                <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} formId={profileFormId} onDirtyChange={handleProfileDirtyChange} />
+              </SubtabPanel>
+              <SubtabPanel baseId="organization-management" tabId="announcements" activeId={activeId}>
+                <AnnouncementSection dashboard={dashboard} session={session} client={client} onChanged={reload} allowPosting={false} />
+              </SubtabPanel>
+              <SubtabPanel baseId="organization-management" tabId="dates" activeId={activeId}>
+                <DateEntriesSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
+              </SubtabPanel>
             </section>
-            <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} formId={profileFormId} />
-            <DateEntriesSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
-          </section>
-        )}
+          );
+        }}
       </OfficerDashboardBlock>
     </WorkflowPageFrame>
   );
