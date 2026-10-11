@@ -237,6 +237,21 @@ export function MeetingStatusChip({ status }: { status: MeetingStatus }) {
   return <StatusChip tone={getMeetingTone(status)}>{status}</StatusChip>;
 }
 
+function LikeIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg className="like-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M7.3 10.4 11 4.7c.5-.8 1.7-.5 1.7.5v3.9h4.5c1.3 0 2.3 1.1 2 2.4l-1.2 6.2a2.4 2.4 0 0 1-2.4 1.9H7.3V10.4Zm0 0H4.8c-.9 0-1.6.7-1.6 1.6v6c0 .9.7 1.6 1.6 1.6h2.5"
+        fill={filled ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function AnnouncementCard({
   announcement,
   session,
@@ -292,9 +307,20 @@ export function AnnouncementCard({
         </figure>
       ) : null}
       <p>{announcement.body}</p>
-      <div className="component-row">
-        <Button type="button" variant={announcement.viewerHasLiked ? 'primary' : 'secondary'} disabled={busy} onClick={toggleLike} aria-pressed={announcement.viewerHasLiked}>
-          {announcement.viewerHasLiked ? 'Liked' : 'Like'} {announcement.likeCount}
+      <div className="component-row social-action-row">
+        <Button
+          type="button"
+          variant="quiet"
+          className={`like-button ${announcement.viewerHasLiked ? 'liked' : 'unliked'}`}
+          disabled={busy}
+          onClick={toggleLike}
+          aria-pressed={announcement.viewerHasLiked}
+          aria-busy={busy || undefined}
+          aria-label={`${announcement.viewerHasLiked ? 'Unlike' : 'Like'} announcement from ${announcement.organizationName}; ${announcement.likeCount} ${announcement.likeCount === 1 ? 'like' : 'likes'}`}
+        >
+          <LikeIcon filled={announcement.viewerHasLiked} />
+          <span className="sr-only">{announcement.viewerHasLiked ? 'Liked' : 'Like'}</span>
+          <span className="like-count" aria-hidden="true">{announcement.likeCount}</span>
         </Button>
         <Button type="button" variant="quiet" onClick={() => setCommentsOpen((open) => !open)}>
           {commentsOpen ? 'Hide comments' : 'Open comments'} ({announcement.comments.length})

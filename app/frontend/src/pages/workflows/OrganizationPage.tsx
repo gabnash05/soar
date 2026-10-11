@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Button, ButtonLink, ExternalButtonLink, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
+import { Button, ButtonLink, ExternalButtonLink, LoadingBlock, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { OrganizationProfile, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
+  AnnouncementCard,
   DateEntryList,
   EmptyState,
   ErrorState,
@@ -29,7 +30,7 @@ function RecruitmentActions({ organization, session, client }: { organization: O
       <section className="surface-section compact-section">
         <header className="section-heading">
           <h2>Applications hidden for sponsors</h2>
-          <p>Sponsors can browse organization information and request meetings.</p>
+          <p>Sponsors can browse organization information and request meetings without student application tools.</p>
         </header>
         <ButtonLink to="/app/meetings" variant="primary">Request a meeting</ButtonLink>
       </section>
@@ -93,6 +94,14 @@ export function OrganizationView({ organizationId, session, client }: { organiza
   const grants = getApprovedOfficerGrants(session);
   const canManage = organization ? grants.some((grant) => grant.organizationId === organization.id) : false;
   const split = organization ? splitDateEntries(organization.dateEntries) : { events: [], availability: [] };
+  const actionTabId = isSponsor(session) ? 'meetings' : 'apply';
+  const tabItems = [
+    { id: 'feed', label: 'Feed', count: organization?.posts.length },
+    { id: 'about', label: 'About' },
+    { id: 'dates', label: 'Dates & availability', count: organization?.dateEntries.length },
+    { id: actionTabId, label: isSponsor(session) ? 'Meetings' : 'Apply' },
+  ];
+  const { activeId, getTabTo } = useQueryTab(tabItems.map((item) => item.id), 'feed');
 
   const headerActions = (
     <>
@@ -105,7 +114,7 @@ export function OrganizationView({ organizationId, session, client }: { organiza
     <WorkflowPageFrame
       eyebrow="Organization profile"
       title={organization?.name ?? 'Organization'}
-      description="View organization details, recruitment requirements, announcements, public events, and meeting/interview availability."
+      description="Start with this organization's feed, then switch to details, dates, or role-appropriate actions."
       session={session}
       actions={headerActions}
     >
@@ -137,42 +146,42 @@ export function OrganizationView({ organizationId, session, client }: { organiza
             </div>
           </section>
 
-          <section className="surface-section compact-section" id="recruitment">
-            <header className="section-heading">
-              <h2>{organization.recruitment.title}</h2>
-              <p>Recruitment opportunity</p>
-            </header>
-            <p><strong>Requirements:</strong> {organization.recruitment.requirements}</p>
-            <p><strong>Instructions:</strong> {organization.recruitment.instructions}</p>
-            <p className="help">Each student can track this opportunity once.</p>
-          </section>
+          <SubtabNav label={`${organization.name} profile sections`} baseId="organization-profile" items={tabItems} activeId={activeId} getTabTo={getTabTo} />
 
-          <RecruitmentActions organization={organization} session={session} client={client} />
+          <SubtabPanel baseId="organization-profile" tabId="feed" activeId={activeId} className="content-stack feed-column">
+            {organization.posts.length ? (
+              organization.posts.map((post) => (
+                <AnnouncementCard key={post.id} announcement={post} session={session} client={client} onChanged={reload} />
+              ))
+            ) : (
+              <EmptyState title="No organization posts yet">Announcements published by approved officers will appear both here and in the main feed.</EmptyState>
+            )}
+          </SubtabPanel>
 
-          <section className="grid grid-2">
-            <DateEntryList title="Dated public events" entries={split.events} emptyCopy="No public event dates are posted for this organization yet." />
-            <DateEntryList title="Meeting/interview availability" entries={split.availability} emptyCopy="No requestable meeting or interview availability is posted yet." />
-          </section>
-
-          {organization.posts.length ? (
-            <section className="surface-section compact-section">
+          <SubtabPanel baseId="organization-profile" tabId="about" activeId={activeId}>
+            <section className="surface-section compact-section" id="recruitment">
               <header className="section-heading">
-                <h2>Organization announcements</h2>
+                <h2>About and recruitment details</h2>
+                <p>Read the public description and current recruitment opportunity before taking action.</p>
               </header>
-              <ul className="feed-list divided-list">
-                {organization.posts.map((post) => (
-                  <li key={post.id}>
-                    <div className="feed-copy">
-                      <strong>{post.body}</strong>
-                      <span>{new Date(post.createdAt).toLocaleDateString()} · {post.likeCount} likes · {post.comments.length} comments</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <p>{organization.description}</p>
+              <p><strong>Contact:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
+              <p><strong>Recruitment:</strong> {organization.recruitment.title}</p>
+              <p><strong>Requirements:</strong> {organization.recruitment.requirements}</p>
+              <p><strong>Instructions:</strong> {organization.recruitment.instructions}</p>
             </section>
-          ) : (
-            <EmptyState title="No organization posts yet">Announcements published by approved officers will appear both here and in the main feed.</EmptyState>
-          )}
+          </SubtabPanel>
+
+          <SubtabPanel baseId="organization-profile" tabId="dates" activeId={activeId}>
+            <section className="grid grid-2 profile-date-grid">
+              <DateEntryList title="Dated public events" entries={split.events} emptyCopy="No public event dates are posted for this organization yet." />
+              <DateEntryList title="Meeting/interview availability" entries={split.availability} emptyCopy="No requestable meeting or interview availability is posted yet." />
+            </section>
+          </SubtabPanel>
+
+          <SubtabPanel baseId="organization-profile" tabId={actionTabId} activeId={activeId}>
+            <RecruitmentActions organization={organization} session={session} client={client} />
+          </SubtabPanel>
         </>
       ) : null}
     </WorkflowPageFrame>

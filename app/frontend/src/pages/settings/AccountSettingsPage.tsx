@@ -1,6 +1,12 @@
 import { FormEvent, useState } from 'react';
-import { Button, ButtonLink, Card, CardHeader, Field, StatusChip, TextInput } from '../../components/ui';
+import { Button, ButtonLink, Card, CardHeader, Field, StatusChip, SubtabNav, SubtabPanel, TextInput, useQueryTab } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
+
+const accountTabs = [
+  { id: 'profile', label: 'Profile' },
+  { id: 'email', label: 'Sign-in email' },
+  { id: 'access', label: 'Organization access' },
+];
 
 export const AccountSettingsPage = () => {
   const { session, updateDisplayName, requestEmailChange, error, clearError } = useAuth();
@@ -10,6 +16,7 @@ export const AccountSettingsPage = () => {
   const [message, setMessage] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
   const [savingEmail, setSavingEmail] = useState(false);
+  const { activeId, getTabTo } = useQueryTab(accountTabs.map((item) => item.id), 'profile');
 
   if (!session) return null;
 
@@ -42,19 +49,22 @@ export const AccountSettingsPage = () => {
   };
 
   const approvedGrants = session.officerGrants.filter((grant) => grant.status === 'active' || grant.status === 'approved');
+  const tabsWithCounts = accountTabs.map((tab) => tab.id === 'access' ? { ...tab, count: approvedGrants.length } : tab);
 
   return (
     <div className="page-stack">
       <header className="page-header">
         <p className="eyebrow">Personal settings</p>
         <h1>Account settings</h1>
-        <p>Manage your profile, sign-in email, and organization permissions.</p>
+        <p>Start with your profile, then switch to sign-in email or organization permissions.</p>
       </header>
 
       {message ? <div className="form-success" role="status">{message}</div> : null}
       {error ? <div className="form-error" role="alert">{error}</div> : null}
 
-      <div className="settings-grid">
+      <SubtabNav label="Account settings sections" baseId="account-settings" items={tabsWithCounts} activeId={activeId} getTabTo={getTabTo} />
+
+      <SubtabPanel baseId="account-settings" tabId="profile" activeId={activeId}>
         <Card>
           <CardHeader title="Profile" eyebrow="Personal details">Name changes are available once every 30 days.</CardHeader>
           <form className="form-grid" onSubmit={handleName}>
@@ -69,7 +79,9 @@ export const AccountSettingsPage = () => {
             {session.companyName ? <div><dt>Company / organization</dt><dd>{session.companyName}</dd></div> : null}
           </dl>
         </Card>
+      </SubtabPanel>
 
+      <SubtabPanel baseId="account-settings" tabId="email" activeId={activeId}>
         <Card>
           <CardHeader title="Sign-in email" eyebrow="Verification required">Enter your current password. Your email changes after the new address is verified.</CardHeader>
           <form className="form-grid" onSubmit={handleEmail}>
@@ -85,26 +97,28 @@ export const AccountSettingsPage = () => {
             <Button type="submit" disabled={savingEmail}>{savingEmail ? 'Sending verification…' : 'Send email verification'}</Button>
           </form>
         </Card>
-      </div>
+      </SubtabPanel>
 
-      <Card>
-        <CardHeader title="Organization permissions" eyebrow="Account access">Officer access is granted per organization and cannot be self-assigned.</CardHeader>
-        {approvedGrants.length ? (
-          <div className="grant-list">
-            {approvedGrants.map((grant) => (
-              <div className="grant-row" key={grant.organizationId}>
-                <div><strong>{grant.organizationName}</strong><span>Organization management access</span></div>
-                <div className="component-row">
-                  <StatusChip tone="approved">Active</StatusChip>
-                  <ButtonLink to={`/settings/organization?organizationId=${grant.organizationId}`} variant="secondary">Manage organization</ButtonLink>
+      <SubtabPanel baseId="account-settings" tabId="access" activeId={activeId}>
+        <Card>
+          <CardHeader title="Organization permissions" eyebrow="Account access">Officer access is granted per organization and cannot be self-assigned.</CardHeader>
+          {approvedGrants.length ? (
+            <div className="grant-list">
+              {approvedGrants.map((grant) => (
+                <div className="grant-row" key={grant.organizationId}>
+                  <div><strong>{grant.organizationName}</strong><span>Organization management access</span></div>
+                  <div className="component-row">
+                    <StatusChip tone="approved">Active</StatusChip>
+                    <ButtonLink to={`/settings/organization?organizationId=${grant.organizationId}`} variant="secondary">Manage organization</ButtonLink>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="empty-copy">No active officer grants.</p>
-        )}
-      </Card>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-copy">No active officer grants.</p>
+          )}
+        </Card>
+      </SubtabPanel>
     </div>
   );
 };
