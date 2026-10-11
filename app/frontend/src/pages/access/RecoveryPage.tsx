@@ -29,7 +29,7 @@ export const RecoveryPage = () => {
         <div className="auth-logo"><SoarLogo /><span>SOAR</span></div>
         <p className="eyebrow">Account recovery</p>
         <h1>Reset your password</h1>
-        <p className="card-note">Password recovery remains available even when your annual access has expired.</p>
+        <p className="card-note">Password recovery remains available even when your six-month access has expired.</p>
         {sent ? <div className="form-success" role="status">If an account exists for this address, a recovery email has been sent.</div> : null}
         {error ? <div className="form-error" role="alert">{error}</div> : null}
         <form onSubmit={handleSubmit} className="form-grid">

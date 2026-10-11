@@ -34,6 +34,8 @@ export const AccessSettingsPage = () => {
 
   const active = hasActiveAccess(session);
   const tone = active ? 'approved' : session.access.status === 'expired' ? 'attention' : 'danger';
+  const feePhp = session.access.feePhp ?? session.access.annualFeePhp;
+  const periodLabel = session.access.periodLabel ?? '6 months';
 
   const handleRenew = async () => {
     clearError();
@@ -51,8 +53,8 @@ export const AccessSettingsPage = () => {
     <div className="page-stack">
       <header className="page-header">
         <p className="eyebrow">Payment & access</p>
-        <h1>Annual access status</h1>
-        <p>SOAR access costs PHP10 per account per year. Users renew manually; there is no automatic annual charge.</p>
+        <h1>Six-month access status</h1>
+        <p>SOAR access costs PHP10 per account for six months. Users renew manually; there is no automatic recurring charge.</p>
       </header>
 
       {message ? <div className="form-success" role="status">{message}</div> : null}
@@ -64,7 +66,7 @@ export const AccessSettingsPage = () => {
           <h2>{active ? 'Main app access is active' : 'Main app access is locked'}</h2>
           <p>
             {active
-              ? 'You can use role-appropriate SOAR pages until your annual access expires.'
+              ? 'You can use role-appropriate SOAR pages until your six-month access expires.'
               : 'Your saved records are retained. Renew access to return to main workflow pages.'}
           </p>
         </div>
@@ -78,9 +80,10 @@ export const AccessSettingsPage = () => {
 
       <div className="settings-grid">
         <Card>
-          <CardHeader title="Access details" eyebrow="Annual plan">These values come from your secure access record.</CardHeader>
+          <CardHeader title="Access details" eyebrow="Six-month plan">These values come from your secure access record.</CardHeader>
           <dl className="summary-list">
-            <div><dt>Annual fee</dt><dd>PHP{session.access.annualFeePhp}</dd></div>
+            <div><dt>Fee</dt><dd>PHP{feePhp}</dd></div>
+            <div><dt>Access period</dt><dd>{periodLabel}</dd></div>
             <div><dt>Status</dt><dd>{session.access.status}</dd></div>
             <div><dt>Started</dt><dd>{formatDate(session.access.startsAt)}</dd></div>
             <div><dt>Expires</dt><dd>{formatDate(session.access.expiresAt)}</dd></div>

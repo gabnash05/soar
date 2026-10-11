@@ -112,7 +112,7 @@ export function RouteUnavailableState({ loading, session }: { loading: boolean; 
   if (session.access.status !== 'active') {
     return (
       <StateBlock title="Access is not active" symbol="PHP" actions={<ButtonLink to="/settings/access" variant="primary">Review access</ButtonLink>}>
-        Main SOAR pages stay locked until annual access is active. Saved records remain available after renewal.
+        Main SOAR pages stay locked until six-month access is active. Saved records remain available after renewal.
       </StateBlock>
     );
   }
@@ -265,8 +265,12 @@ export function AnnouncementCard({
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comment, setComment] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingBody, setEditingBody] = useState('');
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const media = announcement.media?.length ? announcement.media : announcement.image ? [announcement.image] : [];
+  const commentCount = announcement.commentCount ?? announcement.comments.length;
 
   const toggleLike = async () => {
     setBusy(true);
@@ -274,6 +278,18 @@ export function AnnouncementCard({
     setResult(next);
     setBusy(false);
     if (next.ok) onChanged?.();
+  };
+
+  const copyLink = async () => {
+    const path = announcement.deepLinkPath || `/app?announcementId=${encodeURIComponent(announcement.id)}`;
+    const url = `${window.location.origin}${path.startsWith('/') ? path : `/${path}`}`;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable.');
+      await navigator.clipboard.writeText(url);
+      setResult({ ok: true, persisted: false, source: client.mode, message: 'Announcement link copied.' });
+    } catch {
+      setResult({ ok: true, persisted: false, source: client.mode, message: `Copy this link manually: ${url}` });
+    }
   };
 
   const submitComment = async (event: FormEvent) => {
@@ -288,11 +304,40 @@ export function AnnouncementCard({
     }
   };
 
+  const startEditing = (commentId: string, body: string) => {
+    setEditingCommentId(commentId);
+    setEditingBody(body);
+    setResult(null);
+  };
+
+  const saveComment = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingCommentId) return;
+    setBusy(true);
+    const next = await client.updateAnnouncementComment(announcement.id, editingCommentId, editingBody, session);
+    setResult(next);
+    setBusy(false);
+    if (next.ok) {
+      setEditingCommentId(null);
+      setEditingBody('');
+      onChanged?.();
+    }
+  };
+
+  const deleteComment = async (commentId: string) => {
+    if (!window.confirm('Delete your comment?')) return;
+    setBusy(true);
+    const next = await client.deleteAnnouncementComment(announcement.id, commentId, session);
+    setResult(next);
+    setBusy(false);
+    if (next.ok) onChanged?.();
+  };
+
   const organizationPath = `/app/organizations/${announcement.organizationId}`;
 
   return (
-    <article className="announcement-card feed-item">
-      <div className="org-head">
+    <article id={`announcement-${announcement.id}`} className="announcement-card feed-item" tabIndex={-1}>
+      <div className="org-head post-head">
         <Link className="org-avatar-link" to={organizationPath} aria-label={`Open ${announcement.organizationName} profile`}>
           <OrganizationAvatar name={announcement.organizationName} logoUrl={announcement.organizationLogoUrl} />
         </Link>
@@ -300,11 +345,20 @@ export function AnnouncementCard({
           <h2><Link className="org-author-link" to={organizationPath}>{announcement.organizationName}</Link></h2>
           <p className="section-note">{new Date(announcement.createdAt).toLocaleDateString()} · newest announcements first</p>
         </div>
+        <Button type="button" variant="quiet" className="copy-link-button" onClick={copyLink}>Copy link</Button>
       </div>
-      {announcement.image ? (
-        <figure className="image-frame">
-          <img src={announcement.image.url} alt={announcement.image.alt} loading="lazy" decoding="async" />
-        </figure>
+      {media.length ? (
+        <div className={`announcement-media-grid media-count-${Math.min(media.length, 4)}`}>
+          {media.map((item, index) => (
+            <figure className="image-frame" key={`${item.url}-${index}`}>
+              {item.contentType?.startsWith('video/') ? (
+                <video src={item.url} controls preload="metadata" aria-label={item.alt || `Announcement video ${index + 1}`} />
+              ) : (
+                <img src={item.url} alt={item.alt} loading="lazy" decoding="async" />
+              )}
+            </figure>
+          ))}
+        </div>
       ) : null}
       <p>{announcement.body}</p>
       <div className="component-row social-action-row">
@@ -323,22 +377,49 @@ export function AnnouncementCard({
           <span className="like-count" aria-hidden="true">{announcement.likeCount}</span>
         </Button>
         <Button type="button" variant="quiet" onClick={() => setCommentsOpen((open) => !open)}>
-          {commentsOpen ? 'Hide comments' : 'Open comments'} ({announcement.comments.length})
+          {commentsOpen ? 'Hide comments' : 'Open comments'} ({commentCount})
         </Button>
       </div>
       {commentsOpen ? (
-        <form className="field comment-form" onSubmit={submitComment}>
-          <label className="label-row" htmlFor={`comment-${announcement.id}`}>Add comment</label>
-          <textarea id={`comment-${announcement.id}`} className="control textarea" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Keep comments respectful and specific." />
-          <Button type="submit" variant="secondary" disabled={busy}>Add comment</Button>
+        <section className="comment-panel" aria-label={`Comments for ${announcement.organizationName} announcement`}>
+          <form className="field comment-form" onSubmit={submitComment}>
+            <label className="label-row" htmlFor={`comment-${announcement.id}`}>Add comment</label>
+            <textarea id={`comment-${announcement.id}`} className="control textarea" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Keep comments respectful and specific." />
+            <Button type="submit" variant="secondary" disabled={busy}>Add comment</Button>
+          </form>
           {announcement.comments.length ? (
             <ul className="comment-list">
-              {announcement.comments.map((item) => (
-                <li key={item.id}><strong>{item.authorName}:</strong> {item.body}</li>
-              ))}
+              {announcement.comments.map((item) => {
+                const canEdit = item.viewerCanEdit || item.authorUid === session.uid;
+                const canDelete = item.viewerCanDelete || item.authorUid === session.uid;
+                return (
+                  <li key={item.id}>
+                    {editingCommentId === item.id ? (
+                      <form className="comment-edit-form" onSubmit={saveComment}>
+                        <label className="sr-only" htmlFor={`edit-comment-${item.id}`}>Edit comment by {item.authorName}</label>
+                        <textarea id={`edit-comment-${item.id}`} className="control textarea" value={editingBody} onChange={(event) => setEditingBody(event.target.value)} />
+                        <div className="component-row">
+                          <Button type="submit" variant="secondary" disabled={busy}>Save comment</Button>
+                          <Button type="button" variant="quiet" onClick={() => { setEditingCommentId(null); setEditingBody(''); }}>Cancel</Button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        <div className="comment-copy"><strong>{item.authorName}</strong><p>{item.body}</p>{item.updatedAt ? <span>Edited</span> : null}</div>
+                        {(canEdit || canDelete) ? (
+                          <div className="component-row comment-actions">
+                            {canEdit ? <Button type="button" variant="quiet" onClick={() => startEditing(item.id, item.body)}>Edit</Button> : null}
+                            {canDelete ? <Button type="button" variant="danger" onClick={() => deleteComment(item.id)}>Delete</Button> : null}
+                          </div>
+                        ) : null}
+                      </>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           ) : <p className="help">No comments yet.</p>}
-        </form>
+        </section>
       ) : null}
       <ResultMessage result={result} />
     </article>

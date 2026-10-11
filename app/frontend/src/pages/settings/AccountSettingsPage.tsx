@@ -1,5 +1,5 @@
-import { FormEvent, useState } from 'react';
-import { Button, ButtonLink, Card, CardHeader, Field, StatusChip, SubtabNav, SubtabPanel, TextInput, useQueryTab } from '../../components/ui';
+import { FormEvent, useEffect, useState } from 'react';
+import { Button, ButtonLink, Card, CardHeader, Field, RoleBadge, StatusChip, SubtabNav, SubtabPanel, TextInput, useQueryTab } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 
 const accountTabs = [
@@ -17,6 +17,11 @@ export const AccountSettingsPage = () => {
   const [savingName, setSavingName] = useState(false);
   const [savingEmail, setSavingEmail] = useState(false);
   const { activeId, getTabTo } = useQueryTab(accountTabs.map((item) => item.id), 'profile');
+
+  useEffect(() => {
+    if (activeId !== 'email') setCurrentPassword('');
+    return () => setCurrentPassword('');
+  }, [activeId]);
 
   if (!session) return null;
 
@@ -74,8 +79,9 @@ export const AccountSettingsPage = () => {
             <Button type="submit" disabled={savingName}>{savingName ? 'Saving…' : 'Save name'}</Button>
           </form>
           <dl className="summary-list">
-            <div><dt>Account type</dt><dd>{session.accountKind === 'student' ? 'Student' : 'Sponsor'}</dd></div>
+            <div><dt>Account type</dt><dd><RoleBadge kind={session.accountKind}>{session.accountKind === 'student' ? 'Student' : 'Sponsor'}</RoleBadge></dd></div>
             {session.studentId ? <div><dt>Student ID</dt><dd>{session.studentId}</dd></div> : null}
+            {session.department ? <div><dt>Department</dt><dd>{session.department}</dd></div> : null}
             {session.companyName ? <div><dt>Company / organization</dt><dd>{session.companyName}</dd></div> : null}
           </dl>
         </Card>
@@ -108,6 +114,7 @@ export const AccountSettingsPage = () => {
                 <div className="grant-row" key={grant.organizationId}>
                   <div><strong>{grant.organizationName}</strong><span>Organization management access</span></div>
                   <div className="component-row">
+                    <RoleBadge kind="officer">Approved officer</RoleBadge>
                     <StatusChip tone="approved">Active</StatusChip>
                     <ButtonLink to={`/settings/organization?organizationId=${grant.organizationId}`} variant="secondary">Manage organization</ButtonLink>
                   </div>

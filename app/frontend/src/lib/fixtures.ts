@@ -17,12 +17,20 @@ const NAME_CHANGE_PREFIX = 'soar:development-fixture:name-changed:';
 
 const futureIso = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 const pastIso = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+const futureMonthIso = (months: number) => {
+  const date = new Date();
+  date.setMonth(date.getMonth() + months);
+  return date.toISOString();
+};
 
 const activeAccess = (reference = 'fixture-access-reference'): AccessEntitlement => ({
   status: 'active',
   annualFeePhp: 10,
+  feePhp: 10,
+  periodMonths: 6,
+  periodLabel: '6 months',
   startsAt: pastIso(5),
-  expiresAt: futureIso(360),
+  expiresAt: futureMonthIso(6),
   lastPaymentReference: reference,
   renewalAvailable: false,
 });
@@ -30,7 +38,10 @@ const activeAccess = (reference = 'fixture-access-reference'): AccessEntitlement
 const expiredAccess = (): AccessEntitlement => ({
   status: 'expired',
   annualFeePhp: 10,
-  startsAt: pastIso(390),
+  feePhp: 10,
+  periodMonths: 6,
+  periodLabel: '6 months',
+  startsAt: pastIso(190),
   expiresAt: pastIso(3),
   lastPaymentReference: 'fixture-expired-reference',
   renewalAvailable: true,
@@ -55,6 +66,7 @@ const makeFixtureSession = (email: string, overrides: Partial<UserSession> = {})
     displayName: sponsor ? 'Sam Sponsor' : officer ? 'Mara Officer' : 'Mara Santos',
     accountKind: sponsor ? 'sponsor' : 'student',
     studentId: sponsor ? undefined : '2026-0001',
+    department: sponsor ? undefined : 'Computer Science',
     companyName: sponsor ? 'Community Partner Co.' : undefined,
     emailVerified: !unverified,
     access: expired ? expiredAccess() : activeAccess(),
@@ -112,6 +124,7 @@ const validateRegistration = (input: RegisterAccountInput) => {
   if (!input.email.includes('@')) problems.email = 'Enter a valid email address.';
   if (input.password.length < 8) problems.password = 'Use at least 8 characters.';
   if (input.role === 'student' && !input.studentId?.trim()) problems.studentId = 'Student ID is required for students and future officers.';
+  if (input.role === 'student' && input.department && input.department.length > 80) problems.department = 'Department must be 80 characters or fewer.';
   if (Object.keys(problems).length) {
     throw new ValidationProblemError('Fix the highlighted fields.', problems);
   }
@@ -166,7 +179,7 @@ export const createFixtureGateway = (): BackendGateway => ({
     sessionStorage.setItem(`${PAYMENT_PREFIX}${id}`, 'pending');
     sessionStorage.setItem(
       `${PAYMENT_PREFIX}${id}:intent`,
-      JSON.stringify({ role: input.role, email: input.email, displayName: input.displayName, studentId: input.studentId, companyName: input.companyName }),
+      JSON.stringify({ role: input.role, email: input.email, displayName: input.displayName, studentId: input.studentId, department: input.department, companyName: input.companyName }),
     );
     return {
       intentId: id,
@@ -193,6 +206,7 @@ export const createFixtureGateway = (): BackendGateway => ({
       displayName: input.displayName,
       accountKind: input.role,
       studentId: input.role === 'student' ? input.studentId : undefined,
+      department: input.role === 'student' ? input.department?.trim() || undefined : undefined,
       companyName: input.role === 'sponsor' ? input.companyName : undefined,
       emailVerified: false,
       access: activeAccess(checkout.providerReference),

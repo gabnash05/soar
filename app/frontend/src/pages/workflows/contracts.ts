@@ -28,9 +28,13 @@ export interface WorkflowImage {
 
 export interface AnnouncementComment {
   id: string;
+  authorUid?: string;
   authorName: string;
   body: string;
   createdAt: string;
+  updatedAt?: string;
+  viewerCanEdit?: boolean;
+  viewerCanDelete?: boolean;
 }
 
 export interface Announcement {
@@ -41,8 +45,11 @@ export interface Announcement {
   createdAt: string;
   body: string;
   image?: WorkflowImage;
+  media?: WorkflowImage[];
+  deepLinkPath?: string;
   likeCount: number;
   viewerHasLiked: boolean;
+  commentCount?: number;
   comments: AnnouncementComment[];
 }
 
@@ -80,6 +87,7 @@ export interface OrganizationSummary {
   logoPath?: string;
   shortDescription: string;
   contactEmail: string;
+  contactPhone?: string;
   recruitmentTitle: string;
 }
 
@@ -103,6 +111,20 @@ export interface ApplicationRecord {
   updatedAt: string;
 }
 
+export interface MeetingRequestDocument {
+  storagePath: string;
+  fileName: string;
+  contentType: 'application/pdf';
+  sizeBytes: number;
+}
+
+export interface MeetingRequestDocumentInput {
+  file: File;
+  fileName: string;
+  contentType: 'application/pdf';
+  sizeBytes: number;
+}
+
 export interface MeetingRequest {
   id: string;
   organizationId: string;
@@ -115,6 +137,7 @@ export interface MeetingRequest {
   requestedTime: string;
   status: MeetingStatus;
   note?: string;
+  document?: MeetingRequestDocument;
   updatedAt: string;
 }
 
@@ -131,6 +154,7 @@ export interface MeetingRequestInput {
   requestedDate: string;
   requestedTime: string;
   note?: string;
+  document?: MeetingRequestDocumentInput;
 }
 
 export interface OrganizationProfileInput {
@@ -142,6 +166,7 @@ export interface OrganizationProfileInput {
   description: string;
   shortDescription: string;
   contactEmail: string;
+  contactPhone?: string;
   recruitmentTitle: string;
   recruitmentRequirements: string;
   recruitmentInstructions: string;
@@ -152,6 +177,7 @@ export interface AnnouncementInput {
   organizationId: string;
   body: string;
   image?: WorkflowImage;
+  media?: WorkflowImage[];
 }
 
 export interface DateEntryInput {
@@ -173,12 +199,30 @@ export interface OfficerDashboard {
   meetingRequests: MeetingRequest[];
 }
 
+export interface StudentDepartmentCount {
+  departmentKey: string;
+  department: string;
+  count: number;
+}
+
+export interface StudentDepartmentCounts {
+  organizationId: string;
+  scope: 'registered_students_across_soar';
+  description: string;
+  totalRegisteredStudents: number;
+  missingDepartmentCount: number;
+  items: StudentDepartmentCount[];
+  generatedAt: string;
+}
+
 export interface WorkflowDataClient {
   readonly mode: WorkflowDataMode;
   readonly label: string;
   listAnnouncements(session: UserSession): Promise<WorkflowQueryResult<Announcement[]>>;
   toggleAnnouncementLike(announcementId: string, liked: boolean, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   addAnnouncementComment(announcementId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<AnnouncementComment>>;
+  updateAnnouncementComment(announcementId: string, commentId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<AnnouncementComment>>;
+  deleteAnnouncementComment(announcementId: string, commentId: string, session: UserSession): Promise<WorkflowMutationResult>;
 
   listOrganizations(session: UserSession): Promise<WorkflowQueryResult<OrganizationSummary[]>>;
   getOrganization(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OrganizationProfile | undefined>>;
@@ -194,6 +238,7 @@ export interface WorkflowDataClient {
   saveOrganizationProfile(input: OrganizationProfileInput, session: UserSession): Promise<WorkflowMutationResult<OrganizationProfile>>;
   publishAnnouncement(input: AnnouncementInput, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   deleteAnnouncement(announcementId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
+  getStudentDepartmentCounts(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<StudentDepartmentCounts>>;
   updateApplicationStage(applicationId: string, stage: ApplicationStage, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<ApplicationRecord>>;
   saveDateEntry(input: DateEntryInput, session: UserSession): Promise<WorkflowMutationResult<DateEntry>>;
   deleteDateEntry(dateEntryId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, LoadingBlock, ModalDialog, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
-import type { DateEntry, MeetingRequestInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
+import { MEETING_DOCUMENT_MAX_BYTES, formatBytes, openPrivateMeetingDocument, validateMeetingDocumentFile } from '../../lib/storageUploads';
+import type { DateEntry, MeetingRequest, MeetingRequestInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import { OfficerMeetingReview } from './OfficerPage';
 import { EmptyState, ErrorState, MeetingStatusChip, ResultMessage, RouteUnavailableState, SourceNotice, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
 import { formatDateEntry, getApprovedOfficerGrants, todayIsoDate } from './workflowUtils';
@@ -14,6 +15,31 @@ const requestInputFromOption = (option?: DateEntry): MeetingRequestInput => ({
   requestedTime: option?.startTime ?? '09:00',
   note: '',
 });
+
+export function MeetingDocumentButton({ request }: { request: MeetingRequest }) {
+  const [message, setMessage] = useState('');
+  if (!request.document) return <span className="section-note">No document</span>;
+  return (
+    <div className="document-cell">
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={async () => {
+          setMessage('');
+          try {
+            await openPrivateMeetingDocument(request.id, request.document!.fileName, request.document!.contentType);
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : 'Could not open this document.');
+          }
+        }}
+      >
+        Open document
+      </Button>
+      <span>{request.document.fileName} · {formatBytes(request.document.sizeBytes)}</span>
+      {message ? <span className="help error" role="alert">{message}</span> : null}
+    </div>
+  );
+}
 
 export function MeetingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const optionsQuery = useWorkflowQuery(() => client.listMeetingOptions(session), [client, session.uid]);
@@ -33,6 +59,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
   const [busy, setBusy] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const [requestDirty, setRequestDirty] = useState(false);
+  const [documentError, setDocumentError] = useState('');
 
   useEffect(() => {
     if (!form.dateEntryId && options.length) {
@@ -54,6 +81,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
 
   const openRequestDialog = () => {
     setResult(null);
+    setDocumentError('');
     setRequestDirty(false);
     if (!form.dateEntryId && options[0]) setForm(requestInputFromOption(options[0]));
     setRequestOpen(true);
@@ -61,21 +89,29 @@ export function MeetingsView({ session, client }: { session: UserSession; client
 
   const closeRequestDialog = () => {
     setRequestOpen(false);
+    setDocumentError('');
     setRequestDirty(false);
     setForm(requestInputFromOption(options[0]));
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (documentError) return;
     setBusy(true);
-    const next = await client.requestMeeting(form, session);
-    setResult(next);
-    setBusy(false);
-    if (next.ok) {
-      setRequestOpen(false);
-      setRequestDirty(false);
-      setForm(requestInputFromOption(options[0]));
-      await requestsQuery.reload();
+    try {
+      const next = await client.requestMeeting(form, session);
+      setResult(next);
+      if (next.ok) {
+        setRequestOpen(false);
+        setRequestDirty(false);
+        setDocumentError('');
+        setForm(requestInputFromOption(options[0]));
+        await requestsQuery.reload();
+      }
+    } catch (error) {
+      setResult({ ok: false, persisted: false, source: client.mode, reason: 'error', message: error instanceof Error ? error.message : 'Meeting request failed.' });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -142,7 +178,30 @@ export function MeetingsView({ session, client }: { session: UserSession; client
                   <label className="label-row" htmlFor="meeting-note">Short note <span>Optional</span></label>
                   <textarea id="meeting-note" className="control textarea" value={form.note} onChange={(event) => patchForm({ note: event.target.value })} placeholder="What do you want to discuss?" />
                 </div>
-                <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Sending…' : 'Send request as Pending'}</Button>
+                <div className="field">
+                  <label className="label-row" htmlFor="meeting-document">Formal request document <span>Optional</span></label>
+                  <input
+                    id="meeting-document"
+                    className="control"
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      setDocumentError('');
+                      patchForm({ document: undefined });
+                      if (!file) return;
+                      try {
+                        validateMeetingDocumentFile(file);
+                        patchForm({ document: { file, fileName: file.name, contentType: 'application/pdf', sizeBytes: file.size } });
+                      } catch (error) {
+                        setDocumentError(error instanceof Error ? error.message : 'Attach a valid PDF document.');
+                      }
+                    }}
+                  />
+                  {documentError ? <span className="help error" role="alert">{documentError}</span> : <span className="help">PDF only, up to {formatBytes(MEETING_DOCUMENT_MAX_BYTES)}. Private access is limited to you and approved officers for this organization.</span>}
+                  {form.document ? <span className="help">Selected {form.document.fileName} · {formatBytes(form.document.sizeBytes)}</span> : null}
+                </div>
+                <Button type="submit" variant="primary" disabled={busy || Boolean(documentError)}>{busy ? 'Sending…' : 'Send request as Pending'}</Button>
                 <ResultMessage result={result} />
               </>
             ) : (
@@ -186,13 +245,14 @@ export function MeetingsView({ session, client }: { session: UserSession; client
         {requests.length ? (
           <WorkflowTable
             caption="My meeting request statuses"
-            headers={['Organization', 'Meeting title', 'Requested date/time', 'Status', 'Meaning']}
+            headers={['Organization', 'Meeting title', 'Requested date/time', 'Status', 'Document', 'Meaning']}
             rows={requests.map((request) => (
               <tr key={request.id}>
                 <td><Link className="org-author-link" to={`/app/organizations/${request.organizationId}`}>{request.organizationName}</Link></td>
                 <td>{request.meetingTitle}</td>
                 <td>{request.requestedDate}, {request.requestedTime}</td>
                 <td><MeetingStatusChip status={request.status} /></td>
+                <td><MeetingDocumentButton request={request} /></td>
                 <td>{request.status === 'Pending' ? 'Not a confirmed booking' : request.status === 'Approved' ? 'Confirmed by officer' : 'Declined by officer'}</td>
               </tr>
             ))}

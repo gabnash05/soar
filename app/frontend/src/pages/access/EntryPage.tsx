@@ -13,14 +13,14 @@ export const EntryPage = () => (
         <p className="eyebrow">Student Organizations and Allied Resources</p>
         <h1>Find your place. Keep things moving.</h1>
         <p>
-          Discover campus organizations, follow announcements, manage application and meeting progress, and keep annual access current from one role-aware workspace.
+          Discover campus organizations, follow announcements, manage application and meeting progress, and keep six-month access current from one role-aware workspace.
         </p>
         <div className="hero-actions">
           <ButtonLink to="/register" variant="primary">Start with PHP10 access</ButtonLink>
           <ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>
         </div>
         <p className="entry-note">
-          PHP10 annual access is required before account creation. Expired accounts can still sign in to renew.
+          PHP10 six-month access is required before account creation. Expired accounts can still sign in to renew.
         </p>
       </div>
     </section>

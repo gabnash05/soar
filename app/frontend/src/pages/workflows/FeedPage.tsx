@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, ButtonLink, LoadingBlock, ModalDialog } from '../../components/ui';
+import { useSearchParams } from 'react-router-dom';
+import { Button, ButtonLink, LoadingBlock, ModalDialog, StateBlock } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import { AnnouncementComposer } from './OfficerPage';
@@ -8,6 +9,8 @@ import { getApprovedOfficerGrants } from './workflowUtils';
 
 export function FeedView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const { data, loading, error, sourceMessage, reload } = useWorkflowQuery(() => client.listAnnouncements(session), [client, session.uid]);
+  const [searchParams] = useSearchParams();
+  const directAnnouncementId = searchParams.get('announcementId') ?? '';
   const officerGrants = useMemo(() => getApprovedOfficerGrants(session), [session]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerDirty, setComposerDirty] = useState(false);
@@ -27,6 +30,15 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
 
   const selectedGrant = officerGrants.find((grant) => grant.organizationId === selectedOrganizationId) ?? officerGrants[0];
   const canPostAnnouncement = Boolean(selectedGrant);
+  const directAnnouncementMissing = Boolean(directAnnouncementId && !loading && !error && data && !data.some((announcement) => announcement.id === directAnnouncementId));
+
+  useEffect(() => {
+    if (!directAnnouncementId || loading || !data?.length) return;
+    const target = document.getElementById(`announcement-${directAnnouncementId}`);
+    if (!target) return;
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    target.focus({ preventScroll: true });
+  }, [data, directAnnouncementId, loading]);
 
   return (
     <WorkflowPageFrame
@@ -78,6 +90,11 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
       </ModalDialog>
       {loading ? <LoadingBlock label="Loading announcements" /> : null}
       {error ? <ErrorState onRetry={reload}>{error}</ErrorState> : null}
+      {directAnnouncementMissing ? (
+        <StateBlock title="Announcement unavailable" symbol="?">
+          This direct announcement link may point to a deleted post or a post your account cannot access.
+        </StateBlock>
+      ) : null}
       {!loading && !error && data?.length === 0 ? (
         <EmptyState title="No announcements yet">When officers publish announcements, the newest posts will appear here.</EmptyState>
       ) : null}

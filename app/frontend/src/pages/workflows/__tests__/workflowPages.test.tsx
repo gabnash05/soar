@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { vi } from 'vitest';
+import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
@@ -50,6 +50,11 @@ const officerSession: UserSession = {
   displayName: 'Lia Cruz',
   officerGrants: [{ organizationId: 'robotics', organizationName: 'Robotics Guild', status: 'approved', grantedBy: 'owner-1', grantedAt: '2026-01-10T00:00:00.000Z' }],
 };
+
+beforeAll(() => {
+  Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:fixture-preview'), configurable: true });
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => render(<MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>);
 
@@ -240,7 +245,8 @@ describe('SOAR workflow pages', () => {
     };
     renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics']);
 
-    expect(await screen.findByRole('heading', { name: /Manage Robotics Guild/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Organization settings/i, level: 1 })).toBeInTheDocument();
+    expect(screen.getByText(/Selected organization: Robotics Guild/i)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^Details$/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getAllByRole('link', { name: /View public profile/i })).toHaveLength(1);
     expect(screen.queryByLabelText(/Post text/i)).not.toBeInTheDocument();
@@ -321,5 +327,102 @@ describe('SOAR workflow pages', () => {
     const unlike = screen.getByRole('button', { name: /Unlike announcement from Robotics Guild; 13 likes/i });
     expect(unlike).toHaveAttribute('aria-pressed', 'true');
     expect(unlike.querySelector('.like-count')).toHaveTextContent('13');
+  });
+
+  it('lets commenters edit and delete only their own comments while keeping counts refreshed', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
+    renderInRouter(<FeedView session={studentSession} client={createFixtureWorkflowDataClient()} />);
+
+    await screen.findByText(/Tryouts and build night/i);
+    await user.click(screen.getAllByRole('button', { name: /Open comments \(1\)/i })[0]);
+    await user.click(screen.getByRole('button', { name: /^Edit$/i }));
+    await user.clear(screen.getByLabelText(/Edit comment by Mara Santos/i));
+    await user.type(screen.getByLabelText(/Edit comment by Mara Santos/i), 'Updated question for officers.');
+    await user.click(screen.getByRole('button', { name: /Save comment/i }));
+    expect(await screen.findByText(/Comment updated in demo mode/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Updated question for officers/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Delete$/i }));
+    expect(confirm).toHaveBeenCalledWith('Delete your comment?');
+    expect(await screen.findByText(/Comment deleted in demo mode/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /comments/i }).some((button) => button.textContent?.includes('0'))).toBe(true));
+    confirm.mockRestore();
+  });
+
+  it('shows optional organization phone only when present on public profiles', async () => {
+    const { unmount } = renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByRole('link', { name: '+63 912 345 6789' })).toHaveAttribute('href', 'tel:+639123456789');
+    unmount();
+
+    renderInRouter(<OrganizationView organizationId="literary" session={studentSession} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByRole('heading', { name: /Literary Circle/i, level: 1 })).toBeInTheDocument();
+    expect(screen.queryByText(/Phone:/i)).not.toBeInTheDocument();
+  });
+
+  it('shows only aggregate student department counts in organization management', async () => {
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics&tab=students']);
+
+    expect(await screen.findByRole('heading', { name: /Registered students by department/i })).toBeInTheDocument();
+    expect(screen.getByText(/simulated aggregate data/i)).toBeInTheDocument();
+    expect(await screen.findByText('Computer Science')).toBeInTheDocument();
+    expect(await screen.findByText('Engineering')).toBeInTheDocument();
+    expect(await screen.findByText(/Unspecified legacy accounts/i)).toBeInTheDocument();
+    expect(screen.queryByText(/mara@example.edu/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mara Santos/i)).not.toBeInTheDocument();
+  });
+
+  it('copies stable announcement direct links and focuses a deep-linked announcement', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderInRouter(<FeedView session={studentSession} client={createFixtureWorkflowDataClient()} />, ['/app?announcementId=post-health-briefing']);
+
+    const directPost = await screen.findByText(/Volunteer briefing slots are posted/i);
+    expect(directPost.closest('article')).toHaveAttribute('id', 'announcement-post-health-briefing');
+    await user.click(screen.getAllByRole('button', { name: /Copy link/i })[0]);
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/app?announcementId=post-robotics-tryouts'));
+    expect(await screen.findByText(/Announcement link copied/i)).toBeInTheDocument();
+  });
+
+  it('publishes bounded announcement images and native videos with previews and documented limits', async () => {
+    const user = userEvent.setup();
+    renderInRouter(<FeedView session={officerSession} client={createFixtureWorkflowDataClient()} />);
+
+    await user.click(await screen.findByRole('button', { name: /Post announcement/i }));
+    await user.type(screen.getByLabelText(/Post text/i), 'Two image update for the build team.');
+    await user.upload(screen.getByLabelText(/Optional media/i), [
+      new File(['a'], 'robot-a.png', { type: 'image/png' }),
+      new File(['video'], 'robot-demo.mp4', { type: 'video/mp4' }),
+    ]);
+    expect(screen.getByText(/30 MB combined maximum/i)).toBeInTheDocument();
+    expect(screen.getByText(/MP4\/WebM video/i)).toBeInTheDocument();
+    expect(screen.getByText('robot-a.png')).toBeInTheDocument();
+    expect(screen.getByText('robot-demo.mp4')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));
+    expect(await screen.findByText(/Two image update for the build team/i)).toBeInTheDocument();
+    expect(await screen.findByAltText('robot-a.png')).toBeInTheDocument();
+    expect(await screen.findByLabelText('robot-demo.mp4')).toBeInTheDocument();
+  });
+
+  it('accepts optional private PDF meeting documents and rejects unsupported files', async () => {
+    const user = userEvent.setup();
+    renderInRouter(<MeetingsView session={studentSession} client={createFixtureWorkflowDataClient()} />);
+
+    await screen.findAllByText(/Build Team interview window/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    const permissiveUser = userEvent.setup({ applyAccept: false });
+    await permissiveUser.upload(screen.getByLabelText(/Formal request document/i), new File(['not a pdf'], 'request.png', { type: 'image/png' }));
+    expect(await screen.findByText(/Attach a PDF document/i)).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText(/Requested time/i));
+    await user.type(screen.getByLabelText(/Requested time/i), '14:45');
+    await user.upload(screen.getByLabelText(/Formal request document/i), new File(['%PDF-1.4'], 'formal-request.pdf', { type: 'application/pdf' }));
+    expect(screen.getAllByText(/formal-request.pdf/i).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
+    expect(await screen.findByText(/Meeting request created as Pending/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /My requests/i }));
+    await waitFor(() => expect(screen.getAllByText(/formal-request.pdf/i).length).toBeGreaterThan(0));
   });
 });

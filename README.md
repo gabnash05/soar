@@ -6,7 +6,7 @@
 
 - **Status:** PRD v2 plus in-progress MVP implementation. React frontend and Firebase/Express backend foundations now live under `app/` while this README remains the product-requirements authority.
 - **Primary agreement:** the client-approved `docs/client-scope/Project Scope and Acceptance — Final.pdf` defines the feature boundaries, acceptance checks, exclusions, required inputs, and handover expectations.
-- **Confirmed amendments:** the later approved decisions recorded for this PRD supersede the PDF and supplied overview only where they conflict. Most notably, annual access is now **PHP10 per account per year**, replacing earlier PHP2 references.
+- **Confirmed amendments:** the later approved decisions recorded for this PRD supersede the PDF and supplied overview only where they conflict. Most notably, access is now **PHP10 per account for six months**, replacing earlier PHP2/annual references.
 - **Supporting context:** `docs/client-scope/SOAR-project-overview.md` explains product direction, delivery context, and summarized workflows as originally supplied. The supplied `docs/client-scope/TECHNO/` source folder is evidence of the current draft, not the final requirement set.
 - **Reference quality bar:** the classmate site at <https://unsaysud-antech-ustpcdocafeteria.ai.studio/> is a minimum UI/UX quality reference, not an expansion of SOAR scope. `chrome-devtools-axi` was available but could not attach to a live browser target in this environment, so no specific visual observations from that site are encoded here.
 
@@ -23,7 +23,7 @@ The intended outcome is a working application that can be demonstrated and used 
 SOAR is successful when the delivered hosted website:
 
 1. Lets users register, sign in, recover passwords, manage allowed account settings, and access only role-appropriate pages.
-2. Requires a confirmed **PHP10 annual payment per account** before account creation or continued main-app access, while preserving records for renewal.
+2. Requires a confirmed **PHP10 six-month payment per account** before account creation or continued main-app access, while preserving records for renewal.
 3. Shows a responsive, readable organization directory, organization profiles, announcements, application tracker, meeting tracker, settings, and officer dashboard on phones and computers.
 4. Persists organization data, announcements, images, applications, meeting requests, payment/access status, and role permissions across refresh, sign-out, and another device.
 5. Keeps private application, meeting, and payment records visible only to the correct accounts, with officers limited to the organization they are approved to manage.
@@ -33,9 +33,9 @@ SOAR is successful when the delivered hosted website:
 
 | Role | Agreed purpose | Registration details | Core access |
 | --- | --- | --- | --- |
-| Student | Discover organizations, read announcements, follow application instructions, confirm external-form submission, track application stages, request meetings/interviews, and manage allowed personal settings. | Name, email, password, student ID number, email verification, and confirmed annual payment before account creation. | Announcements, organization directory/profiles, application tracker, meeting tracker, personal account settings, payment/access status. |
-| Organization officer | Manage an approved organization and its operational workflows. Officers are also students for account-identification purposes. | Name, email, password, student ID number, email verification, confirmed annual payment before account creation, and officer access approved through the organization-owner process. | Officer dashboard, organization settings, recruitment settings, announcements, applicants, calendar/date entries, meeting requests, personal account settings, payment/access status. |
-| Sponsor | Outside-user role with no special sponsor-only tools. Sponsors can view organization information and request meetings through an account. | Name, email, password, email verification, optional company/organization name, and confirmed annual payment before account creation. No TIN or government ID is required by the confirmed scope. | Role-appropriate browsing, organization profiles, announcements, meeting requests/tracking, personal account settings, payment/access status. |
+| Student | Discover organizations, read announcements, follow application instructions, confirm external-form submission, track application stages, request meetings/interviews, and manage allowed personal settings. | Name, email, password, student ID number, optional department, email verification, and confirmed six-month payment before account creation. | Announcements, organization directory/profiles, application tracker, meeting tracker, personal account settings, payment/access status. |
+| Organization officer | Manage an approved organization and its operational workflows. Officers are also students for account-identification purposes. | Name, email, password, student ID number, optional department, email verification, confirmed six-month payment before account creation, and officer access approved through the organization-owner process. | Officer dashboard, organization settings, recruitment settings, announcements, applicants, calendar/date entries, meeting requests, personal account settings, payment/access status. |
+| Sponsor | Outside-user role with no special sponsor-only tools. Sponsors can view organization information and request meetings through an account. | Name, email, password, email verification, optional company/organization name, and confirmed six-month payment before account creation. No TIN or government ID is required by the confirmed scope. | Role-appropriate browsing, organization profiles, announcements, meeting requests/tracking, personal account settings, payment/access status. |
 
 ### Organization ownership and officer access
 
@@ -63,7 +63,7 @@ SOAR is successful when the delivered hosted website:
 
 - Keep student, organization-officer, and sponsor accounts.
 - Registration collects only the confirmed details for each role:
-  - students and officers: name, email, password, student ID number
+  - students and officers: name, email, password, student ID number, optional free-text department
   - sponsors: name, email, password, optional company/organization name
 - Users can sign in, sign out, and recover passwords through email.
 - Email verification is required as part of account creation.
@@ -76,16 +76,16 @@ SOAR is successful when the delivered hosted website:
 
 - Show a directory with each organization name, logo, short description, and profile link.
 - Keep name search with a clear no-results message.
-- Each organization profile shows description, contact details, recruitment information, posts, and available dates.
-- Approved officers can update only their own organization's name, logo, description, contact email, recruitment title, requirements, and application link.
+- Each organization profile shows description, contact details, optional phone number when supplied, recruitment information, posts, and available dates.
+- Approved officers can update only their own organization's name, logo, description, contact email/phone, recruitment title, requirements, and application link.
 
 ### 4. Announcements
 
-- Officers can publish text announcements with an optional image and can delete their own posts.
+- Officers can publish text announcements with up to four images and can delete their own posts.
 - Posts show newest first with organization name, logo, and posting date.
 - Posts appear consistently in the main feed and on the organization profile.
-- Users can like/unlike a post, open comments, and add a comment.
-- Like counts and saved comments remain consistent across pages.
+- Users can like/unlike a post, copy a direct post link, open comments, add a comment, and edit/delete their own comments.
+- Like counts and saved comment counts remain consistent across pages.
 - Empty posts/comments and failed saves produce clear messages.
 
 ### 5. Applications
@@ -108,7 +108,7 @@ SOAR is successful when the delivered hosted website:
 ### 7. Meeting requests
 
 - Students, sponsors, and officers can request meetings where the workflow is available to their role.
-- Keep the existing request flow: choose an organization posted meeting/interview entry, enter a date and time, and send a request.
+- Keep the existing request flow: choose an organization posted meeting/interview entry, enter a date and time, optionally attach one PDF formal request document, and send a request.
 - Users see organization, meeting title, requested date/time, and status: **Pending**, **Approved**, or **Declined**.
 - Officers see requests for their own organization and can approve or decline them.
 - Required details are validated, repeated identical requests are prevented or handled clearly, and pending requests are not shown as confirmed bookings.
@@ -132,14 +132,15 @@ SOAR is successful when the delivered hosted website:
 - Store images in the project file storage so they display after refresh and sign-in.
 - Display images without stretching or overflowing the page.
 - Only an approved officer for the organization can replace its logo or upload images to its posts.
+- Announcement media supports up to four bounded media items, including images and at most one small MP4/WebM video. It does not add transcoding, generated thumbnails, adaptive streaming, moderation, or public-CDN video infrastructure.
 
-### 10. Annual paid access
+### 10. Six-month paid access
 
-- Access costs **PHP10 per account for one year** from confirmed payment. This is a confirmed amendment to the PDF's PHP2 amount.
+- Access costs **PHP10 per account for six calendar months** from confirmed payment. This is a confirmed amendment to the PDF's PHP2 amount and earlier annual references.
 - Payment must go through one payment provider that supports GCash and automatic provider-side confirmation.
 - **PayMongo** is the intended provider, subject to merchant approval and a successful live PHP10 test. This is not a promise that PayMongo is free or the cheapest provider.
 - New users must complete verified payment before creating an account and accessing main pages.
-- Existing users need active paid access and renew manually when access expires; there is no automatic yearly charge.
+- Existing users need active paid access and renew manually when access expires; there is no automatic recurring charge.
 - Payment confirmation is automatic and linked to the correct registration or renewal.
 - Pending, failed, cancelled, or expired access does not unlock registration or main pages.
 - Expiry restricts access while retaining the account and saved records for renewal.
@@ -169,7 +170,7 @@ The supplied `docs/client-scope/TECHNO/` folder is a static Firebase-hosted draf
 | Applications | Student click currently logs an application and opens the external form; officer page can update statuses. | Require explicit external-submission confirmation, prevent duplicates per recruitment opportunity/position, include **Declined**, use the agreed status labels, and keep tracker updates consistent. |
 | Calendar/date entries | Officers can add/delete simple title/date slots; profiles show available slots. | Add edit, short details, time where needed, valid-date checks, and visual distinction between events and interview/meeting availability. |
 | Meeting requests | Users can request date/time from a profile slot; officers can approve/decline. | Allow the confirmed requesting roles, prevent repeated identical requests, clarify pending vs. confirmed, and ensure each user sees their own request history. |
-| Payments | No annual payment, GCash checkout, payment status, renewal, or access-expiry enforcement is present. | Implement the confirmed PHP10 annual paid access flow with provider-side automatic confirmation before production use. |
+| Payments | No six-month payment, GCash checkout, payment status, renewal, or access-expiry enforcement is present. | Implement the confirmed PHP10 six-month paid access flow with provider-side automatic confirmation before production use. |
 | Images | Draft stores uploaded proof/logo/post images as base64-like data in saved records. | Use Firebase file storage or the agreed project file storage, with file validation and previews. |
 | Security | Current behavior appears primarily client-side; database/security rules were not supplied for review. | Implement/verify Firebase-rule or server-side enforcement for roles, organization ownership/officer access, private records, and payment/access fields. |
 | Mixed dependencies | Some pages include a Supabase CDN script, but application logic uses Firebase. | Standardize on the agreed Firebase-backed implementation unless a later approved architecture changes this. |
@@ -201,7 +202,7 @@ The classmate site should be used later as a minimum quality comparison for poli
 | Application links open; only explicit confirmed external submissions enter checking; officer stage changes appear in the student tracker without duplicate entries per recruitment opportunity/position. | Applications. |
 | Officers can add, change, and remove calendar entries; permitted images save and display after refresh and sign-in. | Calendar/date entries; image uploads; saved data. |
 | Meeting requests save with correct organization, date, and time; officers approve/decline; users see decisions; repeated requests are handled clearly. | Meeting requests. |
-| A real successful **PHP10** payment unlocks account creation and one year of access; pending/failed/cancelled payments and expired access stay restricted; renewal restores access without data loss. | Annual paid access; saved data. |
+| A real successful **PHP10** payment unlocks account creation and six months of access; pending/failed/cancelled payments and expired access stay restricted; renewal restores access without data loss. | Six-month paid access; saved data. |
 | Users see only their private application, meeting, and payment records; officers manage only approved organizations; users cannot change paid status or access end date. | Permissions; saved data; officer dashboard; paid access. |
 | Hosted link, complete updated source files, and short setup/use instructions are handed over after final review. | Hosting and handover. |
 
@@ -221,7 +222,7 @@ The following are outside the agreed scope unless separately approved:
 - automatic reading of Google Form/Sheet responses
 - post/application/meeting alerts by email, text, or push notification
 - a native phone app
-- automatic yearly charges
+- automatic recurring charges
 - a general admin dashboard or full membership-management system
 
 Do not treat unanswered product questions or implementation convenience as permission to add any of these.
@@ -283,7 +284,7 @@ These are planning boundaries only, not a backend/frontend design.
 
 1. **Alignment and design intake:** approve this PRD, review any Open Design output, and confirm current service access.
 2. **Project foundation:** decide whether/when to migrate from the static draft to a framework; set up the approved project structure without changing agreed scope.
-3. **Access foundation:** implement verified payment before account creation, manual annual renewal/expiry behavior, roles, owner-approved officer access, payment status visibility, and permission enforcement.
+3. **Access foundation:** implement verified payment before account creation, manual six-month renewal/expiry behavior, roles, owner-approved officer access, payment status visibility, and permission enforcement.
 4. **Core content workflows:** implement organization directory/profiles, announcements, image handling, personal and organization settings, and responsive UI states.
 5. **Operational workflows:** implement applications, calendar/date entries, meeting requests, and officer dashboard sections.
 6. **Hardening and handover:** validate acceptance checks, fix refresh/sign-out/another-device consistency, verify private-record access, test a real PHP10 payment, deploy, and write setup/use instructions.

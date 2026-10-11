@@ -67,9 +67,12 @@ export const CheckoutStatusPage = () => {
         displayName: draft.displayName,
         role: draft.role,
         studentId: draft.studentId,
+        department: draft.department,
         companyName: draft.companyName,
         password,
       });
+      setPassword('');
+      setConfirmPassword('');
       navigate('/access/verify-email', { replace: true });
     } finally {
       setSubmitting(false);
@@ -92,7 +95,7 @@ export const CheckoutStatusPage = () => {
         <div>
           <div className="auth-logo"><SoarLogo /><span>SOAR</span></div>
           <p className="eyebrow">Checkout status</p>
-          <h1>Confirm annual access</h1>
+          <h1>Confirm six-month access</h1>
           {loading ? <LoadingBlock label="Checking payment status" /> : null}
           {status ? (
             <div className="status-panel">
@@ -119,6 +122,7 @@ export const CheckoutStatusPage = () => {
             <div><dt>Email</dt><dd>{draft?.email || 'Missing draft'}</dd></div>
             <div><dt>Account type</dt><dd>{draft?.role === 'sponsor' ? 'Sponsor' : 'Student'}</dd></div>
             {draft?.studentId ? <div><dt>Student ID</dt><dd>{draft.studentId}</dd></div> : null}
+            {draft?.department ? <div><dt>Department</dt><dd>{draft.department}</dd></div> : null}
           </dl>
           <Field id="password" label="Password" hint="Use at least 8 characters.">
             <TextInput id="password" type="password" autoComplete="new-password" required disabled={!status?.canCreateAccount || submitting} value={password} onChange={(event) => setPassword(event.target.value)} />

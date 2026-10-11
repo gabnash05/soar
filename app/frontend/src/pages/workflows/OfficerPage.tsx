@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Button, ButtonLink, LoadingBlock, ModalDialog, StateBlock } from '../../components/ui';
+import { Button, ButtonLink, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
-import { validateWorkflowImageFile } from '../../lib/storageUploads';
+import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, WORKFLOW_VIDEO_MAX_BYTES, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
 import { createEmptyOfficerDateEntry } from './adapters';
 import type { AnnouncementInput, DateEntry, DateEntryInput, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
@@ -28,6 +28,7 @@ function toProfileInput(dashboard: OfficerDashboard): OrganizationProfileInput {
     description: dashboard.organization.description,
     shortDescription: dashboard.organization.shortDescription,
     contactEmail: dashboard.organization.contactEmail,
+    contactPhone: dashboard.organization.contactPhone,
     recruitmentTitle: dashboard.organization.recruitment.title,
     recruitmentRequirements: dashboard.organization.recruitment.requirements,
     recruitmentInstructions: dashboard.organization.recruitment.instructions,
@@ -44,6 +45,7 @@ function profileInputDirty(form: OrganizationProfileInput, dashboard: OfficerDas
     form.description !== original.description ||
     form.shortDescription !== original.shortDescription ||
     form.contactEmail !== original.contactEmail ||
+    (form.contactPhone ?? '') !== (original.contactPhone ?? '') ||
     form.recruitmentTitle !== original.recruitmentTitle ||
     form.recruitmentRequirements !== original.recruitmentRequirements ||
     form.recruitmentInstructions !== original.recruitmentInstructions ||
@@ -94,6 +96,7 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
           <div className="field"><label className="label-row" htmlFor="org-name">Organization name</label><input id="org-name" className="control" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div>
           <div className="field"><label className="label-row" htmlFor="org-contact">Contact email</label><input id="org-contact" className="control" type="email" value={form.contactEmail} onChange={(event) => setForm((current) => ({ ...current, contactEmail: event.target.value }))} /></div>
         </div>
+        <div className="field"><label className="label-row" htmlFor="org-phone">Contact phone <span>Optional</span></label><input id="org-phone" className="control" type="tel" inputMode="tel" autoComplete="tel" value={form.contactPhone ?? ''} onChange={(event) => setForm((current) => ({ ...current, contactPhone: event.target.value }))} placeholder="+63 912 345 6789" maxLength={32} /><span className="help">Shown on the public profile only when provided. Use digits, spaces, dashes, parentheses, or extension text.</span></div>
         <div className="field"><label className="label-row" htmlFor="org-short">Short description</label><input id="org-short" className="control" value={form.shortDescription} onChange={(event) => setForm((current) => ({ ...current, shortDescription: event.target.value }))} /></div>
         <div className="field"><label className="label-row" htmlFor="org-description">Profile description</label><textarea id="org-description" className="control textarea" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
         <div className="grid grid-2">
@@ -156,28 +159,50 @@ export function AnnouncementComposer({
   onSubmitted?: () => void;
 }) {
   const [body, setBody] = useState('');
-  const [image, setImage] = useState<AnnouncementInput['image']>();
+  const [media, setMedia] = useState<NonNullable<AnnouncementInput['media']>>([]);
   const [imageError, setImageError] = useState('');
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
-  const dirty = Boolean(body.trim() || image);
+  const dirty = Boolean(body.trim() || media.length);
 
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
 
+  const chooseImages = (files: File[]) => {
+    const nextMedia = [...media, ...files.map((file) => ({ url: URL.createObjectURL(file), alt: file.name, file, contentType: file.type, sizeBytes: file.size }))];
+    const nextFiles = nextMedia.map((item) => item.file).filter(Boolean) as File[];
+    validateAnnouncementMediaFiles(nextFiles);
+    setMedia(nextMedia);
+  };
+
+  const moveMedia = (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= media.length) return;
+    const nextMedia = [...media];
+    [nextMedia[index], nextMedia[targetIndex]] = [nextMedia[targetIndex], nextMedia[index]];
+    setMedia(nextMedia);
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
-    const next = await client.publishAnnouncement({ organizationId, body, image }, session);
-    setResult(next);
-    onResult?.(next);
-    setBusy(false);
-    if (next.ok) {
-      setBody('');
-      setImage(undefined);
-      onChanged();
-      onSubmitted?.();
+    try {
+      const next = await client.publishAnnouncement({ organizationId, body, media }, session);
+      setResult(next);
+      onResult?.(next);
+      if (next.ok) {
+        setBody('');
+        setMedia([]);
+        onChanged();
+        onSubmitted?.();
+      }
+    } catch (error) {
+      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: error instanceof Error ? error.message : 'Announcement upload failed.' };
+      setResult(failure);
+      onResult?.(failure);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -191,29 +216,51 @@ export function AnnouncementComposer({
       <form className="content-stack" onSubmit={submit}>
         <div className="field"><label className="label-row" htmlFor="announcement-body">Post text</label><textarea data-autofocus id="announcement-body" className="control textarea" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write an announcement for students and sponsors." /></div>
         <div className="field">
-          <label className="label-row" htmlFor="announcement-image">Optional image</label>
+          <label className="label-row" htmlFor="announcement-image">Optional media</label>
           <input
             id="announcement-image"
             className="control"
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
             onChange={(event) => {
-              const file = event.target.files?.[0];
+              const files = Array.from(event.target.files ?? []);
               setImageError('');
-              setImage(undefined);
-              if (!file) return;
+              if (!files.length) return;
               try {
-                validateWorkflowImageFile(file);
-                setImage({ url: URL.createObjectURL(file), alt: file.name, file });
+                chooseImages(files);
               } catch (error) {
-                setImageError(error instanceof Error ? error.message : 'Choose a valid image.');
+                setImageError(error instanceof Error ? error.message : 'Choose valid images.');
+              } finally {
+                event.currentTarget.value = '';
               }
             }}
           />
-          {imageError ? <span className="help error" role="alert">{imageError}</span> : <span className="help">PNG, JPEG, GIF, or WebP. Maximum 5 MB.</span>}
+          {imageError ? (
+            <span className="help error" role="alert">{imageError}</span>
+          ) : (
+            <span className="help">Up to {ANNOUNCEMENT_MEDIA_MAX_ITEMS} total images or videos. Images can be PNG, JPEG, GIF, or WebP; one MP4/WebM video may be attached up to {formatBytes(WORKFLOW_VIDEO_MAX_BYTES)}. {formatBytes(ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES)} combined maximum.</span>
+          )}
         </div>
-        {image ? <figure className="image-frame"><img src={image.url} alt={image.alt} /></figure> : null}
-        <div className="button-row"><Button type="submit" disabled={busy}>Publish announcement</Button></div>
+        {media.length ? (
+          <ul className="media-preview-list" aria-label="Selected announcement images">
+            {media.map((item, index) => (
+              <li key={`${item.alt}-${index}`}>
+                {item.contentType?.startsWith('video/') ? <video src={item.url} controls preload="metadata" aria-label={item.alt} /> : <img src={item.url} alt={item.alt} />}
+                <div>
+                  <strong>{item.alt}</strong>
+                  <span>{item.sizeBytes ? formatBytes(item.sizeBytes) : 'Ready to upload'}</span>
+                  <div className="component-row">
+                    <Button type="button" variant="quiet" disabled={index === 0} onClick={() => moveMedia(index, -1)}>Move up</Button>
+                    <Button type="button" variant="quiet" disabled={index === media.length - 1} onClick={() => moveMedia(index, 1)}>Move down</Button>
+                    <Button type="button" variant="danger" onClick={() => setMedia((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove</Button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="button-row"><Button type="submit" disabled={busy}>{busy ? 'Publishing…' : 'Publish announcement'}</Button></div>
         <ResultMessage result={result} />
       </form>
     </section>
@@ -412,6 +459,31 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
   );
 }
 
+function FormalRequestDocumentButton({ request }: { request: OfficerDashboard['meetingRequests'][number] }) {
+  const [message, setMessage] = useState('');
+  if (!request.document) return <span className="section-note">No document</span>;
+  return (
+    <div className="document-cell">
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={async () => {
+          setMessage('');
+          try {
+            await openPrivateMeetingDocument(request.id, request.document!.fileName, request.document!.contentType);
+          } catch (error) {
+            setMessage(error instanceof Error ? error.message : 'Could not open this document.');
+          }
+        }}
+      >
+        Open document
+      </Button>
+      <span>{request.document.fileName} · {formatBytes(request.document.sizeBytes)}</span>
+      {message ? <span className="help error" role="alert">{message}</span> : null}
+    </div>
+  );
+}
+
 export function MeetingDecisionsSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   return (
@@ -423,13 +495,14 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
       {dashboard.meetingRequests.length ? (
         <WorkflowTable
           caption="Meeting requests for this organization"
-          headers={['Requester', 'Meeting title', 'Requested date/time', 'Status', 'Decision']}
+          headers={['Requester', 'Meeting title', 'Requested date/time', 'Status', 'Document', 'Decision']}
           rows={dashboard.meetingRequests.map((request) => (
             <tr key={request.id}>
               <td>{request.requesterName}</td>
               <td>{request.meetingTitle}</td>
               <td>{request.requestedDate}, {request.requestedTime}</td>
               <td><MeetingStatusChip status={request.status} /></td>
+              <td><FormalRequestDocumentButton request={request} /></td>
               <td>
                 <div className="component-row">
                   <Button type="button" variant="secondary" disabled={request.status === 'Approved'} onClick={async () => {
@@ -582,7 +655,7 @@ export function OfficerView({ session, client }: { session: UserSession; client:
               <OrganizationAvatar name={grant.organizationName} />
               <div>
                 <h2>{grant.organizationName}</h2>
-                <p className="section-note">Management access</p>
+                <p className="section-note"><RoleBadge kind="officer">Approved officer access</RoleBadge></p>
               </div>
             </div>
             <div className="button-row">

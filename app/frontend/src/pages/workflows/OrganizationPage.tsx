@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Button, ButtonLink, ExternalButtonLink, LoadingBlock, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
+import { Button, ButtonLink, ExternalButtonLink, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { OrganizationProfile, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
@@ -18,6 +18,8 @@ import {
   WorkflowPageFrame,
 } from './pageParts';
 import { getApprovedOfficerGrants, getSafeHttpUrl, isSponsor, splitDateEntries } from './workflowUtils';
+
+const phoneHref = (phone: string) => `tel:${phone.replace(/[^+0-9]/g, '')}`;
 
 function RecruitmentActions({ organization, session, client }: { organization: OrganizationProfile; session: UserSession; client: WorkflowDataClient }) {
   const safeUrl = getSafeHttpUrl(organization.recruitment.externalFormUrl);
@@ -139,9 +141,12 @@ export function OrganizationView({ organizationId, session, client }: { organiza
                 </div>
               </div>
               <p>{organization.description}</p>
-              <p><strong>Contact:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
+              <div className="contact-lines">
+                <p><strong>Email:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
+                {organization.contactPhone ? <p><strong>Phone:</strong> <a href={phoneHref(organization.contactPhone)}>{organization.contactPhone}</a></p> : null}
+              </div>
               <p>
-                {canManage ? <StatusChip tone="approved">You manage this organization</StatusChip> : <StatusChip tone="info">Public profile</StatusChip>}
+                {canManage ? <RoleBadge kind="officer">You manage this organization</RoleBadge> : <StatusChip tone="info">Public profile</StatusChip>}
               </p>
             </div>
           </section>
@@ -165,7 +170,10 @@ export function OrganizationView({ organizationId, session, client }: { organiza
                 <p>Read the public description and current recruitment opportunity before taking action.</p>
               </header>
               <p>{organization.description}</p>
-              <p><strong>Contact:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
+              <div className="contact-lines">
+                <p><strong>Email:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
+                {organization.contactPhone ? <p><strong>Phone:</strong> <a href={phoneHref(organization.contactPhone)}>{organization.contactPhone}</a></p> : null}
+              </div>
               <p><strong>Recruitment:</strong> {organization.recruitment.title}</p>
               <p><strong>Requirements:</strong> {organization.recruitment.requirements}</p>
               <p><strong>Instructions:</strong> {organization.recruitment.instructions}</p>

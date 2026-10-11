@@ -29,6 +29,7 @@ export const RegistrationIntentPage = () => {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [studentId, setStudentId] = useState('');
+  const [department, setDepartment] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -41,6 +42,11 @@ export const RegistrationIntentPage = () => {
       setLocalError('Student ID is required for students and future officers.');
       return;
     }
+    const normalizedDepartment = department.trim().replace(/\s+/g, ' ');
+    if (role === 'student' && normalizedDepartment.length > 80) {
+      setLocalError('Department must be 80 characters or fewer.');
+      return;
+    }
     setSubmitting(true);
     try {
       const input: RegistrationPaymentInput = {
@@ -48,6 +54,7 @@ export const RegistrationIntentPage = () => {
         displayName: displayName.trim(),
         email: email.trim(),
         studentId: role === 'student' ? studentId.trim() : undefined,
+        department: role === 'student' ? normalizedDepartment || undefined : undefined,
         companyName: role === 'sponsor' ? companyName.trim() || undefined : undefined,
         returnUrl: `${window.location.origin}/access/checkout`,
       };
@@ -65,9 +72,9 @@ export const RegistrationIntentPage = () => {
         <div>
           <div className="auth-logo"><SoarLogo /><span>SOAR</span></div>
           <p className="eyebrow">Payment before account creation</p>
-          <h1>Start annual access</h1>
+          <h1>Start six-month access</h1>
           <p className="card-note">
-SOAR costs PHP10 per account for one year. Account creation unlocks after a successful checkout.
+SOAR costs PHP10 per account for six months. Account creation unlocks after a successful checkout.
           </p>
           <div className="notice compact">
             Officers do not choose a separate signup. Register as a student with student ID; organization owners or admins grant officer access later.
@@ -75,7 +82,7 @@ SOAR costs PHP10 per account for one year. Account creation unlocks after a succ
           {gateway.mode === 'fixture' ? <div className="notice compact warning">Demo checkout is simulated locally and does not create a real charge.</div> : null}
           <ol className="mini-steps">
             <li><strong>Account type</strong><span>Choose student or sponsor.</span></li>
-            <li><strong>Checkout</strong><span>Pay the PHP10 annual access fee.</span></li>
+            <li><strong>Checkout</strong><span>Pay the PHP10 six-month access fee.</span></li>
             <li><strong>Create account</strong><span>Complete your details after payment is confirmed.</span></li>
           </ol>
         </div>
@@ -94,9 +101,14 @@ SOAR costs PHP10 per account for one year. Account creation unlocks after a succ
             <TextInput id="email" required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} />
           </Field>
           {role === 'student' ? (
-            <Field id="studentId" label="Student ID" hint="Required for students and regular student accounts that may receive officer grants.">
-              <TextInput id="studentId" required value={studentId} onChange={(event) => setStudentId(event.target.value)} />
-            </Field>
+            <>
+              <Field id="studentId" label="Student ID" hint="Required for students and regular student accounts that may receive officer grants.">
+                <TextInput id="studentId" required value={studentId} onChange={(event) => setStudentId(event.target.value)} />
+              </Field>
+              <Field id="department" label="Department" optional hint="Saved on your student account for aggregate department counts. Leave blank if your department is not listed by your school yet.">
+                <TextInput id="department" autoComplete="organization-title" value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={80} />
+              </Field>
+            </>
           ) : (
             <Field id="companyName" label="Company or organization name" optional>
               <TextInput id="companyName" value={companyName} onChange={(event) => setCompanyName(event.target.value)} />

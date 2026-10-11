@@ -105,7 +105,7 @@ export function getMeetingTone(status: MeetingStatus): 'neutral' | 'progress' | 
 }
 
 export function getAccessCopy(status: AccessStatus): string {
-  if (status === 'active') return 'Active annual access';
+  if (status === 'active') return 'Active six-month access';
   if (status === 'expired') return 'Expired access: main workflow data should remain locked until renewal.';
   if (status === 'pending') return 'Payment pending: workflow pages should remain gated.';
   if (status === 'failed' || status === 'cancelled') return 'Payment did not complete: workflow pages should remain gated.';

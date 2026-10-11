@@ -24,7 +24,7 @@ describe('AppShell navigation', () => {
     renderShell(makeSession({ accountKind: 'sponsor', studentId: undefined, companyName: 'Partner Co.' }));
 
     await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
-    expect(screen.getByText(/sponsor account/i)).toBeInTheDocument();
+    expect(screen.getByText('Sponsor')).toBeInTheDocument();
     expect(screen.queryByText('Applications')).not.toBeInTheDocument();
     expect(screen.queryByText('Officer tools')).not.toBeInTheDocument();
     expect(screen.queryByText('Manage Organization')).not.toBeInTheDocument();
@@ -40,7 +40,7 @@ describe('AppShell navigation', () => {
     await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
     expect(screen.queryByText('Officer tools')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Manage Organization' })).toHaveAttribute('href', '/settings/organization?organizationId=coding');
-    expect(screen.getByRole('link', { name: 'Manage' })).toHaveAttribute('href', '/settings/organization?organizationId=coding');
+    expect(screen.queryByRole('navigation', { name: /Mobile SOAR navigation/i })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Manage this organization/i })).toHaveAttribute('href', '/settings/organization?organizationId=coding');
     expect(screen.getByText('Coding Society')).toBeInTheDocument();
   });

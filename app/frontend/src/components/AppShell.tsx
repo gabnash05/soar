@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { SoarLogo } from './SoarLogo';
-import { Button, ButtonLink, StatusChip } from './ui';
+import { Button, RoleBadge, StatusChip } from './ui';
 import { useAuth } from '../context/AuthContext';
 import { hasActiveAccess, hasApprovedOfficerGrant, isStudentAccount } from '../lib/contracts';
 import { appNavRoutes } from '../router/nav';
@@ -87,14 +87,17 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
             <SoarLogo />
             <div>
               <strong>{session.displayName}</strong>
-              <span>{session.accountKind === 'student' ? 'Student account' : 'Sponsor account'}</span>
+              <div className="role-badge-row">
+                <RoleBadge kind={session.accountKind}>{session.accountKind === 'student' ? 'Student' : 'Sponsor'}</RoleBadge>
+                {officer ? <RoleBadge kind="officer">Approved officer</RoleBadge> : null}
+              </div>
             </div>
           </div>
           {!session.emailVerified ? (
             <div className="sidebar-alert">Verify your email before using the main app.</div>
           ) : null}
           {!activeAccess ? (
-            <div className="sidebar-alert">Main SOAR pages are locked until PHP10 annual access is active.</div>
+            <div className="sidebar-alert">Main SOAR pages are locked until PHP10 six-month access is active.</div>
           ) : null}
           <nav className="app-nav" aria-label="SOAR sections">
             {navRoutes.map((route) => {
@@ -133,17 +136,6 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
         </main>
       </div>
 
-      <nav className="bottom-nav" aria-label="Mobile SOAR navigation">
-        {navRoutes.slice(0, 5).map((route) => {
-          const to = resolveRouteTo(route.to);
-          return (
-            <NavLink key={route.to} to={to} end={route.to === '/app'}>
-              {route.shortLabel}
-            </NavLink>
-          );
-        })}
-        <ButtonLink to="/settings/account" variant="quiet">More</ButtonLink>
-      </nav>
     </div>
   );
 };

@@ -55,6 +55,9 @@ const normalizeAccess = (access: RawAccess): AccessEntitlement => {
   return {
     status: normalizedStatus,
     annualFeePhp: 10,
+    feePhp: access.feePhp ?? 10,
+    periodMonths: access.periodMonths ?? 6,
+    periodLabel: access.periodLabel ?? '6 months',
     startsAt: access.startsAt,
     expiresAt: access.expiresAt ?? access.accessExpiresAt,
     lastPaymentReference: access.lastPaymentReference ?? access.latestPaymentId ?? undefined,

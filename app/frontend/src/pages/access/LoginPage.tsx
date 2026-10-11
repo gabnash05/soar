@@ -36,7 +36,7 @@ export const LoginPage = () => {
         <div className="auth-logo"><SoarLogo /><span>SOAR</span></div>
         <p className="eyebrow">Welcome back</p>
         <h1>Sign in to your account</h1>
-        <p className="card-note">Entry, renewal, recovery, and settings remain available even when annual access expires.</p>
+        <p className="card-note">Entry, renewal, recovery, and settings remain available even when six-month access expires.</p>
         {gateway.mode === 'fixture' ? (
           <div className="notice compact">
 Demo accounts: student@example.edu, officer@example.edu, sponsor@example.com, expired@example.edu, unverified@example.edu.

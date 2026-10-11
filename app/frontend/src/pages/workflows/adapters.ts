@@ -1,4 +1,5 @@
 import type { ApplicationStage, MeetingStatus, UserSession } from '../../lib/contracts';
+import { validateAnnouncementMediaFiles, validateMeetingDocumentFile } from '../../lib/storageUploads';
 import type {
   Announcement,
   AnnouncementComment,
@@ -13,6 +14,7 @@ import type {
   OrganizationProfile,
   OrganizationProfileInput,
   OrganizationSummary,
+  StudentDepartmentCounts,
   WorkflowDataClient,
   WorkflowMutationResult,
   WorkflowQueryResult,
@@ -56,6 +58,8 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   listAnnouncements: () => unavailableQuery<Announcement[]>([]),
   toggleAnnouncementLike: () => unavailableMutation<Announcement>(),
   addAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
+  updateAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
+  deleteAnnouncementComment: () => unavailableMutation(),
   listOrganizations: () => unavailableQuery<OrganizationSummary[]>([]),
   getOrganization: () => unavailableQuery<OrganizationProfile | undefined>(undefined),
   confirmExternalApplication: () => unavailableMutation<ApplicationRecord>(),
@@ -67,6 +71,15 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   saveOrganizationProfile: () => unavailableMutation<OrganizationProfile>(),
   publishAnnouncement: () => unavailableMutation<Announcement>(),
   deleteAnnouncement: () => unavailableMutation(),
+  getStudentDepartmentCounts: (organizationId) => unavailableQuery<StudentDepartmentCounts>({
+    organizationId,
+    scope: 'registered_students_across_soar',
+    description: 'Registered student account counts are unavailable right now.',
+    totalRegisteredStudents: 0,
+    missingDepartmentCount: 0,
+    items: [],
+    generatedAt: new Date().toISOString(),
+  }),
   updateApplicationStage: () => unavailableMutation<ApplicationRecord>(),
   saveDateEntry: () => unavailableMutation<DateEntry>(),
   deleteDateEntry: () => unavailableMutation(),
@@ -148,6 +161,7 @@ const initialOrganizations: OrganizationProfile[] = [
     shortDescription: 'Builds robots, runs workshops, and recruits student makers.',
     description: 'Robotics Guild helps students design practical builds, share lab time, and prepare for competitions through hands-on teams.',
     contactEmail: 'robotics@example.edu',
+    contactPhone: '+63 912 345 6789',
     recruitmentTitle: 'Build Team 2026',
     recruitment: {
       id: 'robotics-build-team-2026',
@@ -169,6 +183,7 @@ const initialOrganizations: OrganizationProfile[] = [
     shortDescription: 'Hosts open mic nights, writing circles, and campus publications.',
     description: 'Literary Circle creates a welcoming space for writers, editors, performers, and students who want to publish or perform work.',
     contactEmail: 'literary@example.edu',
+    contactPhone: '',
     recruitmentTitle: 'Open Mic Crew',
     recruitment: {
       id: 'literary-open-mic-crew',
@@ -190,6 +205,7 @@ const initialOrganizations: OrganizationProfile[] = [
     shortDescription: 'Coordinates wellness campaigns and volunteer drives.',
     description: 'Campus Health Alliance organizes wellness information drives and service opportunities with allied campus partners.',
     contactEmail: 'health@example.edu',
+    contactPhone: '+63 (02) 555-0100',
     recruitmentTitle: 'Wellness Volunteers',
     recruitment: {
       id: 'health-wellness-volunteers',
@@ -216,10 +232,22 @@ const initialAnnouncements: Announcement[] = [
       url: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
       alt: 'Electronics workbench with small robotics parts',
     },
+    media: [
+      {
+        url: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
+        alt: 'Electronics workbench with small robotics parts',
+      },
+      {
+        url: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=1200&q=80',
+        alt: 'Small robot prototype on a lab table',
+      },
+    ],
+    deepLinkPath: '/app?announcementId=post-robotics-tryouts',
     likeCount: 12,
     viewerHasLiked: false,
+    commentCount: 1,
     comments: [
-      { id: 'comment-1', authorName: 'Mara Santos', body: 'Is the interview window open to first-year students?', createdAt: '2026-10-07T09:00:00.000Z' },
+      { id: 'comment-1', authorUid: 'student-1', authorName: 'Mara Santos', body: 'Is the interview window open to first-year students?', createdAt: '2026-10-07T09:00:00.000Z' },
     ],
   },
   {
@@ -228,8 +256,10 @@ const initialAnnouncements: Announcement[] = [
     organizationName: 'Literary Circle',
     createdAt: '2026-10-06T13:00:00.000Z',
     body: 'Open mic signup is available now. New volunteers can review the profile and external form instructions.',
+    deepLinkPath: '/app?announcementId=post-literary-open-mic',
     likeCount: 7,
     viewerHasLiked: true,
+    commentCount: 0,
     comments: [],
   },
   {
@@ -238,8 +268,10 @@ const initialAnnouncements: Announcement[] = [
     organizationName: 'Campus Health Alliance',
     createdAt: '2026-10-05T11:30:00.000Z',
     body: 'Volunteer briefing slots are posted. Pending meeting requests are not confirmed until an officer approves them.',
+    deepLinkPath: '/app?announcementId=post-health-briefing',
     likeCount: 4,
     viewerHasLiked: false,
+    commentCount: 0,
     comments: [],
   },
 ];
@@ -310,6 +342,12 @@ const initialMeetingRequests: MeetingRequest[] = [
     requestedTime: '14:00',
     status: 'Pending',
     note: 'Application submitted externally.',
+    document: {
+      storagePath: 'fixture/meeting-request-documents/robotics/meeting-student-1-robotics/formal-request.pdf',
+      fileName: 'formal-request.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 245760,
+    },
     updatedAt: '2026-10-07T10:15:00.000Z',
   },
   {
@@ -336,6 +374,7 @@ function toSummary(profile: OrganizationProfile): OrganizationSummary {
     logoUrl: profile.logoUrl,
     shortDescription: profile.shortDescription,
     contactEmail: profile.contactEmail,
+    contactPhone: profile.contactPhone,
     recruitmentTitle: profile.recruitmentTitle,
   };
 }
@@ -361,10 +400,25 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
     return organizations.find((organization) => organization.id === normalizedId || organization.slug === normalizedId);
   }
 
-  function hydrateOrganization(profile: OrganizationProfile): OrganizationProfile {
+  function hydrateAnnouncement(announcement: Announcement, session: UserSession): Announcement {
+    const cloned = clone(announcement);
+    const media = cloned.media?.length ? cloned.media : cloned.image ? [cloned.image] : [];
+    cloned.media = media.length ? media : undefined;
+    cloned.image = media[0];
+    cloned.deepLinkPath = cloned.deepLinkPath ?? `/app?announcementId=${encodeURIComponent(cloned.id)}`;
+    cloned.commentCount = cloned.comments.length;
+    cloned.comments = cloned.comments.map((comment) => ({
+      ...comment,
+      viewerCanEdit: comment.authorUid === session.uid,
+      viewerCanDelete: comment.authorUid === session.uid,
+    }));
+    return cloned;
+  }
+
+  function hydrateOrganization(profile: OrganizationProfile, session: UserSession): OrganizationProfile {
     return {
       ...clone(profile),
-      posts: announcements.filter((announcement) => announcement.organizationId === profile.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      posts: announcements.filter((announcement) => announcement.organizationId === profile.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((announcement) => hydrateAnnouncement(announcement, session)),
       dateEntries: dateEntries.filter((entry) => entry.organizationId === profile.id).sort(compareDateEntries),
     };
   }
@@ -380,22 +434,22 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
     mode: 'fixture',
     label: 'Workflow fixture data',
 
-    async listAnnouncements() {
+    async listAnnouncements(session) {
       return {
-        data: clone(announcements).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        data: announcements.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((announcement) => hydrateAnnouncement(announcement, session)),
         source: 'fixture',
         message: 'Demo mode: sample workflow changes are simulated locally.',
       };
     },
 
-    async toggleAnnouncementLike(announcementId, liked) {
+    async toggleAnnouncementLike(announcementId, liked, session) {
       const announcement = announcements.find((item) => item.id === announcementId);
       if (!announcement) return failure('not-found', 'Announcement not found.');
       const wasLiked = announcement.viewerHasLiked;
       announcement.viewerHasLiked = liked;
       if (liked && !wasLiked) announcement.likeCount += 1;
       if (!liked && wasLiked) announcement.likeCount = Math.max(0, announcement.likeCount - 1);
-      return success(liked ? 'Liked in demo mode.' : 'Like removed in demo mode.', clone(announcement));
+      return success(liked ? 'Liked in demo mode.' : 'Like removed in demo mode.', hydrateAnnouncement(announcement, session));
     },
 
     async addAnnouncementComment(announcementId, body, session) {
@@ -405,12 +459,40 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       if (!announcement) return failure('not-found', 'Announcement not found.');
       const comment: AnnouncementComment = {
         id: `comment-${nextId++}`,
+        authorUid: session.uid,
         authorName: session.displayName,
         body: trimmed,
         createdAt: new Date().toISOString(),
+        viewerCanEdit: true,
+        viewerCanDelete: true,
       };
       announcement.comments.push(comment);
+      announcement.commentCount = announcement.comments.length;
       return success('Comment added in demo mode.', clone(comment));
+    },
+
+    async updateAnnouncementComment(announcementId, commentId, body, session) {
+      const trimmed = body.trim();
+      if (!trimmed) return failure('validation', 'Enter a comment before saving.');
+      const announcement = announcements.find((item) => item.id === announcementId);
+      if (!announcement) return failure('not-found', 'Announcement not found.');
+      const comment = announcement.comments.find((item) => item.id === commentId);
+      if (!comment) return failure('not-found', 'Comment not found.');
+      if (comment.authorUid !== session.uid) return failure('permission', 'You can edit only your own comments.');
+      comment.body = trimmed;
+      comment.updatedAt = new Date().toISOString();
+      return success('Comment updated in demo mode.', { ...clone(comment), viewerCanEdit: true, viewerCanDelete: true });
+    },
+
+    async deleteAnnouncementComment(announcementId, commentId, session) {
+      const announcement = announcements.find((item) => item.id === announcementId);
+      if (!announcement) return failure('not-found', 'Announcement not found.');
+      const comment = announcement.comments.find((item) => item.id === commentId);
+      if (!comment) return failure('not-found', 'Comment not found.');
+      if (comment.authorUid !== session.uid) return failure('permission', 'You can delete only your own comments.');
+      announcement.comments = announcement.comments.filter((item) => item.id !== commentId);
+      announcement.commentCount = announcement.comments.length;
+      return { ok: true, persisted: true, source: 'fixture', message: 'Comment deleted in demo mode.' };
     },
 
     async listOrganizations() {
@@ -421,10 +503,10 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       };
     },
 
-    async getOrganization(organizationId) {
+    async getOrganization(organizationId, session) {
       const organization = getOrganizationById(organizationId);
       return {
-        data: organization ? hydrateOrganization(organization) : undefined,
+        data: organization ? hydrateOrganization(organization, session) : undefined,
         source: 'fixture',
         message: organization ? 'Demo mode: profile data is local.' : 'Organization not found in demo data.',
       };
@@ -491,8 +573,16 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       if (hasDuplicateMeetingRequest(meetingRequests, input, session.uid)) {
         return failure('duplicate', 'A repeated identical request already exists. Pending requests are not confirmed bookings.');
       }
+      if (input.document?.file) {
+        try {
+          validateMeetingDocumentFile(input.document.file);
+        } catch (error) {
+          return failure('validation', error instanceof Error ? error.message : 'Attach a valid PDF document.');
+        }
+      }
+      const requestId = `meeting-${session.uid}-${nextId++}`;
       const request: MeetingRequest = {
-        id: `meeting-${session.uid}-${nextId++}`,
+        id: requestId,
         organizationId: organization.id,
         organizationName: organization.name,
         dateEntryId: entry.id,
@@ -503,6 +593,12 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
         requestedTime: input.requestedTime,
         status: 'Pending',
         note: input.note?.trim(),
+        document: input.document ? {
+          storagePath: `fixture/meeting-request-documents/${organization.id}/${requestId}/${input.document.fileName}`,
+          fileName: input.document.fileName,
+          contentType: input.document.contentType,
+          sizeBytes: input.document.sizeBytes,
+        } : undefined,
         updatedAt: new Date().toISOString(),
       };
       meetingRequests.unshift(request);
@@ -516,8 +612,8 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       const organization = getOrganizationById(organizationId);
       if (!organization) return { data: undefined, source: 'fixture', message: 'Organization not found.' };
       const dashboard: OfficerDashboard = {
-        organization: hydrateOrganization(organization),
-        announcements: announcements.filter((announcement) => announcement.organizationId === organization.id),
+        organization: hydrateOrganization(organization, session),
+        announcements: announcements.filter((announcement) => announcement.organizationId === organization.id).map((announcement) => hydrateAnnouncement(announcement, session)),
         applicants: applications.filter((application) => application.organizationId === organization.id),
         dateEntries: dateEntries.filter((entry) => entry.organizationId === organization.id).sort(compareDateEntries),
         meetingRequests: meetingRequests.filter((request) => request.organizationId === organization.id),
@@ -531,6 +627,9 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       if (!input.name.trim() || !input.description.trim() || !input.contactEmail.trim()) {
         return failure('validation', 'Organization name, description, and contact email are required.');
       }
+      if (input.contactPhone && !/^[+0-9() .\-extEXT]{3,32}$/.test(input.contactPhone.trim())) {
+        return failure('validation', 'Enter a valid phone number or leave it blank.');
+      }
       const organization = getOrganizationById(input.organizationId);
       if (!organization) return failure('not-found', 'Organization not found.');
       organization.name = input.name.trim();
@@ -538,12 +637,13 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       organization.description = input.description.trim();
       organization.shortDescription = input.shortDescription.trim();
       organization.contactEmail = input.contactEmail.trim();
+      organization.contactPhone = input.contactPhone?.trim();
       organization.recruitmentTitle = input.recruitmentTitle.trim();
       organization.recruitment.title = input.recruitmentTitle.trim();
       organization.recruitment.requirements = input.recruitmentRequirements.trim();
       organization.recruitment.instructions = input.recruitmentInstructions.trim();
       organization.recruitment.externalFormUrl = input.externalFormUrl?.trim();
-      return success('Organization profile saved in demo mode.', hydrateOrganization(organization));
+      return success('Organization profile saved in demo mode.', hydrateOrganization(organization, session));
     },
 
     async publishAnnouncement(input, session) {
@@ -553,20 +653,31 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       if (!body) return failure('validation', 'Announcement text is required.');
       const organization = getOrganizationById(input.organizationId);
       if (!organization) return failure('not-found', 'Organization not found.');
+      const media = input.media?.length ? input.media : input.image ? [input.image] : [];
+      const files = media.filter((item) => item.file).map((item) => item.file as File);
+      try {
+        if (files.length) validateAnnouncementMediaFiles(files);
+      } catch (error) {
+        return failure('validation', error instanceof Error ? error.message : 'Choose valid images.');
+      }
+      const announcementId = `post-${nextId++}`;
       const announcement: Announcement = {
-        id: `post-${nextId++}`,
+        id: announcementId,
         organizationId: organization.id,
         organizationName: organization.name,
         organizationLogoUrl: organization.logoUrl,
         createdAt: new Date().toISOString(),
         body,
-        image: input.image,
+        image: media[0],
+        media: media.length ? media : undefined,
+        deepLinkPath: `/app?announcementId=${encodeURIComponent(announcementId)}`,
         likeCount: 0,
         viewerHasLiked: false,
+        commentCount: 0,
         comments: [],
       };
       announcements.unshift(announcement);
-      return success('Announcement published in demo mode.', clone(announcement));
+      return success('Announcement published in demo mode.', hydrateAnnouncement(announcement, session));
     },
 
     async deleteAnnouncement(announcementId, organizationId, session) {
@@ -576,6 +687,40 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       announcements = announcements.filter((announcement) => announcement.id !== announcementId || announcement.organizationId !== organizationId);
       if (announcements.length === before) return failure('not-found', 'Announcement not found.');
       return { ok: true, persisted: true, source: 'fixture', message: 'Announcement deleted in demo mode.' };
+    },
+
+    async getStudentDepartmentCounts(organizationId, session) {
+      if (!isApprovedOfficerFor(session, organizationId)) {
+        return {
+          data: {
+            organizationId,
+            scope: 'registered_students_across_soar',
+            description: 'Registered student accounts across SOAR grouped by saved department; not organization members or applicants.',
+            totalRegisteredStudents: 0,
+            missingDepartmentCount: 0,
+            items: [],
+            generatedAt: new Date().toISOString(),
+          },
+          source: 'fixture',
+          message: 'Approved organization-specific officer access is required.',
+        };
+      }
+      return {
+        data: {
+          organizationId,
+          scope: 'registered_students_across_soar',
+          description: 'Registered student accounts across SOAR grouped by saved department; not organization members or applicants.',
+          totalRegisteredStudents: 6,
+          missingDepartmentCount: 1,
+          items: [
+            { departmentKey: 'computer science', department: 'Computer Science', count: 3 },
+            { departmentKey: 'engineering', department: 'Engineering', count: 2 },
+          ],
+          generatedAt: new Date().toISOString(),
+        },
+        source: 'fixture',
+        message: 'Demo mode: department counts are simulated aggregate data and include legacy students without a saved department as Unspecified.',
+      };
     },
 
     async updateApplicationStage(applicationId, stage: ApplicationStage, organizationId, session) {

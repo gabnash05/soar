@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, ButtonLink, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
+import { Button, ButtonLink, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
-import type { WorkflowDataClient } from '../workflows/contracts';
+import type { StudentDepartmentCounts, WorkflowDataClient } from '../workflows/contracts';
 import {
   AnnouncementSection,
   DateEntriesSection,
@@ -11,10 +11,11 @@ import {
   ProfileRecruitmentSection,
 } from '../workflows/OfficerPage';
 import {
+  ErrorState,
   OrganizationAvatar,
-  OrganizationIdentityArt,
   RouteUnavailableState,
   SourceNotice,
+  useWorkflowQuery,
   useWorkflowSession,
   WorkflowPageFrame,
 } from '../workflows/pageParts';
@@ -24,7 +25,45 @@ const managementTabs = [
   { id: 'details', label: 'Details' },
   { id: 'announcements', label: 'Announcements' },
   { id: 'dates', label: 'Dates & availability' },
+  { id: 'students', label: 'Student stats' },
 ];
+
+function StudentDepartmentCountsSection({ organizationId, session, client }: { organizationId: string; session: UserSession; client: WorkflowDataClient }) {
+  const { data, loading, error, sourceMessage, reload } = useWorkflowQuery<StudentDepartmentCounts>(() => client.getStudentDepartmentCounts(organizationId, session), [client, organizationId, session.uid]);
+
+  return (
+    <section className="surface-section compact-section">
+      <header className="section-heading">
+        <h2>Registered students by department</h2>
+        <p>Aggregate counts come from saved student account data across SOAR. They are not organization membership or applicant counts, and no identities, emails, or raw account records are shown.</p>
+      </header>
+      {client.mode === 'fixture' ? <p className="notice compact">Demo mode: department counts are simulated aggregate data. Missing legacy data is labelled honestly.</p> : sourceMessage ? <p className="notice compact">{sourceMessage}</p> : null}
+      {loading ? <LoadingBlock label="Loading department counts" /> : null}
+      {error ? <ErrorState onRetry={reload}>{error}</ErrorState> : null}
+      {data && !loading && !error ? (
+        <div className="department-stats-grid">
+          <div className="department-stat-summary">
+            <strong>{data.totalRegisteredStudents}</strong>
+            <span>registered student accounts across SOAR</span>
+          </div>
+          <div className="table-scroll" role="region" aria-label="Registered students by saved department">
+            <table className="data-table department-table">
+              <caption>{data.description}</caption>
+              <thead><tr><th>Department</th><th>Registered students</th></tr></thead>
+              <tbody>
+                {data.items.map((item) => (
+                  <tr key={item.departmentKey || item.department}><td>{item.department || 'Unspecified'}</td><td>{item.count}</td></tr>
+                ))}
+                {data.missingDepartmentCount ? <tr><td>Unspecified legacy accounts</td><td>{data.missingDepartmentCount}</td></tr> : null}
+              </tbody>
+            </table>
+          </div>
+          <p className="section-note">Generated {new Date(data.generatedAt).toLocaleString()}. Missing legacy data is shown as unspecified rather than guessed.</p>
+        </div>
+      ) : null}
+    </section>
+  );
+}
 
 export function OrganizationSettingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const grants = useMemo(() => getApprovedOfficerGrants(session), [session]);
@@ -83,12 +122,11 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
   return (
     <WorkflowPageFrame
       eyebrow="Organization settings"
-      title={selectedGrant ? `Manage ${selectedGrant.organizationName}.` : 'Manage organization details.'}
-      description="Edit organization details first, then switch tabs for this organization's announcement history or date and availability management."
+      title="Organization settings"
+      description={selectedGrant ? `Selected organization: ${selectedGrant.organizationName}. Edit details first, then switch tabs for announcements, dates, and aggregate student statistics.` : 'Edit organization details first, then switch tabs for announcements, dates, and aggregate student statistics.'}
       session={session}
       actions={selectedGrant && profileFormId ? (
         <>
-          <StatusChip tone="approved">Managing {selectedGrant.organizationName}</StatusChip>
           {activeId === 'details' ? <Button type="submit" form={profileFormId} variant="primary">Save profile</Button> : null}
           <ButtonLink to={`/app/organizations/${selectedGrant.organizationId}`} variant="secondary">View public profile</ButtonLink>
         </>
@@ -105,21 +143,17 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
           });
           return (
             <section className="content-stack" aria-label="Managed organization settings">
-              <section className="organization-management-hero">
-                <OrganizationIdentityArt name={dashboard.organization.name} logoUrl={dashboard.organization.logoUrl} className="management-identity-art" />
-                <div className="profile-hero-copy">
-                  <div className="org-head">
-                    <OrganizationAvatar name={dashboard.organization.name} logoUrl={dashboard.organization.logoUrl} />
-                    <div>
-                      <h2>{dashboard.organization.name}</h2>
-                      <p className="section-note">{dashboard.organization.shortDescription}</p>
-                    </div>
+              <section className="management-context-bar" aria-label="Selected managed organization">
+                <div className="org-head">
+                  <OrganizationAvatar name={dashboard.organization.name} logoUrl={dashboard.organization.logoUrl} />
+                  <div>
+                    <h2>{dashboard.organization.name}</h2>
+                    <p className="section-note">{dashboard.organization.shortDescription}</p>
                   </div>
-                  <p>Selected management context is retained in the URL and enforced by your organization grant.</p>
-                  <div className="component-row">
-                    <StatusChip tone="approved">Management access</StatusChip>
-                    {profileDirty ? <StatusChip tone="attention">Unsaved profile edits</StatusChip> : null}
-                  </div>
+                </div>
+                <div className="component-row">
+                  <RoleBadge kind="officer">Approved officer access</RoleBadge>
+                  {profileDirty ? <StatusChip tone="attention">Unsaved profile edits</StatusChip> : null}
                 </div>
               </section>
 
@@ -129,10 +163,13 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
                 <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} formId={profileFormId} onDirtyChange={handleProfileDirtyChange} />
               </SubtabPanel>
               <SubtabPanel baseId="organization-management" tabId="announcements" activeId={activeId}>
-                <AnnouncementSection dashboard={dashboard} session={session} client={client} onChanged={reload} allowPosting={false} />
+                <AnnouncementSection dashboard={dashboard} session={session} client={client} onChanged={reload} allowPosting />
               </SubtabPanel>
               <SubtabPanel baseId="organization-management" tabId="dates" activeId={activeId}>
                 <DateEntriesSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
+              </SubtabPanel>
+              <SubtabPanel baseId="organization-management" tabId="students" activeId={activeId}>
+                <StudentDepartmentCountsSection organizationId={dashboard.organization.id} session={session} client={client} />
               </SubtabPanel>
             </section>
           );
