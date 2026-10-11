@@ -1,21 +1,24 @@
 # SOAR content backend
 
 This document is the backend contract for the MVP organization/content lane.
-It extends the existing Firebase Functions Express API and uses the identity foundation's Firebase Auth bearer token, verified-email gate, active annual entitlement gate, and organization owner/officer-grant management model.
+It extends the existing Firebase Functions Express API and uses the identity foundation's Firebase Auth bearer token, verified-email gate, active six-month entitlement gate, and organization owner/officer-grant management model.
 
 ## Scope implemented
 
 Implemented content services:
 
 - organization directory listing with name search;
-- organization profile and recruitment reads;
+- organization profile and recruitment reads, including optional public contact phone;
 - approved organization-manager profile and recruitment updates;
+- aggregate registered-student department counts for approved managers;
 - announcement feed and organization-scoped posts;
 - announcement create/delete by approved organization managers;
+- multiple announcement images or one bounded native video through the existing Storage design;
+- direct announcement deep-link lookup by stable announcement id;
 - persisted like/unlike with consistent counts;
-- persisted comments with consistent counts;
+- persisted comments with consistent counts, plus own-comment edit/delete;
 - public dated event entries and requestable meeting/interview availability entries;
-- storage path target helpers for organization logos and announcement images;
+- storage path target helpers for organization logos and announcement media;
 - focused Firestore/Storage rule coverage for direct SDK bypasses.
 
 Not implemented in this lane:
@@ -29,7 +32,7 @@ Not implemented in this lane:
 ## Shared security model
 
 All content HTTP routes require `Authorization: Bearer <Firebase ID token>`.
-Read routes require a verified email and active annual entitlement.
+Read routes require a verified email and active six-month entitlement.
 Write routes that affect an organization require the caller to be either the assigned `organizations/{orgId}.ownerUid` or an active `organizations/{orgId}/officerGrants/{uid}` grantee.
 Officer access is organization-specific and officers remain student accounts.
 Sponsors and students with active verified access may read content, like posts, and comment.
@@ -81,6 +84,7 @@ Response:
       "shortDescription": "Builds robots.",
       "description": "Builds robots and runs workshops.",
       "contactEmail": "robotics@example.edu",
+      "contactPhone": "+63 917 555 0101",
       "logoPath": "organization-logos/robotics/logo.png",
       "recruitmentTitle": "Build Team 2026",
       "updatedAt": "2026-10-08T00:00:00.000Z"
@@ -92,7 +96,27 @@ Response:
 
 ### `GET /organizations/:orgId`
 
-Returns a profile with recruitment, recent posts, and dated entries.
+Returns a profile with recruitment, recent posts, dated entries, and optional public `contactPhone`.
+
+### `GET /organizations/:orgId/student-department-counts`
+
+Returns aggregate department counts for registered student accounts across SOAR. This endpoint is for approved managers of `orgId` only and returns no student identities, emails, account ids, applications, or membership lists.
+
+Response:
+
+```json
+{
+  "organizationId": "robotics",
+  "scope": "registered_students_across_soar",
+  "description": "Registered student accounts across SOAR grouped by saved department; not organization members or applicants.",
+  "totalRegisteredStudents": 4,
+  "missingDepartmentCount": 1,
+  "items": [
+    { "departmentKey": "computer science", "department": "Computer Science", "count": 2 }
+  ],
+  "generatedAt": "2026-10-11T00:00:00.000Z"
+}
+```
 
 ### `PATCH /organizations/:orgId`
 
@@ -107,6 +131,7 @@ Request fields:
   "shortDescription": "Short directory text.",
   "description": "Long profile text.",
   "contactEmail": "robotics@example.edu",
+  "contactPhone": "+63 917 555 0101",
   "logoPath": "organization-logos/robotics/logo.png",
   "recruitment": {
     "title": "Build Team 2026",
@@ -118,6 +143,7 @@ Request fields:
 ```
 
 `applicationLink` must be an `http` or `https` URL.
+`contactPhone` is optional and accepts bounded international-friendly phone text; an empty string clears it.
 An empty string clears an optional text/link field.
 Logo paths must stay under `organization-logos/{orgId}/...`.
 
@@ -127,26 +153,40 @@ Logo paths must stay under `organization-logos/{orgId}/...`.
 
 Returns newest-first posts.
 If `orgId` is supplied, the feed is scoped to one organization.
-Each post includes `likeCount`, `commentCount`, and `viewerHasLiked` for the signed-in user.
+Each post includes `likeCount`, `commentCount`, `viewerHasLiked`, `deepLinkPath`, legacy `image`, and `media[]` for the signed-in user.
+
+### `GET /announcements/:announcementId`
+
+Returns one accessible non-deleted announcement by stable id using the same DTO as the feed. The UI direct-copy link should target the existing route path in `deepLinkPath`, for example `/app?announcementId=post_abc123`; this does not bypass active-access checks.
 
 ### `POST /organizations/:orgId/announcements`
 
 Approved managers publish a non-empty text post.
-Images are optional and must reference a validated Storage path.
-When an image is used, either provide `announcementId` or use the `announcementId` returned by the image-target helper.
+Media is optional and must reference validated Storage paths. Legacy `image` remains supported; new clients should use `media` for up to four items. The current backend supports images plus at most one native video without new processing services.
+When media is used, either provide `announcementId` or use the `announcementId` returned by the image/media-target helper.
 
 ```json
 {
   "announcementId": "post_abc123",
   "body": "Tryouts are scheduled this Friday.",
-  "image": {
-    "storagePath": "announcement-images/robotics/post_abc123/photo.webp",
-    "contentType": "image/webp",
-    "sizeBytes": 123456,
-    "alt": "Students working in the robotics lab"
-  }
+  "media": [
+    {
+      "storagePath": "announcement-images/robotics/post_abc123/photo.webp",
+      "contentType": "image/webp",
+      "sizeBytes": 123456,
+      "alt": "Students working in the robotics lab"
+    },
+    {
+      "storagePath": "announcement-images/robotics/post_abc123/clip.mp4",
+      "contentType": "video/mp4",
+      "sizeBytes": 5000000,
+      "alt": "Short demo clip"
+    }
+  ]
 }
 ```
+
+Media limits: images must be JPEG/PNG/WebP/GIF and at most 5 MiB each; videos must be MP4 or WebM and at most 25 MiB each; one video maximum; four media items maximum; aggregate declared media size at most 30 MiB.
 
 ### `DELETE /organizations/:orgId/announcements/:announcementId`
 
@@ -163,7 +203,7 @@ Removes the signed-in user's like and decrements the stored count only when a li
 
 ### `GET /announcements/:announcementId/comments?limit=&pageToken=`
 
-Lists comments oldest first.
+Lists comments oldest first. Comment DTOs include `viewerCanEdit` and `viewerCanDelete` for the signed-in author and do not include commenter email.
 
 ### `POST /announcements/:announcementId/comments`
 
@@ -174,6 +214,14 @@ Adds a non-empty comment for the signed-in user and increments the stored count 
   "body": "Is this open to first-year students?"
 }
 ```
+
+### `PATCH /announcements/:announcementId/comments/:commentId`
+
+Edits the signed-in author's own comment body only. The backend ignores any submitted author id and does not change `commentCount`.
+
+### `DELETE /announcements/:announcementId/comments/:commentId`
+
+Deletes the signed-in author's own comment and recomputes the announcement `commentCount` transactionally. Repeated deletion returns `404 comment_missing`.
 
 ## Dated entries
 
@@ -219,11 +267,11 @@ Request body for create/update:
 Times, when present, must be `HH:mm`; `endTime` must be later than `startTime`.
 `title` and `details` cannot be empty.
 
-## Image handling
+## Media handling
 
-Images are uploaded directly by the frontend to Firebase Storage after local preview.
+Organization logos and legacy announcement images are uploaded directly by the frontend to Firebase Storage after local preview.
 The backend target endpoints validate metadata and return canonical Storage paths.
-Storage rules independently enforce active verified access, organization management, allowed image types, and the 5 MiB size limit.
+Storage rules independently enforce active verified access, organization management, allowed media types, and size limits.
 
 Allowed content types:
 
@@ -232,7 +280,8 @@ Allowed content types:
 - `image/webp`
 - `image/gif`
 
-Maximum size: `5 MiB`.
+Maximum logo/image size: `5 MiB`.
+Announcement media additionally supports `video/mp4` and `video/webm` through `/announcements/media-targets` with one video up to `25 MiB`, four media items total, and `30 MiB` aggregate.
 
 ### `POST /organizations/:orgId/logo-image-targets`
 
@@ -260,9 +309,25 @@ Response:
 
 ### `POST /organizations/:orgId/announcements/image-targets`
 
-Request is the same as logo targets and may include `announcementId`.
+Legacy single-image target. Request is the same as logo targets and may include `announcementId`.
 If `announcementId` is omitted, the backend returns one.
 Use that id when publishing the post.
+
+### `POST /organizations/:orgId/announcements/media-targets`
+
+Request:
+
+```json
+{
+  "announcementId": "post_abc123",
+  "files": [
+    { "fileName": "photo.webp", "contentType": "image/webp", "sizeBytes": 123456 },
+    { "fileName": "clip.mp4", "contentType": "video/mp4", "sizeBytes": 5000000 }
+  ]
+}
+```
+
+Response includes `announcementId`, `items[]` with canonical Storage paths, `allowedContentTypes`, `maxItems`, `maxVideoItems`, per-type size limits, and `maxAggregateSizeBytes`.
 
 ## Local validation
 

@@ -22,6 +22,8 @@ export interface AccountDocument {
   email: string;
   emailVerified: boolean;
   studentId?: string;
+  department?: string;
+  departmentKey?: string;
   companyName?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -76,6 +78,7 @@ export interface OrganizationDocument {
   shortDescription?: string;
   description?: string;
   contactEmail?: string;
+  contactPhone?: string;
   logoPath?: string;
   recruitment?: OrganizationRecruitment;
   createdAt: Timestamp;
@@ -85,11 +88,18 @@ export interface OrganizationDocument {
 
 export type DateEntryKind = 'event' | 'availability';
 
-export interface AnnouncementImage {
+export type AnnouncementMediaContentType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' | 'video/mp4' | 'video/webm';
+export type AnnouncementImageContentType = Extract<AnnouncementMediaContentType, `image/${string}`>;
+
+export interface AnnouncementMedia {
   storagePath: string;
-  contentType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+  contentType: AnnouncementMediaContentType;
   sizeBytes: number;
   alt?: string;
+}
+
+export interface AnnouncementImage extends AnnouncementMedia {
+  contentType: AnnouncementImageContentType;
 }
 
 export interface AnnouncementDocument {
@@ -100,6 +110,7 @@ export interface AnnouncementDocument {
   authorUid: string;
   body: string;
   image?: AnnouncementImage | null;
+  media?: AnnouncementMedia[];
   likeCount: number;
   commentCount: number;
   deletedAt?: Timestamp | null;
@@ -114,6 +125,7 @@ export interface AnnouncementCommentDocument {
   authorName: string;
   body: string;
   createdAt: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 export interface CalendarEntryDocument {
@@ -147,6 +159,8 @@ export interface PaidRegistrationCompletionInput {
   displayName: string;
   role: AccountRole;
   studentId?: string;
+  department?: string;
+  departmentKey?: string;
   companyName?: string;
   entitlement: {
     provider: string;

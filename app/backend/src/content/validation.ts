@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { orgIdSchema } from '../contracts/validation';
 
 export const ALLOWED_IMAGE_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
+export const ALLOWED_VIDEO_CONTENT_TYPES = ['video/mp4', 'video/webm'] as const;
+export const ALLOWED_ANNOUNCEMENT_MEDIA_CONTENT_TYPES = [...ALLOWED_IMAGE_CONTENT_TYPES, ...ALLOWED_VIDEO_CONTENT_TYPES] as const;
 export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+export const MAX_VIDEO_SIZE_BYTES = 25 * 1024 * 1024;
+export const MAX_ANNOUNCEMENT_MEDIA_ITEMS = 4;
+export const MAX_ANNOUNCEMENT_VIDEO_ITEMS = 1;
+export const MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES = 30 * 1024 * 1024;
 
 const trimmedString = z.string().trim();
 const optionalText = (max: number) => trimmedString.max(max).optional();
@@ -30,6 +36,7 @@ export const organizationProfileUpdateSchema = z.object({
   shortDescription: blankableText(180),
   description: blankableText(4000),
   contactEmail: z.union([trimmedString.email().max(254), z.literal('')]).optional(),
+  contactPhone: z.string().trim().max(40).regex(/^$|^\+?[0-9][0-9\s().-]{5,30}(?:\s?(?:x|ext\.?|extension)\s?\d{1,6})?$/i, 'Use a valid contact phone number.').optional(),
   logoPath: z.string().trim().max(512).optional(),
   logo: z.object({
     storagePath: z.string().trim().max(512),
@@ -51,26 +58,72 @@ export const imageTargetRequestSchema = z.object({
   announcementId: z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/).optional()
 }).strict();
 
+const announcementMediaTargetFileSchema = z.object({
+  fileName: trimmedString.min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'Use a simple file name without folders.'),
+  contentType: z.enum(ALLOWED_ANNOUNCEMENT_MEDIA_CONTENT_TYPES),
+  sizeBytes: z.number().int().min(1).max(MAX_VIDEO_SIZE_BYTES)
+}).strict().superRefine((value, ctx) => {
+  if (value.contentType.startsWith('image/') && value.sizeBytes > MAX_IMAGE_SIZE_BYTES) {
+    ctx.addIssue({ code: 'custom', path: ['sizeBytes'], message: 'Announcement images must be 5 MiB or smaller.' });
+  }
+});
+
+export const mediaTargetRequestSchema = z.object({
+  announcementId: z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/).optional(),
+  files: z.array(announcementMediaTargetFileSchema).min(1).max(MAX_ANNOUNCEMENT_MEDIA_ITEMS)
+}).strict().superRefine((value, ctx) => {
+  const total = value.files.reduce((sum, file) => sum + file.sizeBytes, 0);
+  if (total > MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES) {
+    ctx.addIssue({ code: 'custom', path: ['files'], message: 'Announcement media exceeds the total upload limit.' });
+  }
+  const videoCount = value.files.filter((file) => file.contentType.startsWith('video/')).length;
+  if (videoCount > MAX_ANNOUNCEMENT_VIDEO_ITEMS) {
+    ctx.addIssue({ code: 'custom', path: ['files'], message: 'Only one video is allowed per announcement.' });
+  }
+});
+
 export const announcementQuerySchema = paginationSchema.extend({
   orgId: orgIdSchema.optional()
+});
+
+const announcementMediaItemSchema = z.object({
+  storagePath: z.string().trim().max(512),
+  contentType: z.enum(ALLOWED_ANNOUNCEMENT_MEDIA_CONTENT_TYPES),
+  sizeBytes: z.number().int().min(1).max(MAX_VIDEO_SIZE_BYTES),
+  alt: z.string().trim().max(180).optional().default('')
+}).strict().superRefine((value, ctx) => {
+  if (value.contentType.startsWith('image/') && value.sizeBytes > MAX_IMAGE_SIZE_BYTES) {
+    ctx.addIssue({ code: 'custom', path: ['sizeBytes'], message: 'Announcement images must be 5 MiB or smaller.' });
+  }
 });
 
 export const announcementCreateSchema = z.object({
   announcementId: z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/).optional(),
   body: trimmedString.min(1).max(4000),
-  image: z.object({
-    storagePath: z.string().trim().max(512),
-    contentType: z.enum(ALLOWED_IMAGE_CONTENT_TYPES),
-    sizeBytes: z.number().int().min(1).max(MAX_IMAGE_SIZE_BYTES),
-    alt: z.string().trim().max(180).optional().default('')
-  }).optional()
-}).strict();
+  image: announcementMediaItemSchema.optional(),
+  media: z.array(announcementMediaItemSchema).min(1).max(MAX_ANNOUNCEMENT_MEDIA_ITEMS).optional()
+}).strict().superRefine((value, ctx) => {
+  if (value.image && value.media) {
+    ctx.addIssue({ code: 'custom', path: ['media'], message: 'Use either legacy image or media, not both.' });
+  }
+  const media = value.media ?? (value.image ? [value.image] : []);
+  const total = media.reduce((sum, item) => sum + item.sizeBytes, 0);
+  if (total > MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES) {
+    ctx.addIssue({ code: 'custom', path: ['media'], message: 'Announcement media exceeds the total upload limit.' });
+  }
+  const videoCount = media.filter((item) => item.contentType.startsWith('video/')).length;
+  if (videoCount > MAX_ANNOUNCEMENT_VIDEO_ITEMS) {
+    ctx.addIssue({ code: 'custom', path: ['media'], message: 'Only one video is allowed per announcement.' });
+  }
+});
 
 export const commentQuerySchema = paginationSchema;
 
 export const commentCreateSchema = z.object({
   body: trimmedString.min(1).max(1200)
 }).strict();
+
+export const commentUpdateSchema = commentCreateSchema;
 
 export const dateEntryKinds = ['event', 'availability'] as const;
 

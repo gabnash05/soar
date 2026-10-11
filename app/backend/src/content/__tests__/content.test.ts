@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES,
   MAX_IMAGE_SIZE_BYTES,
+  MAX_VIDEO_SIZE_BYTES,
   announcementCreateSchema,
   announcementImagePathMatch,
   assertLogoPathForOrganization,
   dateEntryUpsertSchema,
   imageTargetRequestSchema,
+  mediaTargetRequestSchema,
   normalizedName,
   organizationProfileUpdateSchema
 } from '../validation';
@@ -19,9 +22,11 @@ describe('content validation', () => {
     expect(normalizedName('  Robotics   Guild  ')).toBe('robotics guild');
   });
 
-  it('accepts only http and https recruitment application links', () => {
+  it('accepts only http and https recruitment application links and bounded contact phone numbers', () => {
     expect(organizationProfileUpdateSchema.parse({ recruitment: { applicationLink: 'https://forms.gle/example' } }).recruitment?.applicationLink).toBe('https://forms.gle/example');
+    expect(organizationProfileUpdateSchema.parse({ contactPhone: '+63 917 555 0101' }).contactPhone).toBe('+63 917 555 0101');
     expectParseFailure(() => organizationProfileUpdateSchema.parse({ recruitment: { applicationLink: 'javascript:alert(1)' } }));
+    expectParseFailure(() => organizationProfileUpdateSchema.parse({ contactPhone: '<script>alert(1)</script>' }));
   });
 
   it('rejects empty announcements and comments through schemas', () => {
@@ -31,9 +36,13 @@ describe('content validation', () => {
 
   it('validates image metadata before Storage writes are referenced', () => {
     expect(imageTargetRequestSchema.parse({ fileName: 'logo.png', contentType: 'image/png', sizeBytes: 1024 }).contentType).toBe('image/png');
+    expect(mediaTargetRequestSchema.parse({ files: [{ fileName: 'a.png', contentType: 'image/png', sizeBytes: 1024 }, { fileName: 'b.mp4', contentType: 'video/mp4', sizeBytes: 2048 }] }).files).toHaveLength(2);
     expectParseFailure(() => imageTargetRequestSchema.parse({ fileName: '../logo.png', contentType: 'image/png', sizeBytes: 1024 }));
     expectParseFailure(() => imageTargetRequestSchema.parse({ fileName: 'logo.svg', contentType: 'image/svg+xml', sizeBytes: 1024 }));
     expectParseFailure(() => imageTargetRequestSchema.parse({ fileName: 'logo.png', contentType: 'image/png', sizeBytes: MAX_IMAGE_SIZE_BYTES + 1 }));
+    expectParseFailure(() => mediaTargetRequestSchema.parse({ files: Array.from({ length: 5 }, (_, index) => ({ fileName: `image-${index}.png`, contentType: 'image/png', sizeBytes: 1024 })) }));
+    expectParseFailure(() => mediaTargetRequestSchema.parse({ files: [{ fileName: 'a.mp4', contentType: 'video/mp4', sizeBytes: MAX_VIDEO_SIZE_BYTES }, { fileName: 'b.webm', contentType: 'video/webm', sizeBytes: 1024 }] }));
+    expectParseFailure(() => announcementCreateSchema.parse({ body: 'Too large', media: [{ storagePath: 'announcement-images/org1/post1/a.mp4', contentType: 'video/mp4', sizeBytes: MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES + 1 }] }));
   });
 
   it('keeps image paths inside canonical organization-owned folders', () => {

@@ -32,7 +32,7 @@ Use the shared domain types from `src/lib/contracts.ts`:
 - `AccessStatus = 'active' | 'pending' | 'failed' | 'cancelled' | 'expired' | 'revoked' | 'missing'`. Backend entitlement documents use `active | expired | revoked`; checkout-intent responses may additionally use pending/failed/cancelled/missing before an entitlement exists.
 - `ApplicationStage = 'Pending' | 'Under review' | 'Accepted' | 'Declined'`.
 - `MeetingStatus = 'Pending' | 'Approved' | 'Declined'`.
-- `UserSession` includes trusted `access` and `officerGrants` from backend/auth claims, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI.
+- `UserSession` includes trusted `access`, optional student `department`, and `officerGrants` from backend/auth claims, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI. Access copy should use `periodMonths: 6` / `periodLabel: "6 months"`; `annualFeePhp` remains only a legacy PHP10 alias.
 
 Workflow pages should consume foundation hooks/components instead of creating a parallel adapter:
 
@@ -49,7 +49,7 @@ Shared backend coordination read: `/home/gab/agent-workspace/firstmate/data/soar
 
 - `startRegistrationPayment(input)` creates a payment-before-account registration intent and hosted checkout URL.
 - `getCheckoutStatus(intentId)` returns provider-confirmed status from the backend; the client never marks payment successful by itself.
-- `registerAccount(input)` calls the backend after confirmed payment; backend/paid-access lanes own idempotent provider-intent handling, Firebase Auth user creation, `accounts/{uid}`, and `entitlements/{uid}` initialization. The frontend may sign in afterward to send/reload email verification, but it does not create production Auth users client-side. This aligns with the backend helper shape `createPaidAccountFromConfirmedRegistration({ email, password, displayName, role, studentId?, companyName?, entitlement }) -> { uid }`; account creation must be recoverable/idempotent across provider and Firebase services, not assumed atomic from a Firestore transaction alone.
+- `registerAccount(input)` calls the backend after confirmed payment; backend/paid-access lanes own idempotent provider-intent handling, Firebase Auth user creation, `accounts/{uid}`, and `entitlements/{uid}` initialization. The frontend may sign in afterward to send/reload email verification, but it does not create production Auth users client-side. This aligns with the backend helper shape `createPaidAccountFromConfirmedRegistration({ email, password, displayName, role, studentId?, department?, companyName?, entitlement }) -> { uid }`; account creation must be recoverable/idempotent across provider and Firebase services, not assumed atomic from a Firestore transaction alone.
 - `signIn`, `sendPasswordRecovery`, `reloadSession`, `signOut` manage auth.
 - `requestManualRenewal`, `getAccessStatus`, `updateDisplayName`, `requestEmailChange` power access/settings screens.
 
@@ -60,7 +60,7 @@ Current HTTP paths used by the production identity/payment gateway match the mer
 | Method | Path | Frontend expectation |
 | --- | --- | --- |
 | `GET` | `/session` | Returns trusted `UserSession` for the current Firebase ID token. |
-| `POST` | `/payments/registration/start` | Creates provider checkout for PHP10 registration payment and returns `RegistrationPaymentIntent`; passwords are not sent here. |
+| `POST` | `/payments/registration/start` | Creates provider checkout for PHP10 six-month registration payment and returns `RegistrationPaymentIntent`; passwords are not sent here. Student registrations may include optional bounded free-text `department`; sponsor registrations must not. |
 | `GET` | `/payments/registration/status?intentId=:intentId` | Returns `CheckoutStatus`; only `status: active` with `canCreateAccount: true` unlocks account creation, and the backend validates its registration-binding cookie. |
 | `POST` | `/payments/registration/complete` | Server creates the paid Firebase account from a confirmed registration intent. The merged paid-access handler returns completion metadata (`uid`, `completed`, `accessExpiresAt`); the frontend then signs in and reloads `/session` for trusted profile/access/grant details. |
 | `POST` | `/payments/renewals/start` | Creates manual renewal checkout for the signed-in account. |
@@ -71,11 +71,11 @@ Current HTTP paths used by the production identity/payment gateway match the mer
 ## Workflow backend contract
 
 The production workflow client reads and writes through `VITE_SOAR_API_BASE_URL` using Firebase bearer auth.
-It consumes the content lane's organization, announcement, comment, like and dated-entry paths (`/organizations`, `/announcements`, and `/date-entries`) and the request lane's application and meeting paths under `/requests` (`/requests/applications/confirm`, `/requests/applications/mine`, `/requests/meetings`, `/requests/meetings/mine`, and `/requests/organizations/:orgId/...` officer subroutes).
+It consumes the content lane's organization, announcement, comment, like and dated-entry paths (`/organizations`, `/announcements`, and `/date-entries`) and the request lane's application and meeting paths under `/requests` (`/requests/applications/confirm`, `/requests/applications/mine`, `/requests/meetings`, `/requests/meetings/document-targets`, `/requests/meetings/:meetingRequestId/document`, `/requests/meetings/mine`, and `/requests/organizations/:orgId/...` officer subroutes).
 List responses may be arrays or `{ items, nextPageToken? }`; the UI currently renders the first page with clear loading, empty, error and save-result states.
 Application stages preserve the request-service labels `Pending | Under review | Accepted | Declined` and still tolerate older snake/lowercase response values when reading.
-Meeting statuses preserve the request-service labels `Pending | Approved | Declined` and still tolerate older lowercase response values when reading.
-Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired access is locked by the shared route guard.
+Meeting statuses preserve the request-service labels `Pending | Approved | Declined` and still tolerate older lowercase response values when reading. Optional meeting documents are PDF-only metadata in meeting DTOs; download/preview must use the authenticated backend document route, never a Storage `getDownloadURL` bearer link.
+Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired access is locked by the shared route guard. Organization profiles include optional public `contactPhone`; approved managers can call `/organizations/:orgId/student-department-counts` for aggregate registered-student department counts only. Announcement DTOs include `deepLinkPath`, `media[]` plus legacy `image`; media-targets support up to four image/video items with one MP4/WebM video maximum. Comment DTOs include `viewerCanEdit`/`viewerCanDelete`; own-comment edit/delete use `PATCH`/`DELETE /announcements/:announcementId/comments/:commentId`.
 
 ## Design-system precedence
 

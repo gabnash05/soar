@@ -3,7 +3,6 @@
 const {
   ACCESS_PRICE_MINOR,
   ACCESS_CURRENCY,
-  ACCESS_YEARS,
   PAYMENT_PROVIDER,
   PAYMENT_PURPOSES,
   PAYMENT_STATUSES,
@@ -65,6 +64,23 @@ function validateRole(role) {
   return normalized;
 }
 
+function normalizeDepartment(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function normalizeDepartmentKey(value) {
+  return normalizeDepartment(value).toLowerCase();
+}
+
+function validateDepartment(value) {
+  const department = normalizeDepartment(value);
+  if (!department) return null;
+  if (department.length < 2 || department.length > 100 || !/^[\p{L}\p{N}][\p{L}\p{N}\s&.,'’()/-]*$/u.test(department)) {
+    fail('invalid_department', 'Use a valid department name.');
+  }
+  return department;
+}
+
 function sanitizeRegistrationProfile(input) {
   assertNoPassword(input);
   const role = validateRole(input.role);
@@ -77,7 +93,13 @@ function sanitizeRegistrationProfile(input) {
   };
   if (role === 'student') {
     profile.studentId = requireString(input.studentId || input.student_id || input.identificationNumber, 'missing_student_id', 'Student ID is required for student accounts.');
+    const department = validateDepartment(input.department || input.departmentName || input.department_name);
+    if (department) {
+      profile.department = department;
+      profile.departmentKey = normalizeDepartmentKey(department);
+    }
   } else {
+    if (input.department || input.departmentName || input.department_name) fail('department_not_allowed', 'Sponsors must not include a department.');
     const companyName = String(input.companyName || input.company_name || '').trim();
     if (companyName) profile.companyName = companyName;
   }
@@ -525,6 +547,8 @@ class PaymentAccessService {
           displayName: intent.profile.fullName,
           role: intent.profile.role,
           studentId: intent.profile.studentId,
+          department: intent.profile.department,
+          departmentKey: intent.profile.departmentKey,
           companyName: intent.profile.companyName,
           entitlement: {
             provider: PAYMENT_PROVIDER,
@@ -662,6 +686,9 @@ class PaymentAccessService {
         active: status === 'active',
         accessExpiresAt: dateToIso(entitlement && entitlement.accessExpiresAt),
         latestPaymentId: entitlement && entitlement.latestPaymentId || null,
+        feePhp: ACCESS_PRICE_MINOR / 100,
+        periodMonths: 6,
+        periodLabel: '6 months',
         serverTime: now.toISOString(),
       };
     });

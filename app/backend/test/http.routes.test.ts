@@ -22,11 +22,16 @@ const mocks = vi.hoisted(() => ({
   createLogoImageTarget: vi.fn(),
   listAnnouncements: vi.fn(),
   createAnnouncementImageTarget: vi.fn(),
+  createAnnouncementMediaTargets: vi.fn(),
   createAnnouncement: vi.fn(),
   deleteAnnouncement: vi.fn(),
+  deleteAnnouncementComment: vi.fn(),
+  getAnnouncement: vi.fn(),
+  getStudentDepartmentCounts: vi.fn(),
   setAnnouncementLike: vi.fn(),
   listAnnouncementComments: vi.fn(),
   addAnnouncementComment: vi.fn(),
+  updateAnnouncementComment: vi.fn(),
   listDateEntries: vi.fn(),
   createDateEntry: vi.fn(),
   updateDateEntry: vi.fn(),
@@ -37,8 +42,10 @@ const mocks = vi.hoisted(() => ({
     listMyApplications: vi.fn(),
     listOrganizationApplications: vi.fn(),
     updateApplicationStage: vi.fn(),
+    createMeetingDocumentTarget: vi.fn(),
     requestMeeting: vi.fn(),
     listMyMeetings: vi.fn(),
+    getMeetingDocument: vi.fn(),
     listOrganizationMeetings: vi.fn(),
     updateMeetingStatus: vi.fn(),
   },
@@ -69,17 +76,22 @@ vi.mock('../src/content/service', () => ({
   addAnnouncementComment: mocks.addAnnouncementComment,
   createAnnouncement: mocks.createAnnouncement,
   createAnnouncementImageTarget: mocks.createAnnouncementImageTarget,
+  createAnnouncementMediaTargets: mocks.createAnnouncementMediaTargets,
   createDateEntry: mocks.createDateEntry,
   createLogoImageTarget: mocks.createLogoImageTarget,
   deleteAnnouncement: mocks.deleteAnnouncement,
+  deleteAnnouncementComment: mocks.deleteAnnouncementComment,
   deleteDateEntry: mocks.deleteDateEntry,
+  getAnnouncement: mocks.getAnnouncement,
   getOrganizationProfile: mocks.getOrganizationProfile,
+  getStudentDepartmentCounts: mocks.getStudentDepartmentCounts,
   listAnnouncementComments: mocks.listAnnouncementComments,
   listAnnouncements: mocks.listAnnouncements,
   listDateEntries: mocks.listDateEntries,
   listOrganizations: mocks.listOrganizations,
   scopedDateEntryQuery: mocks.scopedDateEntryQuery,
   setAnnouncementLike: mocks.setAnnouncementLike,
+  updateAnnouncementComment: mocks.updateAnnouncementComment,
   updateDateEntry: mocks.updateDateEntry,
   updateOrganizationProfile: mocks.updateOrganizationProfile,
 }));
@@ -161,8 +173,41 @@ describe('SOAR HTTP route contracts', () => {
     );
   });
 
+  it('mounts revised announcement and aggregate routes without exposing student lists', async () => {
+    mocks.getStudentDepartmentCounts.mockResolvedValue({ organizationId: 'robotics', totalRegisteredStudents: 2, items: [{ department: 'Computer Science', count: 2 }] });
+    mocks.createAnnouncementMediaTargets.mockResolvedValue({ announcementId: 'post1', items: [] });
+    mocks.updateAnnouncementComment.mockResolvedValue({ id: 'comment1', body: 'Updated', viewerCanEdit: true });
+    mocks.deleteAnnouncementComment.mockResolvedValue({ announcementId: 'post1', commentId: 'comment1', deleted: true });
+    mocks.getAnnouncement.mockResolvedValue({ id: 'post1', deepLinkPath: '/app?announcementId=post1' });
+
+    await withApiServer(async (baseUrl) => {
+      await expect((await fetch(`${baseUrl}/api/organizations/robotics/student-department-counts`, { headers: { authorization: 'Bearer test-token' } })).json()).resolves.toMatchObject({ totalRegisteredStudents: 2 });
+      await expect((await fetch(`${baseUrl}/api/announcements/post1`, { headers: { authorization: 'Bearer test-token' } })).json()).resolves.toMatchObject({ deepLinkPath: '/app?announcementId=post1' });
+      expect((await fetch(`${baseUrl}/api/organizations/robotics/announcements/media-targets`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ files: [{ fileName: 'a.png', contentType: 'image/png', sizeBytes: 12 }] }),
+      })).status).toBe(201);
+      expect((await fetch(`${baseUrl}/api/announcements/post1/comments/comment1`, {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ body: 'Updated' }),
+      })).status).toBe(200);
+      expect((await fetch(`${baseUrl}/api/announcements/post1/comments/comment1`, {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer test-token' },
+      })).status).toBe(200);
+    });
+
+    expect(mocks.getStudentDepartmentCounts).toHaveBeenCalledWith({ uid: 'user1', email_verified: true }, 'robotics');
+    expect(mocks.createAnnouncementMediaTargets).toHaveBeenCalled();
+    expect(mocks.updateAnnouncementComment).toHaveBeenCalled();
+    expect(mocks.deleteAnnouncementComment).toHaveBeenCalled();
+  });
+
   it('mounts request workflow routes with explicit application confirmation', async () => {
     mocks.requestService.confirmExternalApplication.mockResolvedValue({ id: 'app1', stage: 'Pending' });
+    mocks.requestService.createMeetingDocumentTarget.mockResolvedValue({ meetingRequestId: 'meeting1', storagePath: 'meeting-request-documents/robotics/meeting1/formal-request.pdf' });
 
     await withApiServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/requests/applications/confirm`, {
@@ -177,6 +222,14 @@ describe('SOAR HTTP route contracts', () => {
       });
       expect(response.status).toBe(201);
       await expect(response.json()).resolves.toMatchObject({ id: 'app1', stage: 'Pending' });
+
+      const target = await fetch(`${baseUrl}/api/requests/meetings/document-targets`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId: 'robotics', dateEntryId: 'date1', requestedDate: '2026-11-12', requestedTime: '14:00', fileName: 'formal-request.pdf', contentType: 'application/pdf', sizeBytes: 1024 }),
+      });
+      expect(target.status).toBe(201);
+      await expect(target.json()).resolves.toMatchObject({ meetingRequestId: 'meeting1' });
     });
 
     expect(mocks.requestService.confirmExternalApplication).toHaveBeenCalledWith(
@@ -188,17 +241,18 @@ describe('SOAR HTTP route contracts', () => {
         confirmedExternalSubmission: true,
       },
     );
+    expect(mocks.requestService.createMeetingDocumentTarget).toHaveBeenCalled();
   });
 
   it('returns plain JSON problem responses for app errors and unknown routes', async () => {
-    mocks.listOrganizations.mockRejectedValue(new AppError('access_inactive', 'Renew annual access before using the main app.', 403, 'renew_access'));
+    mocks.listOrganizations.mockRejectedValue(new AppError('access_inactive', 'Renew SOAR access before using the main app.', 403, 'renew_access'));
 
     await withApiServer(async (baseUrl) => {
       const denied = await fetch(`${baseUrl}/api/organizations`, { headers: { authorization: 'Bearer test-token' } });
       expect(denied.status).toBe(403);
       await expect(denied.json()).resolves.toEqual({
         code: 'access_inactive',
-        message: 'Renew annual access before using the main app.',
+        message: 'Renew SOAR access before using the main app.',
         action: 'renew_access',
       });
 

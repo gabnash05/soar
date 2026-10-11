@@ -37,3 +37,7 @@ export function organizationLogoStoragePath(orgId: string, fileName: string): st
 export function announcementImageStoragePath(orgId: string, announcementId: string, fileName: string): string {
   return `announcement-images/${orgId}/${announcementId}/${fileName}`;
 }
+
+export function meetingRequestDocumentStoragePath(orgId: string, meetingRequestId: string, fileName: string): string {
+  return `meeting-request-documents/${orgId}/${meetingRequestId}/${fileName}`;
+}

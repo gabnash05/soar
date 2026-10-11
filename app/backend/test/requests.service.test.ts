@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { AccountRole, ApplicationStatus, MeetingStatus, OrganizationDocument } from '../src/contracts/schema';
@@ -133,11 +133,12 @@ function seedStore() {
   return store;
 }
 
-function serviceFor(store: FakeRequestStore) {
+function serviceFor(store: FakeRequestStore, verifyMeetingDocumentUpload = async () => undefined) {
   return createRequestService({
     store,
     ensureActiveAccess: async () => undefined,
-    now: () => fixedNow
+    now: () => fixedNow,
+    verifyMeetingDocumentUpload
   });
 }
 
@@ -245,6 +246,93 @@ describe('request service meeting workflow', () => {
     expect(store.meetings.size).toBe(2);
   });
 
+  it('creates validated private PDF document targets and stores matching request metadata', async () => {
+    const verifyUpload = vi.fn(async () => undefined);
+    const service = serviceFor(store, verifyUpload);
+    const target = await service.createMeetingDocumentTarget(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      fileName: 'formal-request.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024
+    });
+
+    expect(target.storagePath).toMatch(/^meeting-request-documents\/org1\/meeting_/);
+    expect(target.allowedContentTypes).toEqual(['application/pdf']);
+
+    const meeting = await service.requestMeeting(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      document: {
+        storagePath: target.storagePath,
+        fileName: 'formal-request.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1024
+      }
+    });
+
+    expect(meeting.document?.storagePath).toBe(target.storagePath);
+    expect(verifyUpload).toHaveBeenCalledWith(expect.objectContaining({ requesterUid: 'student', orgId: 'org1', meetingRequestId: target.meetingRequestId }));
+    await expectValidation(service.createMeetingDocumentTarget(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      fileName: 'script.html',
+      contentType: 'text/html',
+      sizeBytes: 1024
+    }));
+  });
+
+  it('rejects missing or mismatched actual meeting document uploads before creating the request', async () => {
+    const service = serviceFor(store, async () => {
+      throw Object.assign(new Error('missing upload'), { code: 'meeting_document_missing' });
+    });
+    const target = await service.createMeetingDocumentTarget(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      fileName: 'formal-request.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024
+    });
+
+    await expect(service.requestMeeting(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      document: {
+        storagePath: target.storagePath,
+        fileName: 'formal-request.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1024
+      }
+    })).rejects.toMatchObject({ code: 'meeting_document_missing' });
+    expect(store.meetings.size).toBe(0);
+  });
+
+  it('rejects meeting document paths that do not match the deterministic request id', async () => {
+    const service = serviceFor(store);
+    await expectCode(service.requestMeeting(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      document: {
+        storagePath: 'meeting-request-documents/org1/meeting_attacker/formal-request.pdf',
+        fileName: 'formal-request.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1024
+      }
+    }), 'invalid_meeting_document_path');
+  });
+
   it('rejects duplicate identical meeting requests and event entries', async () => {
     const service = serviceFor(store);
     const input = {
@@ -264,18 +352,32 @@ describe('request service meeting workflow', () => {
     }), 'date_entry_not_availability');
   });
 
-  it('returns requester history and organization queues through scoped service methods', async () => {
+  it('returns requester history, private documents, and organization queues through scoped service methods', async () => {
     const service = serviceFor(store);
-    await service.requestMeeting(user('student'), {
+    const target = await service.createMeetingDocumentTarget(user('student'), {
       organizationId: 'org1',
       dateEntryId: 'availability1',
       requestedDate: '2026-11-12',
-      requestedTime: '09:30'
+      requestedTime: '09:30',
+      fileName: 'formal-request.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024
+    });
+    const meeting = await service.requestMeeting(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      document: { storagePath: target.storagePath, fileName: 'formal-request.pdf', contentType: 'application/pdf', sizeBytes: 1024 }
     });
 
     await expect(service.listMyMeetings(user('student'))).resolves.toHaveLength(1);
-    await expect(service.listOrganizationMeetings(user('officer'), 'org1')).resolves.toHaveLength(1);
-    await expectCode(service.listOrganizationMeetings(user('foreign'), 'org1'), 'not_organization_manager');
+    await expect(service.getMeetingDocument(user('student'), meeting.id)).resolves.toMatchObject({ document: { storagePath: target.storagePath } });
+    await expect(service.getMeetingDocument(user('officer'), meeting.id)).resolves.toMatchObject({ document: { storagePath: target.storagePath } });
+    await expectCode(service.getMeetingDocument(user('foreign'), meeting.id), 'not_organization_manager');
+    store.grants.set('org1/officer', { status: 'revoked' });
+    await expectCode(service.getMeetingDocument(user('officer'), meeting.id), 'not_organization_manager');
+    await expect(service.listOrganizationMeetings(user('owner'), 'org1')).resolves.toHaveLength(1);
   });
 
   it('lets approved organization managers approve or decline requests without an interview stage', async () => {

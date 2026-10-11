@@ -51,6 +51,7 @@ export async function assignInitialOrganizationOwner(rawInput: unknown, actorUid
       shortDescription: input.shortDescription ?? '',
       description: input.description ?? '',
       contactEmail: input.contactEmail ?? '',
+      contactPhone: input.contactPhone ?? '',
       logoPath: input.logoPath ?? '',
       recruitment: input.recruitment ?? {},
       createdAt: now,

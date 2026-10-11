@@ -3,7 +3,7 @@
 const PAYMENT_PROVIDER = 'paymongo';
 const ACCESS_PRICE_MINOR = 1000;
 const ACCESS_CURRENCY = 'PHP';
-const ACCESS_YEARS = 1;
+const ACCESS_MONTHS = 6;
 const ALLOWED_ACCOUNT_ROLES = new Set(['student', 'sponsor']);
 const PAYMENT_PURPOSES = Object.freeze({
   REGISTRATION: 'registration',
@@ -37,7 +37,7 @@ module.exports = {
   PAYMENT_PROVIDER,
   ACCESS_PRICE_MINOR,
   ACCESS_CURRENCY,
-  ACCESS_YEARS,
+  ACCESS_MONTHS,
   ALLOWED_ACCOUNT_ROLES,
   PAYMENT_PURPOSES,
   PAYMENT_STATUSES,

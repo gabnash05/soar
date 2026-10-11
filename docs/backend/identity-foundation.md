@@ -51,6 +51,8 @@ Required fields:
   email: string;
   emailVerified: boolean;
   studentId?: string;
+  department?: string;
+  departmentKey?: string;
   companyName?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -65,11 +67,12 @@ Client permissions:
 
 - The signed-in user may read only their own account document.
 - The signed-in active verified user may update only `displayName`, `lastNameChangedAt`, and `updatedAt` after the 30-day cooldown.
-- Clients cannot create accounts or edit role, email, verification state, student id, company name, created time, or entitlement fields.
+- Clients cannot create accounts or edit role, email, verification state, student id, department, company name, created time, or entitlement fields.
+- Student `department` is optional bounded free text captured through paid registration and normalized into `departmentKey`; legacy student accounts may omit it.
 
 ### `entitlements/{uid}`
 
-Server-owned annual access state keyed by Firebase Auth uid.
+Server-owned six-month access state keyed by Firebase Auth uid.
 
 Required fields:
 
@@ -105,6 +108,7 @@ Required fields:
   shortDescription?: string;
   description?: string;
   contactEmail?: string;
+  contactPhone?: string;
   logoPath?: string;
   recruitment?: {
     title?: string;
@@ -163,11 +167,15 @@ Routes accept both `/...` and `/api/...` prefixes so the frontend can either poi
   displayName: string;
   accountKind: 'student' | 'sponsor';
   studentId?: string;
+  department?: string;
   companyName?: string;
   emailVerified: boolean;
   access: {
     status: 'active' | 'expired' | 'missing';
-    annualFeePhp: 10;
+    annualFeePhp: 10; // legacy compatibility alias
+    feePhp: 10;
+    periodMonths: 6;
+    periodLabel: '6 months';
     expiresAt?: string;
     renewalAvailable: boolean;
   };
@@ -192,6 +200,7 @@ The backend and rules enforce the 30-day cooldown and update Firebase Auth displ
 
 `POST /account/email-change` requires a verified email, active access, the current password, and `SOAR_FIREBASE_WEB_API_KEY` on the backend.
 The request body is `{ "newEmail": "new@example.com", "currentPassword": "...", "continueUrl": "https://..." }`.
+The current password is used only as transient Firebase reauthentication material; it is not stored in Firestore, returned in responses, logged intentionally, or exposed through a reveal-current-password feature.
 The endpoint reauthenticates through Firebase Auth REST and sends Firebase's verify-before-change email.
 The account document email is not changed immediately.
 It is synchronized after Firebase Auth reports the new verified email in a later session reload.
@@ -248,14 +257,15 @@ Rules block these direct SDK bypasses:
 - private application or meeting reads by unrelated users;
 - collection scans for private application and meeting collections.
 
-Storage rules allow active verified users to read organization images.
-Only an organization owner or active officer grant can write images under that organization's logo or announcement image paths.
-Allowed upload content types are JPEG, PNG, WebP, and GIF, with a 5 MiB size limit.
+Storage rules allow active verified users to read public organization logos and announcement media. Only an organization owner or active officer grant can write media under that organization's logo or announcement media paths. Logo/image uploads are JPEG, PNG, WebP, or GIF with a 5 MiB limit; announcement media also allows one MP4/WebM video up to 25 MiB through the backend media-target contract.
+
+Private formal meeting request PDFs live under Storage but direct SDK reads are denied. The requester can upload a PDF only with matching path/custom metadata, and later reads go through the authenticated backend streaming route so current requester/officer authorization, actual object metadata, and revoked grants are rechecked without issuing public bearer download URLs.
 
 Storage paths:
 
 - `organization-logos/{orgId}/{fileName}`
 - `announcement-images/{orgId}/{announcementId}/{fileName}`
+- `meeting-request-documents/{orgId}/{meetingRequestId}/{fileName}`
 
 ## Local setup
 

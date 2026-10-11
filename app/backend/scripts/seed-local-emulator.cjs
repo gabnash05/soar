@@ -7,7 +7,7 @@ const { Timestamp } = require('firebase-admin/firestore');
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT || process.env.SOAR_EMULATOR_PROJECT_ID || 'demo-soar-local';
 const DEMO_PASSWORD = 'SoarDemo123!';
-const ACCESS_DAYS = 365;
+const ACCESS_MONTHS = 6;
 
 function fail(message) {
   console.error(`Refusing to seed local SOAR data: ${message}`);
@@ -58,9 +58,20 @@ function stableId(prefix, parts) {
   return `${prefix}_${hash}`;
 }
 
+function addCalendarMonths(date, months) {
+  const copy = new Date(date.getTime());
+  const day = copy.getUTCDate();
+  const targetMonth = copy.getUTCMonth() + months;
+  copy.setUTCDate(1);
+  copy.setUTCMonth(targetMonth);
+  copy.setUTCDate(Math.min(day, new Date(Date.UTC(copy.getUTCFullYear(), copy.getUTCMonth() + 1, 0)).getUTCDate()));
+  return copy;
+}
+
 function nowAndExpiry() {
-  const now = Timestamp.now();
-  const expires = Timestamp.fromDate(new Date(Date.now() + ACCESS_DAYS * 24 * 60 * 60 * 1000));
+  const nowDate = new Date();
+  const now = Timestamp.fromDate(nowDate);
+  const expires = Timestamp.fromDate(addCalendarMonths(nowDate, ACCESS_MONTHS));
   return { now, expires };
 }
 
@@ -99,6 +110,7 @@ async function seedAccounts(db, auth, users) {
       email: user.email,
       emailVerified: true,
       ...(user.studentId ? { studentId: user.studentId } : {}),
+      ...(user.department ? { department: user.department, departmentKey: user.department.toLowerCase() } : {}),
       ...(user.companyName ? { companyName: user.companyName } : {}),
       createdAt: now,
       updatedAt: now
@@ -117,7 +129,7 @@ async function seedAccounts(db, auth, users) {
         accessExpiresAt: expires,
         amount: { currency: 'PHP', minor: 1000 },
         recordedAt: now,
-        note: 'LOCAL EMULATOR ONLY: simulated paid annual access; not valid for production.'
+        note: 'LOCAL EMULATOR ONLY: simulated paid six-month access; not valid for production.'
       }],
       createdAt: now,
       updatedAt: now
@@ -136,6 +148,7 @@ async function seedOrganizations(db) {
       shortDescription: 'Builds robots, runs workshops, and recruits student makers.',
       description: 'Robotics Guild helps students design practical builds, share lab time, and prepare for competitions through hands-on teams.',
       contactEmail: 'robotics@example.edu',
+      contactPhone: '+63 2 8123 4567',
       recruitment: {
         opportunityId: 'robotics-build-team-2026',
         title: 'Build Team 2026',
@@ -152,6 +165,7 @@ async function seedOrganizations(db) {
       shortDescription: 'Hosts open mic nights, writing circles, and campus publications.',
       description: 'Literary Circle creates a welcoming space for writers, editors, performers, and students who want to publish or perform work.',
       contactEmail: 'literary@example.edu',
+      contactPhone: '',
       recruitment: {
         opportunityId: 'literary-open-mic-crew',
         title: 'Open Mic Crew',
@@ -168,6 +182,7 @@ async function seedOrganizations(db) {
       shortDescription: 'Coordinates wellness campaigns and volunteer drives.',
       description: 'Campus Health Alliance organizes wellness information drives and service opportunities with allied campus partners.',
       contactEmail: 'health@example.edu',
+      contactPhone: '+63 917 555 0101',
       recruitment: {
         opportunityId: 'health-wellness-volunteers',
         title: 'Wellness Volunteers',
@@ -329,10 +344,10 @@ async function main() {
   const auth = admin.auth();
 
   const users = [
-    { uid: 'demo-student-1', email: 'student@example.test', displayName: 'Mara Santos', role: 'student', studentId: 'S-1001' },
+    { uid: 'demo-student-1', email: 'student@example.test', displayName: 'Mara Santos', role: 'student', studentId: 'S-1001', department: 'Computer Science' },
     { uid: 'demo-sponsor-1', email: 'sponsor@example.test', displayName: 'Ari Reyes', role: 'sponsor', companyName: 'Allied Demo Co.' },
-    { uid: 'demo-owner-robotics', email: 'owner@example.test', displayName: 'Rina Cruz', role: 'student', studentId: 'S-2001' },
-    { uid: 'demo-officer-robotics', email: 'officer@example.test', displayName: 'Leo Tan', role: 'student', studentId: 'S-2002' }
+    { uid: 'demo-owner-robotics', email: 'owner@example.test', displayName: 'Rina Cruz', role: 'student', studentId: 'S-2001', department: 'Engineering' },
+    { uid: 'demo-officer-robotics', email: 'officer@example.test', displayName: 'Leo Tan', role: 'student', studentId: 'S-2002', department: 'Computer Science' }
   ];
 
   await seedAccounts(db, auth, users);
@@ -341,7 +356,7 @@ async function main() {
   await seedRequests(db);
 
   console.log('Seeded demo-soar-local Auth and Firestore with emulator-only SOAR demo data.');
-  console.log('These accounts use simulated annual access records and are not valid production payment evidence.');
+  console.log('These accounts use simulated six-month access records and are not valid production payment evidence.');
   for (const user of users) {
     console.log(`- ${user.email} / ${DEMO_PASSWORD} (${user.role}${user.uid.includes('officer') || user.uid.includes('owner') ? ', organization manager demo' : ''})`);
   }

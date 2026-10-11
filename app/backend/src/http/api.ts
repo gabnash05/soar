@@ -11,17 +11,22 @@ import {
   addAnnouncementComment,
   createAnnouncement,
   createAnnouncementImageTarget,
+  createAnnouncementMediaTargets,
   createDateEntry,
   createLogoImageTarget,
   deleteAnnouncement,
+  deleteAnnouncementComment,
   deleteDateEntry,
+  getAnnouncement,
   getOrganizationProfile,
+  getStudentDepartmentCounts,
   listAnnouncementComments,
   listAnnouncements,
   listDateEntries,
   listOrganizations,
   scopedDateEntryQuery,
   setAnnouncementLike,
+  updateAnnouncementComment,
   updateDateEntry,
   updateOrganizationProfile
 } from '../content/service';
@@ -132,6 +137,11 @@ export function createApiApp() {
     res.json(await getOrganizationProfile(user, getParam(req, 'orgId')));
   }));
 
+  app.get(['/organizations/:orgId/student-department-counts', '/api/organizations/:orgId/student-department-counts'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await getStudentDepartmentCounts(user, getParam(req, 'orgId')));
+  }));
+
   app.patch(['/organizations/:orgId', '/api/organizations/:orgId'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.json(await updateOrganizationProfile(user, getParam(req, 'orgId'), req.body));
@@ -147,9 +157,19 @@ export function createApiApp() {
     res.json(await listAnnouncements(user, req.query));
   }));
 
+  app.get(['/announcements/:announcementId', '/api/announcements/:announcementId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await getAnnouncement(user, getParam(req, 'announcementId')));
+  }));
+
   app.post(['/organizations/:orgId/announcements/image-targets', '/api/organizations/:orgId/announcements/image-targets'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.status(201).json(await createAnnouncementImageTarget(user, getParam(req, 'orgId'), req.body));
+  }));
+
+  app.post(['/organizations/:orgId/announcements/media-targets', '/api/organizations/:orgId/announcements/media-targets'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.status(201).json(await createAnnouncementMediaTargets(user, getParam(req, 'orgId'), req.body));
   }));
 
   app.post(['/organizations/:orgId/announcements', '/api/organizations/:orgId/announcements'], asyncRoute(async (req, res) => {
@@ -180,6 +200,16 @@ export function createApiApp() {
   app.post(['/announcements/:announcementId/comments', '/api/announcements/:announcementId/comments'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.status(201).json(await addAnnouncementComment(user, getParam(req, 'announcementId'), req.body));
+  }));
+
+  app.patch(['/announcements/:announcementId/comments/:commentId', '/api/announcements/:announcementId/comments/:commentId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await updateAnnouncementComment(user, getParam(req, 'announcementId'), getParam(req, 'commentId'), req.body));
+  }));
+
+  app.delete(['/announcements/:announcementId/comments/:commentId', '/api/announcements/:announcementId/comments/:commentId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await deleteAnnouncementComment(user, getParam(req, 'announcementId'), getParam(req, 'commentId')));
   }));
 
   app.get(['/date-entries', '/api/date-entries'], asyncRoute(async (req, res) => {

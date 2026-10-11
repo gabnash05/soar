@@ -215,6 +215,7 @@ describe('account and entitlement boundaries', () => {
   it('prevents client edits to identity-sensitive account and entitlement fields', async () => {
     await assertFails(updateDoc(doc(dbFor('student'), 'accounts', 'student'), { role: 'sponsor' }));
     await assertFails(updateDoc(doc(dbFor('student'), 'accounts', 'student'), { email: 'attacker@example.test' }));
+    await assertFails(updateDoc(doc(dbFor('student'), 'accounts', 'student'), { department: 'Attacker Department' }));
     await assertFails(updateDoc(doc(dbFor('student'), 'entitlements', 'student'), { accessExpiresAt: future }));
     await assertFails(setDoc(doc(dbFor('student'), 'entitlements', 'new-user'), { status: 'active', accessExpiresAt: future }));
   });

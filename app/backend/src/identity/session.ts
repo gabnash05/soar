@@ -15,11 +15,15 @@ export async function getUserSession(user: DecodedIdToken) {
     displayName: account.displayName,
     accountKind: account.role,
     studentId: account.studentId,
+    department: account.department,
     companyName: account.companyName,
     emailVerified: user.email_verified === true || account.emailVerified,
     access: {
       status: access.status === 'revoked' ? 'expired' : access.status,
       annualFeePhp: 10,
+      feePhp: 10,
+      periodMonths: 6,
+      periodLabel: '6 months',
       expiresAt,
       renewalAvailable: access.status !== 'active'
     },

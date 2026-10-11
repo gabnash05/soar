@@ -32,7 +32,7 @@ function makeCheckoutPaidEvent({
             livemode,
             status: 'active',
             reference_number: referenceNumber,
-            line_items: [{ name: 'SOAR annual access', amount, currency, quantity: 1 }],
+            line_items: [{ name: 'SOAR six-month access', amount, currency, quantity: 1 }],
             payment_method_types: ['gcash'],
             metadata,
             payments: [{

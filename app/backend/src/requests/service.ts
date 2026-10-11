@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import { Timestamp } from 'firebase-admin/firestore';
-import { db } from '../firebase';
+import { db, defaultStorageBucket } from '../firebase';
+import { meetingRequestDocumentStoragePath } from '../contracts/paths';
 import { requireActiveAccess } from '../identity/access';
 import type { ApplicationStatus, MeetingStatus, OrganizationDocument } from '../contracts/schema';
 import { AppError } from '../errors';
@@ -16,27 +17,80 @@ import type {
   RequestStore
 } from './contracts';
 import {
+  MAX_MEETING_DOCUMENT_SIZE_BYTES,
+  MEETING_DOCUMENT_CONTENT_TYPES,
   applicationConfirmationSchema,
   applicationStageUpdateSchema,
+  meetingDocumentTargetSchema,
   meetingRequestSchema,
   meetingStatusUpdateSchema
 } from './validation';
+
+export interface MeetingDocumentUploadCheck {
+  document: {
+    storagePath: string;
+    fileName: string;
+    contentType: 'application/pdf';
+    sizeBytes: number;
+  };
+  requesterUid: string;
+  orgId: string;
+  meetingRequestId: string;
+}
 
 export interface RequestServiceDeps {
   store: RequestStore;
   ensureActiveAccess: (user: DecodedIdToken) => Promise<void>;
   now: () => Timestamp;
+  verifyMeetingDocumentUpload: (check: MeetingDocumentUploadCheck) => Promise<void>;
+}
+
+async function verifyUploadedMeetingDocument({ document, requesterUid, orgId, meetingRequestId }: MeetingDocumentUploadCheck): Promise<void> {
+  let metadata;
+  try {
+    [metadata] = await defaultStorageBucket().file(document.storagePath).getMetadata();
+  } catch {
+    throw new AppError('meeting_document_missing', 'Upload the formal request PDF before submitting the meeting request.', 400);
+  }
+
+  const custom = metadata.metadata ?? {};
+  const actualSize = Number(metadata.size ?? 0);
+  if (metadata.contentType !== document.contentType || document.contentType !== 'application/pdf') {
+    throw new AppError('meeting_document_type_mismatch', 'The uploaded formal request document must be a PDF.', 400);
+  }
+  if (!Number.isFinite(actualSize) || actualSize !== document.sizeBytes || actualSize <= 0 || actualSize > MAX_MEETING_DOCUMENT_SIZE_BYTES) {
+    throw new AppError('meeting_document_size_mismatch', 'The uploaded formal request document size does not match the submitted metadata.', 400);
+  }
+  if (custom.orgId !== orgId || custom.meetingRequestId !== meetingRequestId || custom.requesterUid !== requesterUid) {
+    throw new AppError('meeting_document_metadata_mismatch', 'The uploaded formal request document is not linked to this requester and organization.', 400);
+  }
 }
 
 const defaultDeps = (): RequestServiceDeps => ({
   store: new FirestoreRequestStore(db),
   ensureActiveAccess: requireActiveAccess,
-  now: () => Timestamp.now()
+  now: () => Timestamp.now(),
+  verifyMeetingDocumentUpload: verifyUploadedMeetingDocument
 });
 
 function stableDocumentId(prefix: string, parts: string[]): string {
   const hash = createHash('sha256').update(parts.join('\u001f')).digest('hex').slice(0, 32);
   return `${prefix}_${hash}`;
+}
+
+function meetingRequestIdFor(input: { organizationId: string; dateEntryId: string; requestedDate: string; requestedTime: string }, uid: string): string {
+  return stableDocumentId('meeting', [uid, input.organizationId, input.dateEntryId, input.requestedDate, input.requestedTime]);
+}
+
+function sanitizeStorageFileName(fileName: string): string {
+  return `${Date.now()}-${fileName.trim().replace(/\s+/g, '-')}`;
+}
+
+function assertMeetingDocumentPath(document: { storagePath: string }, orgId: string, meetingRequestId: string): void {
+  const pattern = new RegExp(`^meeting-request-documents/${orgId}/${meetingRequestId}/[A-Za-z0-9][A-Za-z0-9._-]*\\.pdf$`, 'i');
+  if (!pattern.test(document.storagePath)) {
+    throw new AppError('invalid_meeting_document_path', 'Meeting request documents must stay under the matching organization and request folder.', 400);
+  }
 }
 
 function slugPart(value: string): string {
@@ -78,6 +132,7 @@ function meetingResponse(meeting: MeetingRequestDocument): MeetingRequestRespons
     requestedTime: meeting.requestedTime,
     status: meeting.status,
     note: meeting.note,
+    document: meeting.document,
     updatedAt: toIso(meeting.updatedAt)
   };
 }
@@ -220,6 +275,29 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       return applicationResponse(updated);
     },
 
+    async createMeetingDocumentTarget(user: DecodedIdToken, rawInput: unknown) {
+      await deps.ensureActiveAccess(user);
+      const input = meetingDocumentTargetSchema.parse(rawInput);
+      await loadOrganization(deps, input.organizationId);
+      const availability = assertAvailabilityEntry(await deps.store.getCalendarEntry(input.dateEntryId), input.organizationId);
+      const meetingRequestId = meetingRequestIdFor(input, user.uid);
+      const storagePath = meetingRequestDocumentStoragePath(input.organizationId, meetingRequestId, sanitizeStorageFileName(input.fileName));
+      return {
+        meetingRequestId,
+        organizationId: input.organizationId,
+        dateEntryId: input.dateEntryId,
+        meetingTitle: availability.title,
+        requestedDate: input.requestedDate,
+        requestedTime: input.requestedTime,
+        storagePath,
+        fileName: input.fileName,
+        contentType: input.contentType,
+        sizeBytes: input.sizeBytes,
+        allowedContentTypes: MEETING_DOCUMENT_CONTENT_TYPES,
+        maxSizeBytes: MAX_MEETING_DOCUMENT_SIZE_BYTES
+      };
+    },
+
     async requestMeeting(user: DecodedIdToken, rawInput: unknown): Promise<MeetingRequestResponse> {
       await deps.ensureActiveAccess(user);
       const input = meetingRequestSchema.parse(rawInput);
@@ -230,7 +308,16 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       ]);
       const availability = assertAvailabilityEntry(entry, input.organizationId);
       const now = deps.now();
-      const meetingRequestId = stableDocumentId('meeting', [user.uid, input.organizationId, input.dateEntryId, input.requestedDate, input.requestedTime]);
+      const meetingRequestId = meetingRequestIdFor(input, user.uid);
+      if (input.document) {
+        assertMeetingDocumentPath(input.document, input.organizationId, meetingRequestId);
+        await deps.verifyMeetingDocumentUpload({
+          document: input.document,
+          requesterUid: user.uid,
+          orgId: input.organizationId,
+          meetingRequestId
+        });
+      }
       const meeting: MeetingRequestDocument = {
         meetingRequestId,
         requesterUid: user.uid,
@@ -244,6 +331,7 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
         requestedTime: input.requestedTime,
         status: 'Pending',
         note: input.note,
+        document: input.document,
         createdAt: now,
         updatedAt: now
       };
@@ -260,6 +348,26 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       await deps.ensureActiveAccess(user);
       const meetings = await deps.store.listMeetingsByRequester(user.uid);
       return meetings.map(meetingResponse);
+    },
+
+    async getMeetingDocument(user: DecodedIdToken, meetingRequestId: string) {
+      await deps.ensureActiveAccess(user);
+      const meeting = await deps.store.getMeetingRequest(meetingRequestId);
+      if (!meeting) {
+        throw new AppError('meeting_request_missing', 'The meeting request was not found.', 404);
+      }
+      if (!meeting.document) {
+        throw new AppError('meeting_document_missing', 'This meeting request does not have a formal request document.', 404);
+      }
+      if (meeting.requesterUid !== user.uid) {
+        await assertCanManageOrganization(deps, user, meeting.orgId);
+      }
+      return {
+        meetingRequestId: meeting.meetingRequestId,
+        organizationId: meeting.orgId,
+        requesterUid: meeting.requesterUid,
+        document: meeting.document
+      };
     },
 
     async listOrganizationMeetings(user: DecodedIdToken, orgId: string): Promise<MeetingRequestResponse[]> {

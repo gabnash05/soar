@@ -16,7 +16,7 @@ Implemented under `app/backend/src/payments/**`:
 - Registration completion that calls the identity foundation helper after payment confirmation.
 - Manual renewal checkout and entitlement extension.
 - Paid-but-unfinished registration recovery by rotating the registration binding secret.
-- Unit/mock tests for signatures, amount/currency, duplicate/concurrent/out-of-order webhooks, theft/reuse, renewal binding, failure/cancel/expiry, provider failure, recovery, and yearly expiry arithmetic.
+- Unit/mock tests for signatures, amount/currency, duplicate/concurrent/out-of-order webhooks, theft/reuse, renewal binding, failure/cancel/expiry, provider failure, recovery, and six-month calendar expiry arithmetic.
 
 No production deploy, live payment, merchant activation, or shared Firebase manifest edit is included in this PR.
 
@@ -41,7 +41,7 @@ PayMongo remains the intended GCash provider, but production acceptance still re
 
 The identity lane owns Firebase Auth lifecycle, account documents, organization ownership/grants, shared TypeScript build/contracts, Firebase rules/config, and CI/build manifests.
 
-The paid-access lane owns checkout/registration intents, provider verification, provider-event idempotency, annual entitlement calculations, recovery of paid unfinished registrations, and renewal payment confirmation.
+The paid-access lane owns checkout/registration intents, provider verification, provider-event idempotency, six-month entitlement calculations, recovery of paid unfinished registrations, and renewal payment confirmation.
 
 Payment completion calls the identity helper shape agreed in `data/soar-identity-foundation/payment-coordination.md`:
 
@@ -103,6 +103,7 @@ Request body:
   "email": "ada@example.edu",
   "displayName": "Ada Lovelace",
   "studentId": "2026-0001",
+  "department": "Computer Science",
   "companyName": null,
   "returnUrl": "https://soar.example/access/register"
 }
@@ -111,7 +112,7 @@ Request body:
 Rules:
 
 - `role` is `student` or `sponsor`. Officers are student accounts with organization grants, not an account role.
-- Students require `studentId`; sponsors may include `companyName`.
+- Students require `studentId` and may include optional bounded free-text `department`; sponsors may include `companyName` and must not include `department`.
 - Password is not accepted here and must not be sent before provider payment confirmation.
 - Backend checks for existing account/email through the identity adapter.
 
@@ -181,7 +182,7 @@ Response:
 {
   "uid": "firebase-auth-uid",
   "completed": true,
-  "accessExpiresAt": "2027-10-07T15:00:00.000Z"
+  "accessExpiresAt": "2027-04-07T15:00:00.000Z"
 }
 ```
 
@@ -235,8 +236,11 @@ Requires the same authenticated uid. Returns server-owned access only:
   "uid": "firebase-auth-uid",
   "status": "active",
   "active": true,
-  "accessExpiresAt": "2027-10-07T15:00:00.000Z",
+  "accessExpiresAt": "2027-04-07T15:00:00.000Z",
   "latestPaymentId": "pay_...",
+  "feePhp": 10,
+  "periodMonths": 6,
+  "periodLabel": "6 months",
   "serverTime": "2026-10-07T15:00:00.000Z"
 }
 ```
@@ -254,15 +258,17 @@ Processing rules:
 - Validate amount `1000`, currency `PHP`, GCash source when present, checkout session id, provider reference or metadata payment id, expected livemode, and internal payment amount/currency.
 - Deduplicate by provider event id and keep exactly-once state transitions in transactions.
 
-## Annual access and renewal policy
+## Six-month access and renewal policy
 
-SOAR access is a **manual annual purchase**, not an automatic subscription.
+SOAR access is a **manual six-month purchase**, not an automatic subscription.
 
-- New registration access starts from provider-confirmed paid time and expires one UTC calendar year later.
+- The price remains **PHP 10.00 = 1000 minor units** unless separately changed.
+- New registration access starts from provider-confirmed paid time and expires six UTC calendar months later.
 - Renewal access starts from the later of current future expiry or provider-confirmed paid time.
-- Early renewal therefore stacks exactly one additional calendar year onto the current future expiry.
+- Early renewal therefore stacks exactly six additional calendar months onto the current future expiry.
 - Expired renewal starts from the new confirmed payment time.
-- Calendar-year arithmetic preserves month/day/time in UTC when possible. Leap-day expiry clamps to February 28 in non-leap years.
+- Calendar-month arithmetic preserves day/time in UTC when possible. Month-end dates clamp to the last valid day of the target month, including leap-year February.
+- Already-issued stored expiry dates are preserved; this code does not retroactively truncate paid rights or migrate live data.
 - Pending, failed, cancelled, invalid, or expired checkout/payment records never unlock account creation or main app access.
 - Expiry locks main workflow access but preserves account and product records for manual renewal.
 
@@ -339,7 +345,7 @@ Covered by mock/unit tests:
 - paid unfinished registration recovery,
 - exactly one account/entitlement from completion through identity-helper idempotency,
 - unauthorized renewal and malicious cross-account renewal metadata,
-- manual annual renewal expiry arithmetic,
+- manual six-month renewal expiry arithmetic,
 - authenticated access-status visibility.
 
 Not covered here because it needs shared infrastructure or external credentials:

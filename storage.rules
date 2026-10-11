@@ -50,6 +50,24 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
     }
 
+    function validAnnouncementMediaUpload() {
+      return request.resource != null
+        && (
+          (request.resource.size <= 5 * 1024 * 1024 && request.resource.contentType.matches('image/(jpeg|png|webp|gif)'))
+          || (request.resource.size <= 25 * 1024 * 1024 && request.resource.contentType.matches('video/(mp4|webm)'))
+        );
+    }
+
+    function validMeetingDocumentUpload(orgId, requestId) {
+      return request.resource != null
+        && activeUser()
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType == 'application/pdf'
+        && request.resource.metadata.orgId == orgId
+        && request.resource.metadata.meetingRequestId == requestId
+        && request.resource.metadata.requesterUid == request.auth.uid;
+    }
+
     match /organization-logos/{orgId}/{fileName} {
       allow read: if activeUser();
       allow write: if canManageOrganization(orgId) && validImageUpload();
@@ -58,8 +76,14 @@ service firebase.storage {
 
     match /announcement-images/{orgId}/{announcementId}/{fileName} {
       allow read: if activeUser();
-      allow write: if canManageOrganization(orgId) && validImageUpload();
+      allow write: if canManageOrganization(orgId) && validAnnouncementMediaUpload();
       allow delete: if canManageOrganization(orgId);
+    }
+
+    match /meeting-request-documents/{orgId}/{requestId}/{fileName} {
+      allow read: if false;
+      allow write: if validMeetingDocumentUpload(orgId, requestId);
+      allow delete: if activeUser() && resource.metadata.requesterUid == request.auth.uid;
     }
 
     match /{allPaths=**} {

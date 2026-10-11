@@ -90,6 +90,7 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
         email: input.email,
         fullName: input.displayName || input.fullName,
         studentId: input.studentId,
+        department: input.department,
         companyName: input.companyName,
       }, { ip: request && request.ip });
       return ok({

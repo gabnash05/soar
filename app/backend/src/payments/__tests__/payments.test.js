@@ -9,7 +9,7 @@ const { FakePayMongoProvider, FakeIdentityFoundation } = require('../testing/fak
 const { makeCheckoutPaidEvent, signPayMongoPayload } = require('../testing/paymongo-fixtures');
 const { PAYMENT_STATUSES, REGISTRATION_STATUSES, ACCESS_PRICE_MINOR, ACCESS_CURRENCY } = require('../constants');
 const { createPaymentsHttpHandlers } = require('../http');
-const { addCalendarYearsUtc } = require('../time');
+const { addCalendarMonthsUtc } = require('../time');
 
 const WEBHOOK_SECRET = 'whsec_test';
 const NOW = new Date('2026-10-07T15:00:00.000Z');
@@ -40,6 +40,7 @@ async function startRegistration(harness, input = {}) {
     fullName: 'Ada Lovelace',
     email: 'ada@example.edu',
     studentId: '2026-0001',
+    department: 'Computer   Science',
     ...input,
   }, { ip: '203.0.113.10' });
 }
@@ -82,11 +83,31 @@ test('registration stays locked until a valid signed PayMongo paid webhook confi
   assert.equal(Object.keys(snapshot.accounts).length, 1);
   assert.equal(Object.keys(snapshot.entitlements).length, 1);
   assert.equal(Object.values(snapshot.accounts)[0].email, 'ada@example.edu');
+  assert.equal(Object.values(snapshot.accounts)[0].department, 'Computer Science');
+  assert.equal(Object.values(snapshot.accounts)[0].departmentKey, 'computer science');
   assert.equal(Object.values(snapshot.entitlements)[0].status, 'active');
   assert.equal(Object.values(snapshot.payments)[0].amountMinor, ACCESS_PRICE_MINOR);
   assert.equal(Object.values(snapshot.payments)[0].currency, ACCESS_CURRENCY);
   assert.equal(Object.values(snapshot.registrationIntents)[0].status, REGISTRATION_STATUSES.COMPLETED);
   assert.equal(JSON.stringify(snapshot).includes('StrongPass123'), false, 'password must never be persisted');
+});
+
+test('registration department is student-only bounded profile data', async () => {
+  const harness = createHarness();
+  await assertRejectsCode(harness.service.createRegistrationCheckout({
+    role: 'sponsor',
+    fullName: 'Sponsor User',
+    email: 'sponsor@example.edu',
+    companyName: 'Sponsor Co',
+    department: 'Business'
+  }), 'department_not_allowed');
+  await assertRejectsCode(harness.service.createRegistrationCheckout({
+    role: 'student',
+    fullName: 'Ada Lovelace',
+    email: 'ada2@example.edu',
+    studentId: '2026-0002',
+    department: '<script>alert(1)</script>'
+  }), 'invalid_department');
 });
 
 test('invalid webhook signatures are rejected before state changes', async () => {
@@ -288,7 +309,7 @@ test('renewal requires same authenticated uid and malicious metadata cannot bind
   assert.equal(snapshot.entitlements.uid_2, undefined);
 });
 
-test('manual renewal extends from current future expiry and calendar-year arithmetic is explicit', async () => {
+test('manual renewal extends from current future expiry and six-calendar-month arithmetic is explicit', async () => {
   const currentExpiry = new Date('2027-01-31T10:30:00.000Z');
   const seed = {
     accounts: { uid_1: { uid: 'uid_1', email: 'one@example.edu', displayName: 'One', role: 'student' } },
@@ -303,8 +324,9 @@ test('manual renewal extends from current future expiry and calendar-year arithm
   await harness.service.handlePayMongoWebhook(signed);
 
   const expiry = Object.values(harness.repository.snapshot().entitlements)[0].accessExpiresAt;
-  assert.equal(expiry.toISOString(), '2028-01-31T10:30:00.000Z');
-  assert.equal(addCalendarYearsUtc(new Date('2024-02-29T00:00:00.000Z')).toISOString(), '2025-02-28T00:00:00.000Z');
+  assert.equal(expiry.toISOString(), '2027-07-31T10:30:00.000Z');
+  assert.equal(addCalendarMonthsUtc(new Date('2023-08-31T00:00:00.000Z')).toISOString(), '2024-02-29T00:00:00.000Z');
+  assert.equal(addCalendarMonthsUtc(new Date('2024-08-31T00:00:00.000Z')).toISOString(), '2025-02-28T00:00:00.000Z');
 });
 
 test('access status is visible only to the same authenticated uid', async () => {
@@ -324,7 +346,7 @@ test('HTTP handler contract uses an HttpOnly registration binding cookie and nev
 
   const started = await handlers.startRegistrationPayment({
     ip: '203.0.113.10',
-    body: { role: 'student', email: 'ada@example.edu', displayName: 'Ada Lovelace', studentId: '2026-0001' },
+    body: { role: 'student', email: 'ada@example.edu', displayName: 'Ada Lovelace', studentId: '2026-0001', department: 'Computer Science' },
   });
   assert.equal(started.status, 200);
   assert.equal(started.body.amountPhp, 10);

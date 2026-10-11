@@ -18,6 +18,13 @@ export interface ApplicationDocument {
   reviewedAt?: Timestamp;
 }
 
+export interface MeetingRequestDocumentFile {
+  storagePath: string;
+  fileName: string;
+  contentType: 'application/pdf';
+  sizeBytes: number;
+}
+
 export interface MeetingRequestDocument {
   meetingRequestId: string;
   requesterUid: string;
@@ -31,6 +38,7 @@ export interface MeetingRequestDocument {
   requestedTime: string;
   status: MeetingStatus;
   note?: string;
+  document?: MeetingRequestDocumentFile;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   decidedByUid?: string;
@@ -81,6 +89,7 @@ export interface MeetingRequestResponse {
   requestedTime: string;
   status: MeetingStatus;
   note?: string;
+  document?: MeetingRequestDocumentFile;
   updatedAt: string;
 }
 
