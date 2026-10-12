@@ -5,6 +5,7 @@ import { AppError, assertAppError } from '../errors';
 import { requireBearerToken } from './auth';
 import { getUserSession } from '../identity/session';
 import { requestVerifiedEmailChange, updateDisplayName } from '../identity/accountSettings';
+import { adminStatisticsService } from '../admin/statistics';
 import { approveOfficerGrant, assignInitialOrganizationOwner, revokeOfficerGrant } from '../organizations/service';
 import { attachAuthToPaymentRequest, paymentHandlers, sendPaymentResult } from '../paymentsAdapter';
 import {
@@ -19,7 +20,6 @@ import {
   deleteDateEntry,
   getAnnouncement,
   getOrganizationProfile,
-  getStudentDepartmentCounts,
   listAnnouncementComments,
   listAnnouncements,
   listDateEntries,
@@ -91,6 +91,11 @@ export function createApiApp() {
     res.json(await getUserSession(user));
   }));
 
+  app.get(['/admin/statistics', '/api/admin/statistics'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await adminStatisticsService.getStatistics(user));
+  }));
+
   app.post(['/account/display-name', '/api/account/display-name'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.json(await updateDisplayName(user, req.body));
@@ -137,9 +142,9 @@ export function createApiApp() {
     res.json(await getOrganizationProfile(user, getParam(req, 'orgId')));
   }));
 
-  app.get(['/organizations/:orgId/student-department-counts', '/api/organizations/:orgId/student-department-counts'], asyncRoute(async (req, res) => {
-    const user = await requireBearerToken(req);
-    res.json(await getStudentDepartmentCounts(user, getParam(req, 'orgId')));
+  app.get(['/organizations/:orgId/student-department-counts', '/api/organizations/:orgId/student-department-counts'], asyncRoute(async (req) => {
+    await requireBearerToken(req);
+    throw new AppError('admin_statistics_required', 'Student department statistics moved to the admin statistics endpoint.', 403);
   }));
 
   app.patch(['/organizations/:orgId', '/api/organizations/:orgId'], asyncRoute(async (req, res) => {

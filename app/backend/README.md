@@ -46,6 +46,7 @@ Seeded demo sign-ins all use password `SoarDemo123!`:
 - `sponsor@example.test` — sponsor meeting request flows, no application tracker.
 - `owner@example.test` — student account with owner access for seeded organizations.
 - `officer@example.test` — student account with Robotics Guild officer grant.
+- `admin@example.test` — securely provisioned local stats-admin demo (`soarStatsAdmin: true`, `accounts/{uid}.role == "admin"`, `adminStatus: "active"`) for aggregate statistics only; no production admin is seeded or self-registered.
 
 `app/backend/functions.yaml` is a generated Firebase Functions manifest for the current `api` export. It keeps local Functions discovery on a supported path in environments where the Firebase Functions discovery server is not reachable over IPv4 loopback.
 

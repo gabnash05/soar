@@ -20,8 +20,17 @@ service firebase.storage {
         && entitlementDoc().data.accessExpiresAt > request.time;
     }
 
+    function accountDoc() {
+      return firestore.get(/databases/(default)/documents/accounts/$(request.auth.uid));
+    }
+
+    function hasPublicAccountRole() {
+      return firestore.exists(/databases/(default)/documents/accounts/$(request.auth.uid))
+        && (accountDoc().data.role == 'student' || accountDoc().data.role == 'sponsor');
+    }
+
     function activeUser() {
-      return emailVerified() && hasActiveAccess();
+      return emailVerified() && hasActiveAccess() && hasPublicAccountRole();
     }
 
     function organizationDoc(orgId) {

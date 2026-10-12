@@ -1,7 +1,7 @@
 # SOAR application and meeting request services
 
 This document is the backend contract for the bounded request-services lane.
-It extends the Firebase Functions, Admin SDK, identity, entitlement, and organization-grant foundation without adding a general admin/member system.
+It extends the Firebase Functions, Admin SDK, identity, entitlement, and organization-grant foundation without adding a general admin/member system. The separate stats-admin role is intentionally read-only aggregate statistics and is not a request-service actor.
 
 ## Scope
 
@@ -16,7 +16,7 @@ The services intentionally do not implement automatic Google Form or Google Shee
 
 Every request-service endpoint requires a Firebase Auth bearer token.
 The backend then verifies email and active six-month access through the existing entitlement helper.
-Expired, unverified, unauthenticated, or missing-entitlement users are rejected before private request data is read or written.
+Expired, unverified, unauthenticated, missing-entitlement users, and stats-admin accounts are rejected before private request data is read or written.
 
 Organization queues and decisions require the caller to be the organization owner or to have an active `organizations/{orgId}/officerGrants/{uid}` grant.
 Officers remain student accounts with approved organization-specific grants.

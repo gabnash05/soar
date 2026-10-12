@@ -180,20 +180,4 @@ describe('announcement comment ownership service behavior', () => {
     expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(1);
     await expect(deleteAnnouncementComment(user('author'), 'post1', 'comment1')).rejects.toMatchObject({ code: 'comment_missing' });
   });
-
-  it('returns registered-student department aggregates only to approved managers', async () => {
-    const { getStudentDepartmentCounts } = await import('../service');
-
-    const counts = await getStudentDepartmentCounts(user('officer'), 'org1');
-    expect(counts).toMatchObject({
-      organizationId: 'org1',
-      scope: 'registered_students_across_soar',
-      totalRegisteredStudents: 3,
-      missingDepartmentCount: 1,
-      items: [{ departmentKey: 'computer science', department: 'Computer Science', count: 2 }]
-    });
-    expect(JSON.stringify(counts)).not.toContain('student1');
-    expect(JSON.stringify(counts)).not.toContain('Sponsor');
-    await expect(getStudentDepartmentCounts(user('student1'), 'org1')).rejects.toMatchObject({ code: 'organization_management_required' });
-  });
 });

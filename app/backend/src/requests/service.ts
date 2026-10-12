@@ -306,6 +306,9 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
         loadOrganization(deps, input.organizationId),
         deps.store.getCalendarEntry(input.dateEntryId)
       ]);
+      if (account.role !== 'student' && account.role !== 'sponsor') {
+        throw new AppError('requester_role_not_supported', 'Only student and sponsor accounts can request meetings.', 403);
+      }
       const availability = assertAvailabilityEntry(entry, input.organizationId);
       const now = deps.now();
       const meetingRequestId = meetingRequestIdFor(input, user.uid);

@@ -1,22 +1,23 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
+import { adminSessionInfo } from '../admin/statistics';
 import { getAccessState, listApprovedOfficerGrants, syncVerifiedAuthEmail } from './access';
 
 export async function getUserSession(user: DecodedIdToken) {
-  const [account, access, officerGrants] = await Promise.all([
+  const [account, access] = await Promise.all([
     syncVerifiedAuthEmail(user.uid),
-    getAccessState(user.uid),
-    listApprovedOfficerGrants(user.uid)
+    getAccessState(user.uid)
   ]);
 
   const expiresAt = access.accessExpiresAt?.toDate().toISOString();
+  const admin = adminSessionInfo(user, account);
+  const officerGrants = account.role === 'admin' ? [] : await listApprovedOfficerGrants(user.uid);
   return {
     uid: user.uid,
     email: account.email,
     displayName: account.displayName,
     accountKind: account.role,
-    studentId: account.studentId,
-    department: account.department,
-    companyName: account.companyName,
+    ...(account.role === 'student' ? { studentId: account.studentId, department: account.department } : {}),
+    ...(account.role === 'sponsor' ? { companyName: account.companyName } : {}),
     emailVerified: user.email_verified === true || account.emailVerified,
     access: {
       status: access.status === 'revoked' ? 'expired' : access.status,
@@ -25,8 +26,9 @@ export async function getUserSession(user: DecodedIdToken) {
       periodMonths: 6,
       periodLabel: '6 months',
       expiresAt,
-      renewalAvailable: access.status !== 'active'
+      renewalAvailable: account.role === 'admin' ? false : access.status !== 'active'
     },
-    officerGrants
+    officerGrants,
+    ...(admin ? { admin } : {})
   };
 }

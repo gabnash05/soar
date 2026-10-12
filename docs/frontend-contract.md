@@ -28,11 +28,11 @@ Workflow pages now render complete fixture-mode screens and production API loadi
 
 Use the shared domain types from `src/lib/contracts.ts`:
 
-- `AccountKind = 'student' | 'sponsor'` (officer is an organization grant on a student account, not an account kind).
+- `AccountKind = 'student' | 'sponsor' | 'admin'` (officer is an organization grant on a student account, not an account kind; admin is a securely provisioned read-only statistics surface, not public signup).
 - `AccessStatus = 'active' | 'pending' | 'failed' | 'cancelled' | 'expired' | 'revoked' | 'missing'`. Backend entitlement documents use `active | expired | revoked`; checkout-intent responses may additionally use pending/failed/cancelled/missing before an entitlement exists.
 - `ApplicationStage = 'Pending' | 'Under review' | 'Accepted' | 'Declined'`.
 - `MeetingStatus = 'Pending' | 'Approved' | 'Declined'`.
-- `UserSession` includes trusted `access`, optional student `department`, and `officerGrants` from backend/auth claims, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI. Access copy should use `periodMonths: 6` / `periodLabel: "6 months"`; `annualFeePhp` remains only a legacy PHP10 alias.
+- `UserSession` includes trusted `access`, optional student `department`, optional admin `{ statistics: true }`, and `officerGrants` from backend/auth claims, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI. Access copy should use `periodMonths: 6` / `periodLabel: "6 months"`; `annualFeePhp` remains only a legacy PHP10 alias.
 
 Workflow pages should consume foundation hooks/components instead of creating a parallel adapter:
 
@@ -59,8 +59,9 @@ Current HTTP paths used by the production identity/payment gateway match the mer
 
 | Method | Path | Frontend expectation |
 | --- | --- | --- |
-| `GET` | `/session` | Returns trusted `UserSession` for the current Firebase ID token. |
-| `POST` | `/payments/registration/start` | Creates provider checkout for PHP10 six-month registration payment and returns `RegistrationPaymentIntent`; passwords are not sent here. Student registrations may include optional bounded free-text `department`; sponsor registrations must not. |
+| `GET` | `/session` | Returns trusted `UserSession` for the current Firebase ID token. Valid stats admins receive `accountKind: "admin"` and `admin: { statistics: true }`. |
+| `GET` | `/admin/statistics` | Returns aggregate-only registered-student department totals and total organization count for securely provisioned stats admins. The `/api/admin/statistics` alias is also mounted. |
+| `POST` | `/payments/registration/start` | Creates provider checkout for PHP10 six-month registration payment and returns `RegistrationPaymentIntent`; passwords are not sent here. Student registrations may include optional bounded free-text `department`; sponsor registrations must not; admin cannot self-register. |
 | `GET` | `/payments/registration/status?intentId=:intentId` | Returns `CheckoutStatus`; only `status: active` with `canCreateAccount: true` unlocks account creation, and the backend validates its registration-binding cookie. |
 | `POST` | `/payments/registration/complete` | Server creates the paid Firebase account from a confirmed registration intent. The merged paid-access handler returns completion metadata (`uid`, `completed`, `accessExpiresAt`); the frontend then signs in and reloads `/session` for trusted profile/access/grant details. |
 | `POST` | `/payments/renewals/start` | Creates manual renewal checkout for the signed-in account. |
@@ -75,7 +76,7 @@ It consumes the content lane's organization, announcement, comment, like and dat
 List responses may be arrays or `{ items, nextPageToken? }`; the UI currently renders the first page with clear loading, empty, error and save-result states.
 Application stages preserve the request-service labels `Pending | Under review | Accepted | Declined` and still tolerate older snake/lowercase response values when reading.
 Meeting statuses preserve the request-service labels `Pending | Approved | Declined` and still tolerate older lowercase response values when reading. Optional meeting documents are PDF-only metadata in meeting DTOs; download/preview must use the authenticated backend document route, never a Storage `getDownloadURL` bearer link.
-Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired access is locked by the shared route guard. Organization profiles include optional public `contactPhone`; approved managers can call `/organizations/:orgId/student-department-counts` for aggregate registered-student department counts only. Announcement DTOs include `deepLinkPath`, `media[]` plus legacy `image`; media-targets support up to four image/video items with one MP4/WebM video maximum. Comment DTOs include `viewerCanEdit`/`viewerCanDelete`; own-comment edit/delete use `PATCH`/`DELETE /announcements/:announcementId/comments/:commentId`.
+Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired public accounts are locked by the shared route guard. Admin statistics accounts must be provisioned by trusted backend/Firebase Admin tooling; public signup stays student/sponsor only. Valid stats-admin sessions expose `accountKind: "admin"` and `admin: { statistics: true }`, may call `GET /admin/statistics`, and should not render organization/officer workflow controls. Organization profiles include optional public `contactPhone`; the old organization-manager student stats URL now returns `403 admin_statistics_required`. Announcement DTOs include `deepLinkPath`, `media[]` plus legacy `image`; media-targets support up to four image/video items with one MP4/WebM video maximum. Comment DTOs include `viewerCanEdit`/`viewerCanDelete`; own-comment edit/delete use `PATCH`/`DELETE /announcements/:announcementId/comments/:commentId`.
 
 ## Design-system precedence
 

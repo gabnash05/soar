@@ -1,6 +1,6 @@
 import type { Timestamp } from 'firebase-admin/firestore';
 import { z } from 'zod';
-import { ACCOUNT_ROLES } from './schema';
+import { PUBLIC_ACCOUNT_ROLES } from './schema';
 
 const trimmedString = z.string().trim();
 
@@ -20,7 +20,7 @@ export const paidRegistrationCompletionSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   displayName: displayNameSchema,
-  role: z.enum(ACCOUNT_ROLES),
+  role: z.enum(PUBLIC_ACCOUNT_ROLES),
   studentId: studentIdSchema.optional(),
   department: departmentSchema.optional(),
   departmentKey: departmentKeySchema.optional(),

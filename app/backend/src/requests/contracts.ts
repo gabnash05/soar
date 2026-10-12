@@ -1,5 +1,5 @@
 import type { Timestamp } from 'firebase-admin/firestore';
-import type { AccountRole, ApplicationStatus, MeetingStatus, OrganizationDocument } from '../contracts/schema';
+import type { AccountRole, ApplicationStatus, MeetingStatus, OrganizationDocument, PublicAccountRole } from '../contracts/schema';
 
 export interface ApplicationDocument {
   applicationId: string;
@@ -29,7 +29,7 @@ export interface MeetingRequestDocument {
   meetingRequestId: string;
   requesterUid: string;
   requesterName: string;
-  requesterRole: AccountRole;
+  requesterRole: PublicAccountRole;
   orgId: string;
   organizationName: string;
   dateEntryId: string;

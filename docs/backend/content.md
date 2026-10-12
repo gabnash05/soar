@@ -10,7 +10,7 @@ Implemented content services:
 - organization directory listing with name search;
 - organization profile and recruitment reads, including optional public contact phone;
 - approved organization-manager profile and recruitment updates;
-- aggregate registered-student department counts for approved managers;
+- announcement/content workflows while keeping registered-student statistics out of organization views;
 - announcement feed and organization-scoped posts;
 - announcement create/delete by approved organization managers;
 - multiple announcement images or one bounded native video through the existing Storage design;
@@ -27,7 +27,7 @@ Not implemented in this lane:
 - meeting request services and officer decisions;
 - frontend integration changes;
 - previews, because image previews remain frontend-owned before upload;
-- payment-provider onboarding, production deploys, billing changes, live data migrations, notifications, analytics, dashboard counters, or CI setup.
+- payment-provider onboarding, production deploys, billing changes, live data migrations, notifications, analytics, broad dashboards beyond the admin-only aggregate statistics route, or CI setup.
 
 ## Shared security model
 
@@ -98,25 +98,9 @@ Response:
 
 Returns a profile with recruitment, recent posts, dated entries, and optional public `contactPhone`.
 
-### `GET /organizations/:orgId/student-department-counts`
+### Revoked organization statistics endpoint
 
-Returns aggregate department counts for registered student accounts across SOAR. This endpoint is for approved managers of `orgId` only and returns no student identities, emails, account ids, applications, or membership lists.
-
-Response:
-
-```json
-{
-  "organizationId": "robotics",
-  "scope": "registered_students_across_soar",
-  "description": "Registered student accounts across SOAR grouped by saved department; not organization members or applicants.",
-  "totalRegisteredStudents": 4,
-  "missingDepartmentCount": 1,
-  "items": [
-    { "departmentKey": "computer science", "department": "Computer Science", "count": 2 }
-  ],
-  "generatedAt": "2026-10-11T00:00:00.000Z"
-}
-```
+`GET /organizations/:orgId/student-department-counts` and `/api/organizations/:orgId/student-department-counts` now return `403 admin_statistics_required`. Student statistics are no longer visible from organization manager/officer views. Use the admin-only aggregate route documented in `docs/backend/identity-foundation.md`.
 
 ### `PATCH /organizations/:orgId`
 

@@ -103,6 +103,22 @@ async function seedAccounts(db, auth, users) {
   const { now, expires } = nowAndExpiry();
   for (const user of users) {
     await upsertAuthUser(auth, user);
+    if (user.role === 'admin') {
+      await auth.setCustomUserClaims(user.uid, { soarStatsAdmin: true });
+      await db.doc(`accounts/${user.uid}`).set({
+        uid: user.uid,
+        role: 'admin',
+        adminStatus: 'active',
+        displayName: user.displayName,
+        email: user.email,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now
+      }, { merge: true });
+      continue;
+    }
+
+    await auth.setCustomUserClaims(user.uid, null);
     await db.doc(`accounts/${user.uid}`).set({
       uid: user.uid,
       role: user.role,
@@ -347,7 +363,8 @@ async function main() {
     { uid: 'demo-student-1', email: 'student@example.test', displayName: 'Mara Santos', role: 'student', studentId: 'S-1001', department: 'Computer Science' },
     { uid: 'demo-sponsor-1', email: 'sponsor@example.test', displayName: 'Ari Reyes', role: 'sponsor', companyName: 'Allied Demo Co.' },
     { uid: 'demo-owner-robotics', email: 'owner@example.test', displayName: 'Rina Cruz', role: 'student', studentId: 'S-2001', department: 'Engineering' },
-    { uid: 'demo-officer-robotics', email: 'officer@example.test', displayName: 'Leo Tan', role: 'student', studentId: 'S-2002', department: 'Computer Science' }
+    { uid: 'demo-officer-robotics', email: 'officer@example.test', displayName: 'Leo Tan', role: 'student', studentId: 'S-2002', department: 'Computer Science' },
+    { uid: 'demo-stats-admin', email: 'admin@example.test', displayName: 'Stats Admin', role: 'admin' }
   ];
 
   await seedAccounts(db, auth, users);
@@ -358,7 +375,7 @@ async function main() {
   console.log('Seeded demo-soar-local Auth and Firestore with emulator-only SOAR demo data.');
   console.log('These accounts use simulated six-month access records and are not valid production payment evidence.');
   for (const user of users) {
-    console.log(`- ${user.email} / ${DEMO_PASSWORD} (${user.role}${user.uid.includes('officer') || user.uid.includes('owner') ? ', organization manager demo' : ''})`);
+    console.log(`- ${user.email} / ${DEMO_PASSWORD} (${user.role}${user.role === 'admin' ? ', statistics admin demo' : user.uid.includes('officer') || user.uid.includes('owner') ? ', organization manager demo' : ''})`);
   }
 }
 

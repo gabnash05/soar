@@ -95,6 +95,7 @@ function seedStore() {
   store.accounts.set('owner', { uid: 'owner', role: 'student', displayName: 'Owner User' });
   store.accounts.set('officer', { uid: 'officer', role: 'student', displayName: 'Officer User' });
   store.accounts.set('foreign', { uid: 'foreign', role: 'student', displayName: 'Foreign User' });
+  store.accounts.set('admin', { uid: 'admin', role: 'admin', displayName: 'Stats Admin' });
   store.organizations.set('org1', {
     orgId: 'org1',
     name: 'Robotics Club',
@@ -344,6 +345,7 @@ describe('request service meeting workflow', () => {
 
     await service.requestMeeting(user('student'), input);
     await expectCode(service.requestMeeting(user('student'), input), 'duplicate_meeting_request');
+    await expectCode(service.requestMeeting(user('admin'), input), 'requester_role_not_supported');
     await expectCode(service.requestMeeting(user('student'), {
       organizationId: 'org1',
       dateEntryId: 'event1',

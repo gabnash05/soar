@@ -14,6 +14,7 @@ Implemented in this PR:
 - Server-side paid-registration completion helper for the payment lane.
 - Account settings endpoints for display-name changes and verified email-change requests.
 - Organization initial-owner setup and owner-managed officer grant endpoints.
+- Stats-admin-only aggregate statistics route for registered student departments and total organizations.
 - Firestore rules for account, entitlement, organization, officer-grant, application, meeting, announcement, and calendar-entry boundaries.
 - Storage rules for organization logos and announcement images.
 - Firestore emulator rule tests covering direct SDK bypasses for identity, access, organization grants, applications, and meetings.
@@ -22,7 +23,7 @@ Not implemented here:
 
 - Full frontend migration.
 - Full announcements or calendar service APIs outside the request-service endpoints documented in `docs/backend/requests.md`.
-- A general admin dashboard.
+- A general admin dashboard beyond the bounded read-only statistics surface.
 - A student organization-creation request queue.
 - Production deploys, live payment charges, Firebase billing changes, or account migrations.
 
@@ -46,7 +47,7 @@ Required fields:
 ```ts
 {
   uid: string;
-  role: 'student' | 'sponsor';
+  role: 'student' | 'sponsor' | 'admin';
   displayName: string;
   email: string;
   emailVerified: boolean;
@@ -54,6 +55,7 @@ Required fields:
   department?: string;
   departmentKey?: string;
   companyName?: string;
+  adminStatus?: 'active' | 'revoked';
   createdAt: Timestamp;
   updatedAt: Timestamp;
   lastNameChangedAt?: Timestamp;
@@ -69,6 +71,7 @@ Client permissions:
 - The signed-in active verified user may update only `displayName`, `lastNameChangedAt`, and `updatedAt` after the 30-day cooldown.
 - Clients cannot create accounts or edit role, email, verification state, student id, department, company name, created time, or entitlement fields.
 - Student `department` is optional bounded free text captured through paid registration and normalized into `departmentKey`; legacy student accounts may omit it.
+- Public registration accepts only `student` and `sponsor`. `admin` accounts are trusted provisioning records only and require a matching Firebase custom claim; clients cannot self-create or self-promote into admin.
 
 ### `entitlements/{uid}`
 
@@ -165,7 +168,7 @@ Routes accept both `/...` and `/api/...` prefixes so the frontend can either poi
   uid: string;
   email: string;
   displayName: string;
-  accountKind: 'student' | 'sponsor';
+  accountKind: 'student' | 'sponsor' | 'admin';
   studentId?: string;
   department?: string;
   companyName?: string;
@@ -179,6 +182,7 @@ Routes accept both `/...` and `/api/...` prefixes so the frontend can either poi
     expiresAt?: string;
     renewalAvailable: boolean;
   };
+  admin?: { statistics: true };
   officerGrants: Array<{
     organizationId: string;
     organizationName: string;
@@ -205,11 +209,41 @@ The endpoint reauthenticates through Firebase Auth REST and sends Firebase's ver
 The account document email is not changed immediately.
 It is synchronized after Firebase Auth reports the new verified email in a later session reload.
 
-### Organization owner and officer setup
+### Statistics admin and organization owner setup
 
+- `GET /admin/statistics`
 - `POST /admin/organizations`
 - `POST /organizations/:orgId/officer-grants`
 - `DELETE /organizations/:orgId/officer-grants/:uid`
+
+`GET /admin/statistics` requires all of the following trusted signals:
+
+- Firebase custom claim `soarStatsAdmin: true`;
+- verified Firebase email and `accounts/{uid}.emailVerified == true`;
+- `accounts/{uid}.role == "admin"`;
+- `accounts/{uid}.adminStatus == "active"`;
+- Auth user not disabled.
+
+It returns aggregate counts only and does not grant organization-management, officer, payment override, private document, or individual-record access:
+
+```json
+{
+  "generatedAt": "2026-10-12T00:00:00.000Z",
+  "scope": "registered_soar_totals",
+  "students": {
+    "totalRegisteredStudents": 4,
+    "missingDepartmentCount": 1,
+    "departments": [
+      { "departmentKey": "computer science", "department": "Computer Science", "count": 2 }
+    ]
+  },
+  "organizations": { "totalOrganizations": 3 }
+}
+```
+
+Former organization-manager statistics URLs (`GET /organizations/:orgId/student-department-counts` and `/api/organizations/:orgId/student-department-counts`) are revoked and return `403 admin_statistics_required`.
+
+Stats-admin provisioning is not exposed through public signup or a public HTTP route. Production provisioning must be done by trusted Firebase Admin tooling that sets the custom claim and Firestore account document together. The local emulator seed creates one demo account only when `GCLOUD_PROJECT` is `demo-soar-local`: `admin@example.test` / `SoarDemo123!`.
 
 `POST /admin/organizations` requires a Firebase custom claim `soarAdmin: true`.
 This endpoint is for setup only, not a general admin UI.

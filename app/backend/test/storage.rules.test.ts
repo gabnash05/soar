@@ -44,14 +44,14 @@ function videoBlob(size = 16, type = 'video/mp4') {
 async function seedBaseData() {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
-    for (const uid of ['owner', 'officer', 'requester', 'foreign', 'expired', 'unverified']) {
+    for (const uid of ['owner', 'officer', 'requester', 'foreign', 'expired', 'unverified', 'statsAdmin']) {
       await setDoc(doc(db, 'accounts', uid), {
         uid,
-        role: 'student',
+        role: uid === 'statsAdmin' ? 'admin' : 'student',
         displayName: uid,
         email: `${uid}@example.test`,
         emailVerified: uid !== 'unverified',
-        studentId: `S-${uid}`,
+        ...(uid === 'statsAdmin' ? { adminStatus: 'active' } : { studentId: `S-${uid}` }),
         createdAt: oldEnough,
         updatedAt: oldEnough
       });
@@ -138,6 +138,7 @@ describe('storage organization image boundaries', () => {
     await assertFails(storageFor('foreign').ref('organization-logos/org1/logo.png').put(imageBlob(), { contentType: 'image/png' }));
     await assertFails(storageFor('unverified', false).ref('organization-logos/org1/logo.png').put(imageBlob(), { contentType: 'image/png' }));
     await assertFails(storageFor('expired').ref('organization-logos/org1/logo.png').put(imageBlob(), { contentType: 'image/png' }));
+    await assertFails(storageFor('statsAdmin').ref('organization-logos/org1/logo.png').put(imageBlob(), { contentType: 'image/png' }));
     await assertFails(anonStorage().ref('organization-logos/org1/logo.png').put(imageBlob(), { contentType: 'image/png' }));
   });
 
@@ -154,6 +155,7 @@ describe('storage organization image boundaries', () => {
 
     await assertSucceeds(storageFor('foreign').ref('organization-logos/org1/logo.png').getDownloadURL());
     await assertFails(storageFor('expired').ref('organization-logos/org1/logo.png').getDownloadURL());
+    await assertFails(storageFor('statsAdmin').ref('organization-logos/org1/logo.png').getDownloadURL());
   });
 });
 

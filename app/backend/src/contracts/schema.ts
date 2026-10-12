@@ -1,7 +1,11 @@
 import type { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
-export const ACCOUNT_ROLES = ['student', 'sponsor'] as const;
+export const PUBLIC_ACCOUNT_ROLES = ['student', 'sponsor'] as const;
+export type PublicAccountRole = (typeof PUBLIC_ACCOUNT_ROLES)[number];
+export const ACCOUNT_ROLES = [...PUBLIC_ACCOUNT_ROLES, 'admin'] as const;
 export type AccountRole = (typeof ACCOUNT_ROLES)[number];
+export const ADMIN_STATUSES = ['active', 'revoked'] as const;
+export type AdminStatus = (typeof ADMIN_STATUSES)[number];
 
 export const ENTITLEMENT_STATUSES = ['active', 'expired', 'revoked'] as const;
 export type EntitlementStatus = (typeof ENTITLEMENT_STATUSES)[number];
@@ -25,6 +29,7 @@ export interface AccountDocument {
   department?: string;
   departmentKey?: string;
   companyName?: string;
+  adminStatus?: AdminStatus;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   lastNameChangedAt?: Timestamp;
@@ -157,7 +162,7 @@ export interface PaidRegistrationCompletionInput {
   email: string;
   password: string;
   displayName: string;
-  role: AccountRole;
+  role: PublicAccountRole;
   studentId?: string;
   department?: string;
   departmentKey?: string;

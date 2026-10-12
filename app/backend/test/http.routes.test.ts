@@ -4,6 +4,7 @@ import { AppError } from '../src/errors';
 
 const mocks = vi.hoisted(() => ({
   requireBearerToken: vi.fn(),
+  adminStatisticsService: { getStatistics: vi.fn() },
   getUserSession: vi.fn(),
   updateDisplayName: vi.fn(),
   requestVerifiedEmailChange: vi.fn(),
@@ -27,7 +28,6 @@ const mocks = vi.hoisted(() => ({
   deleteAnnouncement: vi.fn(),
   deleteAnnouncementComment: vi.fn(),
   getAnnouncement: vi.fn(),
-  getStudentDepartmentCounts: vi.fn(),
   setAnnouncementLike: vi.fn(),
   listAnnouncementComments: vi.fn(),
   addAnnouncementComment: vi.fn(),
@@ -50,6 +50,8 @@ const mocks = vi.hoisted(() => ({
     updateMeetingStatus: vi.fn(),
   },
 }));
+
+vi.mock('../src/admin/statistics', () => ({ adminStatisticsService: mocks.adminStatisticsService }));
 
 vi.mock('../src/http/auth', () => ({
   requireBearerToken: mocks.requireBearerToken,
@@ -84,7 +86,6 @@ vi.mock('../src/content/service', () => ({
   deleteDateEntry: mocks.deleteDateEntry,
   getAnnouncement: mocks.getAnnouncement,
   getOrganizationProfile: mocks.getOrganizationProfile,
-  getStudentDepartmentCounts: mocks.getStudentDepartmentCounts,
   listAnnouncementComments: mocks.listAnnouncementComments,
   listAnnouncements: mocks.listAnnouncements,
   listDateEntries: mocks.listDateEntries,
@@ -173,15 +174,22 @@ describe('SOAR HTTP route contracts', () => {
     );
   });
 
-  it('mounts revised announcement and aggregate routes without exposing student lists', async () => {
-    mocks.getStudentDepartmentCounts.mockResolvedValue({ organizationId: 'robotics', totalRegisteredStudents: 2, items: [{ department: 'Computer Science', count: 2 }] });
+  it('mounts admin statistics and revised announcement routes while denying the former org stats URL', async () => {
+    mocks.adminStatisticsService.getStatistics.mockResolvedValue({ scope: 'registered_soar_totals', students: { totalRegisteredStudents: 2 }, organizations: { totalOrganizations: 1 } });
     mocks.createAnnouncementMediaTargets.mockResolvedValue({ announcementId: 'post1', items: [] });
     mocks.updateAnnouncementComment.mockResolvedValue({ id: 'comment1', body: 'Updated', viewerCanEdit: true });
     mocks.deleteAnnouncementComment.mockResolvedValue({ announcementId: 'post1', commentId: 'comment1', deleted: true });
     mocks.getAnnouncement.mockResolvedValue({ id: 'post1', deepLinkPath: '/app?announcementId=post1' });
 
     await withApiServer(async (baseUrl) => {
-      await expect((await fetch(`${baseUrl}/api/organizations/robotics/student-department-counts`, { headers: { authorization: 'Bearer test-token' } })).json()).resolves.toMatchObject({ totalRegisteredStudents: 2 });
+      const adminStats = await fetch(`${baseUrl}/api/admin/statistics`, { headers: { authorization: 'Bearer test-token' } });
+      expect(adminStats.status).toBe(200);
+      await expect(adminStats.json()).resolves.toMatchObject({ scope: 'registered_soar_totals', students: { totalRegisteredStudents: 2 } });
+
+      const oldStats = await fetch(`${baseUrl}/api/organizations/robotics/student-department-counts`, { headers: { authorization: 'Bearer test-token' } });
+      expect(oldStats.status).toBe(403);
+      await expect(oldStats.json()).resolves.toMatchObject({ code: 'admin_statistics_required' });
+
       await expect((await fetch(`${baseUrl}/api/announcements/post1`, { headers: { authorization: 'Bearer test-token' } })).json()).resolves.toMatchObject({ deepLinkPath: '/app?announcementId=post1' });
       expect((await fetch(`${baseUrl}/api/organizations/robotics/announcements/media-targets`, {
         method: 'POST',
@@ -199,7 +207,7 @@ describe('SOAR HTTP route contracts', () => {
       })).status).toBe(200);
     });
 
-    expect(mocks.getStudentDepartmentCounts).toHaveBeenCalledWith({ uid: 'user1', email_verified: true }, 'robotics');
+    expect(mocks.adminStatisticsService.getStatistics).toHaveBeenCalledWith({ uid: 'user1', email_verified: true });
     expect(mocks.createAnnouncementMediaTargets).toHaveBeenCalled();
     expect(mocks.updateAnnouncementComment).toHaveBeenCalled();
     expect(mocks.deleteAnnouncementComment).toHaveBeenCalled();

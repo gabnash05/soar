@@ -2,7 +2,6 @@ import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { DocumentData, Query } from 'firebase-admin/firestore';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { COLLECTIONS, organizationLogoStoragePath, announcementImageStoragePath, organizationPath, officerGrantPath } from '../contracts/paths';
-import { normalizeDepartmentKey } from '../contracts/validation';
 import type { OrganizationDocument } from '../contracts/schema';
 import { AppError } from '../errors';
 import { db } from '../firebase';
@@ -547,43 +546,6 @@ export async function deleteAnnouncementComment(user: DecodedIdToken, announceme
   });
 
   return { announcementId, commentId, deleted: true };
-}
-
-export async function getStudentDepartmentCounts(user: DecodedIdToken, orgIdParam: string) {
-  const orgId = routeOrgId(orgIdParam);
-  await assertCanManageOrganization(user, orgId);
-  const snap = await db.collection(COLLECTIONS.accounts).where('role', '==', 'student').get();
-  const groups = new Map<string, { departmentKey: string; department: string; count: number }>();
-  let missingDepartmentCount = 0;
-
-  for (const doc of snap.docs) {
-    const data = doc.data();
-    const rawDepartment = typeof data.department === 'string' ? data.department.trim().replace(/\s+/g, ' ') : '';
-    if (!rawDepartment) {
-      missingDepartmentCount += 1;
-      continue;
-    }
-    const key = typeof data.departmentKey === 'string' && data.departmentKey.trim()
-      ? data.departmentKey.trim().toLocaleLowerCase()
-      : normalizeDepartmentKey(rawDepartment);
-    const current = groups.get(key);
-    if (current) {
-      current.count += 1;
-    } else {
-      groups.set(key, { departmentKey: key, department: rawDepartment, count: 1 });
-    }
-  }
-
-  const items = [...groups.values()].sort((a, b) => a.department.localeCompare(b.department));
-  return {
-    organizationId: orgId,
-    scope: 'registered_students_across_soar',
-    description: 'Registered student accounts across SOAR grouped by saved department; not organization members or applicants.',
-    totalRegisteredStudents: snap.size,
-    missingDepartmentCount,
-    items,
-    generatedAt: new Date().toISOString()
-  };
 }
 
 export async function listDateEntries(user: DecodedIdToken, rawQuery: unknown): Promise<Page<ReturnType<typeof dateEntryFromDoc>>> {
