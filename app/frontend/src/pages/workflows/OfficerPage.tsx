@@ -94,28 +94,28 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
   };
 
   return (
-    <section className="surface-section profile-form-section">
-      <header className="section-heading inline-heading">
+    <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0">
+      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)] flex items-end justify-between gap-4 max-[820px]:flex-col max-[820px]:items-start">
         <div>
           <h2>Organization profile and recruitment</h2>
           <p>Update the public profile, recruitment copy, contact email, and logo shown to students and sponsors.</p>
         </div>
         <Button type="submit" form={formId} disabled={busy}>Save profile</Button>
       </header>
-      <form id={formId} className="content-stack" onSubmit={submit}>
-        <div className="grid grid-2">
-          <div className="field"><label className="label-row" htmlFor="org-name">Organization name</label><input id="org-name" className="control" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div>
-          <div className="field"><label className="label-row" htmlFor="org-contact">Contact email</label><input id="org-contact" className="control" type="email" value={form.contactEmail} onChange={(event) => setForm((current) => ({ ...current, contactEmail: event.target.value }))} /></div>
+      <form id={formId} className="grid gap-4" onSubmit={submit}>
+        <div className="grid md:grid-cols-2">
+          <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="org-name">Organization name</label><input id="org-name" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div>
+          <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="org-contact">Contact email</label><input id="org-contact" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="email" value={form.contactEmail} onChange={(event) => setForm((current) => ({ ...current, contactEmail: event.target.value }))} /></div>
         </div>
-        <div className="field"><label className="label-row" htmlFor="org-phone">Contact phone <span>Optional</span></label><input id="org-phone" className="control" type="tel" inputMode="tel" autoComplete="tel" value={form.contactPhone ?? ''} onChange={(event) => setForm((current) => ({ ...current, contactPhone: event.target.value }))} placeholder="+63 912 345 6789" maxLength={32} /><span className="help">Shown on the public profile only when provided. Use digits, spaces, dashes, parentheses, or extension text.</span></div>
-        <div className="field"><label className="label-row" htmlFor="org-short">Short description</label><input id="org-short" className="control" value={form.shortDescription} onChange={(event) => setForm((current) => ({ ...current, shortDescription: event.target.value }))} /></div>
-        <div className="field"><label className="label-row" htmlFor="org-description">Profile description</label><textarea id="org-description" className="control textarea" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
-        <div className="grid grid-2">
-          <div className="field">
-            <label className="label-row" htmlFor="logo-file">Logo image <span>Optional</span></label>
+        <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="org-phone">Contact phone <span>Optional</span></label><input id="org-phone" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="tel" inputMode="tel" autoComplete="tel" value={form.contactPhone ?? ''} onChange={(event) => setForm((current) => ({ ...current, contactPhone: event.target.value }))} placeholder="+63 912 345 6789" maxLength={32} /><span className="text-xs text-[var(--muted-foreground)]">Shown on the public profile only when provided. Use digits, spaces, dashes, parentheses, or extension text.</span></div>
+        <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="org-short">Short description</label><input id="org-short" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.shortDescription} onChange={(event) => setForm((current) => ({ ...current, shortDescription: event.target.value }))} /></div>
+        <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="org-description">Profile description</label><textarea id="org-description" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
+        <div className="grid md:grid-cols-2">
+          <div className="grid min-w-0 gap-1.5">
+            <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="logo-file">Logo image <span>Optional</span></label>
             <input
               id="logo-file"
-              className="control"
+              className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
               type="file"
               accept="image/png,image/jpeg,image/webp,image/gif"
               onChange={(event) => {
@@ -130,15 +130,15 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
                 }
               }}
             />
-            {logoError ? <span className="help error" role="alert">{logoError}</span> : <span className="help">PNG, JPEG, GIF, or WebP. Maximum 5 MB. Existing logo stays if no file is selected.</span>}
-            {form.logoUrl ? <figure className="image-frame logo-preview"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
+            {logoError ? <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{logoError}</span> : <span className="text-xs text-[var(--muted-foreground)]">PNG, JPEG, GIF, or WebP. Maximum 5 MB. Existing logo stays if no file is selected.</span>}
+            {form.logoUrl ? <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover [&_video]:block [&_video]:max-h-[340px] [&_video]:w-full [&_video]:bg-[var(--color-ink)] [&_video]:object-cover [&_img]:bg-[var(--color-white)] [&_img]:object-contain [&_img]:p-3"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
           </div>
-          <div className="field"><label className="label-row" htmlFor="external-form">External form URL <span>Optional</span></label><input id="external-form" className="control" type="url" value={form.externalFormUrl ?? ''} onChange={(event) => setForm((current) => ({ ...current, externalFormUrl: event.target.value }))} /></div>
+          <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="external-form">External form URL <span>Optional</span></label><input id="external-form" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="url" value={form.externalFormUrl ?? ''} onChange={(event) => setForm((current) => ({ ...current, externalFormUrl: event.target.value }))} /></div>
         </div>
-        <div className="field"><label className="label-row" htmlFor="recruitment-title">Recruitment title</label><input id="recruitment-title" className="control" value={form.recruitmentTitle} onChange={(event) => setForm((current) => ({ ...current, recruitmentTitle: event.target.value }))} /></div>
-        <div className="grid grid-2">
-          <div className="field"><label className="label-row" htmlFor="recruitment-requirements">Requirements</label><textarea id="recruitment-requirements" className="control textarea" value={form.recruitmentRequirements} onChange={(event) => setForm((current) => ({ ...current, recruitmentRequirements: event.target.value }))} /></div>
-          <div className="field"><label className="label-row" htmlFor="recruitment-instructions">Instructions</label><textarea id="recruitment-instructions" className="control textarea" value={form.recruitmentInstructions} onChange={(event) => setForm((current) => ({ ...current, recruitmentInstructions: event.target.value }))} /></div>
+        <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="recruitment-title">Recruitment title</label><input id="recruitment-title" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.recruitmentTitle} onChange={(event) => setForm((current) => ({ ...current, recruitmentTitle: event.target.value }))} /></div>
+        <div className="grid md:grid-cols-2">
+          <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="recruitment-requirements">Requirements</label><textarea id="recruitment-requirements" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.recruitmentRequirements} onChange={(event) => setForm((current) => ({ ...current, recruitmentRequirements: event.target.value }))} /></div>
+          <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="recruitment-instructions">Instructions</label><textarea id="recruitment-instructions" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.recruitmentInstructions} onChange={(event) => setForm((current) => ({ ...current, recruitmentInstructions: event.target.value }))} /></div>
         </div>
         <ResultMessage result={result} />
       </form>
@@ -229,19 +229,19 @@ export function AnnouncementComposer({
   };
 
   return (
-    <section id="announcement-composer" className="dialog-form">
-      <header className="section-heading">
+    <section id="announcement-composer" className="grid gap-3.5">
+      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
         <h2>{title}</h2>
         <p>Publish updates for {organizationName ?? 'your organization'} that appear on the announcements feed and the organization profile.</p>
       </header>
       {context}
-      <form className="content-stack" onSubmit={submit}>
-        <div className="field"><label className="label-row" htmlFor="announcement-body">Post text</label><textarea data-autofocus id="announcement-body" className="control textarea" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write an announcement for students and sponsors." /></div>
-        <div className="field">
-          <label className="label-row" htmlFor="announcement-image">Optional media</label>
+      <form className="grid gap-4" onSubmit={submit}>
+        <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="announcement-body">Post text</label><textarea data-autofocus id="announcement-body" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write an announcement for students and sponsors." /></div>
+        <div className="grid min-w-0 gap-1.5">
+          <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="announcement-image">Optional media</label>
           <input
             id="announcement-image"
-            className="control"
+            className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
             type="file"
             multiple
             accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
@@ -259,20 +259,20 @@ export function AnnouncementComposer({
             }}
           />
           {imageError ? (
-            <span className="help error" role="alert">{imageError}</span>
+            <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{imageError}</span>
           ) : (
-            <span className="help">Up to {ANNOUNCEMENT_MEDIA_MAX_ITEMS} total images or videos. Images can be PNG, JPEG, GIF, or WebP; one MP4/WebM video may be attached up to {formatBytes(WORKFLOW_VIDEO_MAX_BYTES)}. {formatBytes(ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES)} combined maximum.</span>
+            <span className="text-xs text-[var(--muted-foreground)]">Up to {ANNOUNCEMENT_MEDIA_MAX_ITEMS} total images or videos. Images can be PNG, JPEG, GIF, or WebP; one MP4/WebM video may be attached up to {formatBytes(WORKFLOW_VIDEO_MAX_BYTES)}. {formatBytes(ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES)} combined maximum.</span>
           )}
         </div>
         {media.length ? (
-          <ul className="media-preview-list" aria-label="Selected announcement images">
+          <ul className="m-0 grid list-none gap-2.5 p-0 [&_li]:grid [&_li]:grid-cols-[96px_minmax(0,1fr)] [&_li]:items-center [&_li]:gap-3 [&_li]:rounded-[var(--radius-md)] [&_li]:border [&_li]:border-[var(--color-border)] [&_li]:bg-[var(--color-white)] [&_li]:p-2.5 max-sm:[&_li]:grid-cols-1 [&_img]:size-auto [&_img]:h-[76px] [&_img]:w-24 [&_img]:rounded-[var(--radius-sm)] [&_img]:bg-[var(--color-ink)] [&_img]:object-cover [&_video]:h-[76px] [&_video]:w-24 [&_video]:rounded-[var(--radius-sm)] [&_video]:bg-[var(--color-ink)] [&_video]:object-cover max-sm:[&_img]:h-[150px] max-sm:[&_img]:w-full max-sm:[&_video]:h-[150px] max-sm:[&_video]:w-full [&_strong]:block [&_span]:block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]" aria-label="Selected announcement images">
             {media.map((item, index) => (
               <li key={`${item.alt}-${index}`}>
                 {item.contentType?.startsWith('video/') ? <video src={item.url} controls preload="metadata" aria-label={item.alt} /> : <img src={item.url} alt={item.alt} />}
                 <div>
                   <strong>{item.alt}</strong>
                   <span>{item.sizeBytes ? formatBytes(item.sizeBytes) : 'Ready to upload'}</span>
-                  <div className="component-row">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button type="button" variant="quiet" disabled={index === 0} onClick={() => moveMedia(index, -1)}>Move up</Button>
                     <Button type="button" variant="quiet" disabled={index === media.length - 1} onClick={() => moveMedia(index, 1)}>Move down</Button>
                     <Button type="button" variant="danger" onClick={() => setMedia((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove</Button>
@@ -282,7 +282,7 @@ export function AnnouncementComposer({
             ))}
           </ul>
         ) : null}
-        <div className="button-row"><Button type="submit" disabled={busy}>{busy ? 'Publishing…' : 'Publish announcement'}</Button></div>
+        <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full"><Button type="submit" disabled={busy}>{busy ? 'Publishing…' : 'Publish announcement'}</Button></div>
         <ResultMessage result={result} />
       </form>
     </section>
@@ -314,12 +314,13 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
   };
 
   return (
-    <section className="surface-section">
-      <header className="section-heading inline-heading">
+    <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0">
+      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)] flex items-end justify-between gap-4 max-[820px]:flex-col max-[820px]:items-start">
         <div>
           <h2>Published announcements</h2>
           <p>{allowPosting ? 'Create announcements for this organization.' : 'Review this organization\'s announcement history. Publish new posts from the Announcements feed.'}</p>
         </div>
+        {allowPosting ? <Button type="button" onClick={() => setComposerOpen(true)}>Post announcement</Button> : null}
       </header>
       {allowPosting ? (
         <>
@@ -341,20 +342,15 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
         </>
       ) : null}
       {dashboard.announcements.length ? (
-        <ul className="feed-list divided-list">
+        <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
           {dashboard.announcements.map((announcement) => (
             <li key={announcement.id}>
-              <div className="feed-copy"><strong>{announcement.body}</strong><span>{new Date(announcement.createdAt).toLocaleDateString()}</span></div>
+              <div className="min-w-0 flex-1 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:mt-0.5 [&_span]:block [&_span]:[overflow-wrap:anywhere] [&_span]:text-[0.88rem] [&_span]:text-[var(--muted-foreground)]"><strong>{announcement.body}</strong><span>{new Date(announcement.createdAt).toLocaleDateString()}</span></div>
               <Button type="button" variant="danger" onClick={() => { setDeleteError(null); setDeleteAnnouncementId(announcement.id); }}>Delete</Button>
             </li>
           ))}
         </ul>
-      ) : <p className="section-note">No announcements yet.</p>}
-      {allowPosting ? (
-        <div className="button-row">
-          <Button type="button" onClick={() => setComposerOpen(true)}>Post announcement</Button>
-        </div>
-      ) : null}
+      ) : <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p>}
       <ResultMessage result={result} />
       <ConfirmDialog
         open={Boolean(deleteAnnouncementId)}
@@ -375,8 +371,8 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
 export function ApplicantsSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   return (
-    <section className="surface-section">
-      <header className="section-heading">
+    <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0">
+      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
         <h2>Applications to review</h2>
         <p>Update a student's tracker after reviewing the external application materials your organization uses.</p>
       </header>
@@ -391,7 +387,7 @@ export function ApplicantsSection({ dashboard, session, client, onChanged }: { d
               <td><StageChip stage={application.stage} /></td>
               <td>
                 <select
-                  className="control"
+                  className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
                   aria-label={`Stage for ${application.studentName}`}
                   value={application.stage}
                   onChange={async (event) => {
@@ -406,7 +402,7 @@ export function ApplicantsSection({ dashboard, session, client, onChanged }: { d
             </tr>
           ))}
         />
-      ) : <p className="section-note">No applicants are waiting for this organization.</p>}
+      ) : <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No applicants are waiting for this organization.</p>}
       <ResultMessage result={result} />
     </section>
   );
@@ -477,8 +473,8 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
   };
 
   return (
-    <section className="surface-section">
-      <header className="section-heading inline-heading">
+    <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0">
+      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)] flex items-end justify-between gap-4 max-[820px]:flex-col max-[820px]:items-start">
         <div>
           <h2>Events and availability</h2>
           <p>Post public events or meeting/interview availability for this organization.</p>
@@ -490,34 +486,34 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
         setDirty(false);
         setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
       }}>
-        <form className="content-stack dialog-form" onSubmit={submit}>
-          <div className="grid grid-2">
-            <div className="field"><label className="label-row" htmlFor="entry-kind">Entry type</label><select data-autofocus id="entry-kind" className="control" value={form.kind} onChange={(event) => patchForm({ kind: event.target.value as DateEntryInput['kind'] })}><option value="event">Public event</option><option value="availability">Meeting/interview availability</option></select></div>
-            <div className="field"><label className="label-row" htmlFor="entry-title">Title</label><input id="entry-title" className="control" value={form.title} onChange={(event) => patchForm({ title: event.target.value })} /></div>
+        <form className="grid gap-4 grid gap-3.5" onSubmit={submit}>
+          <div className="grid md:grid-cols-2">
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-kind">Entry type</label><select data-autofocus id="entry-kind" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.kind} onChange={(event) => patchForm({ kind: event.target.value as DateEntryInput['kind'] })}><option value="event">Public event</option><option value="availability">Meeting/interview availability</option></select></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-title">Title</label><input id="entry-title" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.title} onChange={(event) => patchForm({ title: event.target.value })} /></div>
           </div>
-          <div className="grid grid-3">
-            <div className="field"><label className="label-row" htmlFor="entry-date">Date</label><input id="entry-date" className="control" type="date" value={form.date} onChange={(event) => patchForm({ date: event.target.value })} /></div>
-            <div className="field"><label className="label-row" htmlFor="entry-start">Start time <span>Optional</span></label><input id="entry-start" className="control" type="time" value={form.startTime ?? ''} onChange={(event) => patchForm({ startTime: event.target.value })} /></div>
-            <div className="field"><label className="label-row" htmlFor="entry-end">End time <span>Optional</span></label><input id="entry-end" className="control" type="time" value={form.endTime ?? ''} onChange={(event) => patchForm({ endTime: event.target.value })} /></div>
+          <div className="grid md:grid-cols-3">
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-date">Date</label><input id="entry-date" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="date" value={form.date} onChange={(event) => patchForm({ date: event.target.value })} /></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-start">Start time <span>Optional</span></label><input id="entry-start" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.startTime ?? ''} onChange={(event) => patchForm({ startTime: event.target.value })} /></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-end">End time <span>Optional</span></label><input id="entry-end" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.endTime ?? ''} onChange={(event) => patchForm({ endTime: event.target.value })} /></div>
           </div>
-          <div className="field"><label className="label-row" htmlFor="entry-details">Short details</label><textarea id="entry-details" className="control textarea" value={form.details} onChange={(event) => patchForm({ details: event.target.value })} /></div>
-          <div className="button-row"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save dated entry'}</Button></div>
+          <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-details">Short details</label><textarea id="entry-details" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.details} onChange={(event) => patchForm({ details: event.target.value })} /></div>
+          <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save dated entry'}</Button></div>
           <ResultMessage result={result} />
         </form>
       </ModalDialog>
       {dashboard.dateEntries.length ? (
-        <ul className="feed-list divided-list">
+        <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
           {dashboard.dateEntries.map((entry) => (
             <li key={entry.id}>
-              <div className="feed-copy"><strong>{entry.title}</strong><span>{entry.kind === 'event' ? 'Public event' : 'Meeting/interview availability'} · {formatDateEntry(entry)} · {entry.details}</span></div>
-              <div className="component-row">
+              <div className="min-w-0 flex-1 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:mt-0.5 [&_span]:block [&_span]:[overflow-wrap:anywhere] [&_span]:text-[0.88rem] [&_span]:text-[var(--muted-foreground)]"><strong>{entry.title}</strong><span>{entry.kind === 'event' ? 'Public event' : 'Meeting/interview availability'} · {formatDateEntry(entry)} · {entry.details}</span></div>
+              <div className="flex flex-wrap items-center gap-2">
                 <Button type="button" variant="secondary" onClick={() => openEdit(entry)}>Edit</Button>
                 <Button type="button" variant="danger" onClick={() => { setDeleteError(null); setDeleteDateEntryId(entry.id); }}>Remove</Button>
               </div>
             </li>
           ))}
         </ul>
-      ) : <p className="section-note">No dated entries yet.</p>}
+      ) : <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No dated entries yet.</p>}
       {!dialogOpen ? <ResultMessage result={result} /> : null}
       <ConfirmDialog
         open={Boolean(deleteDateEntryId)}
@@ -537,9 +533,9 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
 
 function FormalRequestDocumentButton({ request }: { request: OfficerDashboard['meetingRequests'][number] }) {
   const [message, setMessage] = useState('');
-  if (!request.document) return <span className="section-note">No document</span>;
+  if (!request.document) return <span className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No document</span>;
   return (
-    <div className="document-cell">
+    <div className="grid items-start gap-1.5 [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]">
       <Button
         type="button"
         variant="secondary"
@@ -555,7 +551,7 @@ function FormalRequestDocumentButton({ request }: { request: OfficerDashboard['m
         Open document
       </Button>
       <span>{request.document.fileName} · {formatBytes(request.document.sizeBytes)}</span>
-      {message ? <span className="help error" role="alert">{message}</span> : null}
+      {message ? <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{message}</span> : null}
     </div>
   );
 }
@@ -563,8 +559,8 @@ function FormalRequestDocumentButton({ request }: { request: OfficerDashboard['m
 export function MeetingDecisionsSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   return (
-    <section className="surface-section">
-      <header className="section-heading">
+    <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0">
+      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
         <h2>Meeting requests to review</h2>
         <p>Approve or decline requests for this organization.</p>
       </header>
@@ -580,7 +576,7 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
               <td><MeetingStatusChip status={request.status} /></td>
               <td><FormalRequestDocumentButton request={request} /></td>
               <td>
-                <div className="component-row">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button type="button" variant="secondary" disabled={request.status === 'Approved'} onClick={async () => {
                     const next = await client.decideMeetingRequest(request.id, 'Approved', dashboard.organization.id, session);
                     setResult(next);
@@ -596,7 +592,7 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
             </tr>
           ))}
         />
-      ) : <p className="section-note">No meeting requests for this organization.</p>}
+      ) : <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No meeting requests for this organization.</p>}
       <ResultMessage result={result} />
     </section>
   );
@@ -606,10 +602,10 @@ export function OfficerOrganizationPicker({ selectedOrganizationId, onChange, se
   const grants = getApprovedOfficerGrants(session);
   if (grants.length <= 1) return null;
   return (
-    <section className="organization-switcher" aria-label="Managed organization">
-      <div className="field">
-        <label className="label-row" htmlFor="managed-organization">Organization</label>
-        <select id="managed-organization" className="control" value={selectedOrganizationId} onChange={(event) => onChange(event.target.value)}>
+    <section className="max-w-[480px] py-3" aria-label="Managed organization">
+      <div className="grid min-w-0 gap-1.5">
+        <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="managed-organization">Organization</label>
+        <select id="managed-organization" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={selectedOrganizationId} onChange={(event) => onChange(event.target.value)}>
           {grants.map((grant) => <option key={grant.organizationId} value={grant.organizationId}>{grant.organizationName}</option>)}
         </select>
       </div>
@@ -642,7 +638,7 @@ export function OfficerOrganizationManagement({ organizationId, session, client 
   if (!isApprovedOfficerFor(session, organizationId)) return null;
 
   return (
-    <aside className="surface-notice" role="note">
+    <aside className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-blue)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] [&_p]:m-0" role="note">
       <strong>Organization management</strong>
       <p>Edit profile details, announcements, and dated entries from the dedicated Manage Organization sidebar tab.</p>
       <ButtonLink to={`/settings/organization?organizationId=${encodeURIComponent(organizationId)}`} variant="primary">Manage organization</ButtonLink>
@@ -661,8 +657,8 @@ export function OfficerApplicationsReview({ session, client }: { session: UserSe
   if (!grants.length) return null;
 
   return (
-    <section className="content-stack" aria-label="Applications to review">
-      <header className="section-heading">
+    <section className="grid gap-4" aria-label="Applications to review">
+      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
         <h2>Officer applicant review</h2>
         <p>Review applicants only for organizations where your grant applies.</p>
       </header>
@@ -685,8 +681,8 @@ export function OfficerMeetingReview({ session, client }: { session: UserSession
   if (!grants.length) return null;
 
   return (
-    <section className="content-stack" aria-label="Meeting requests to review">
-      <header className="section-heading">
+    <section className="grid gap-4" aria-label="Meeting requests to review">
+      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
         <h2>Officer meeting decisions</h2>
         <p>Approve or decline meeting requests for organizations where your grant applies.</p>
       </header>
@@ -724,17 +720,17 @@ export function OfficerView({ session, client }: { session: UserSession; client:
       session={session}
     >
       <SourceNotice client={client} />
-      <section className="management-shortcuts" aria-label="Management shortcuts">
+      <section className="grid gap-4" aria-label="Management shortcuts">
         {grants.map((grant) => (
-          <article key={grant.organizationId} className="management-shortcut">
-            <div className="org-head">
+          <article key={grant.organizationId} className="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--color-border)] py-4 first:border-t-0">
+            <div className="flex min-w-0 items-center gap-3 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[1.05rem] [&_h2]:font-bold [&_h2]:leading-tight [&_h2]:text-[var(--color-navy)] [&_h3]:m-0 [&_h3]:font-[var(--font-display)] [&_h3]:text-[1.05rem] [&_h3]:font-bold [&_h3]:leading-tight [&_h3]:text-[var(--color-navy)]">
               <OrganizationAvatar name={grant.organizationName} />
               <div>
                 <h2>{grant.organizationName}</h2>
-                <p className="section-note"><RoleBadge kind="officer">Approved officer access</RoleBadge></p>
+                <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]"><RoleBadge kind="officer">Approved officer access</RoleBadge></p>
               </div>
             </div>
-            <div className="button-row">
+            <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full">
               <ButtonLink to={`/settings/organization?organizationId=${encodeURIComponent(grant.organizationId)}`} variant="primary">Manage profile and dates</ButtonLink>
               <ButtonLink to="/app/applications" variant="secondary">Applications</ButtonLink>
               <ButtonLink to="/app/meetings" variant="secondary">Meetings</ButtonLink>

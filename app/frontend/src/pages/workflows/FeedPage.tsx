@@ -75,14 +75,14 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
             onSubmitted={() => setComposerOpen(false)}
             context={(
               officerGrants.length > 1 ? (
-                <div className="field">
-                  <label className="label-row" htmlFor="announcement-organization">Posting organization</label>
-                  <select id="announcement-organization" className="control" value={selectedGrant.organizationId} onChange={(event) => setSelectedOrganizationId(event.target.value)}>
+                <div className="grid min-w-0 gap-1.5">
+                  <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="announcement-organization">Posting organization</label>
+                  <select id="announcement-organization" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={selectedGrant.organizationId} onChange={(event) => setSelectedOrganizationId(event.target.value)}>
                     {officerGrants.map((grant) => <option key={grant.organizationId} value={grant.organizationId}>{grant.organizationName}</option>)}
                   </select>
                 </div>
               ) : (
-                <p className="notice compact">Posting as {selectedGrant.organizationName}.</p>
+                <p className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm">Posting as {selectedGrant.organizationName}.</p>
               )
             )}
           />
@@ -98,7 +98,7 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
       {!loading && !error && data?.length === 0 ? (
         <EmptyState title="No announcements yet">When officers publish announcements, the newest posts will appear here.</EmptyState>
       ) : null}
-      <section className="content-stack feed-column" aria-label="Announcement feed">
+      <section className="grid gap-4 mx-auto w-[min(720px,100%)]" aria-label="Announcement feed">
         {data?.map((announcement) => (
           <AnnouncementCard key={announcement.id} announcement={announcement} session={session} client={client} onChanged={reload} />
         ))}

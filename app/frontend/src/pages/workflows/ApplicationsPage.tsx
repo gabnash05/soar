@@ -48,7 +48,7 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
           headers={['Organization', 'Opportunity', 'Stage', 'Last updated']}
           rows={data.map((application) => (
             <tr key={application.id}>
-              <td><Link className="org-author-link" to={`/app/organizations/${application.organizationId}`}>{application.organizationName}</Link></td>
+              <td><Link className="text-[var(--color-navy)] underline decoration-transparent underline-offset-4 hover:text-[var(--color-blue-deep)] hover:decoration-current focus-visible:text-[var(--color-blue-deep)] focus-visible:decoration-current" to={`/app/organizations/${application.organizationId}`}>{application.organizationName}</Link></td>
               <td>{application.opportunityTitle}</td>
               <td><StageChip stage={application.stage} /></td>
               <td>{new Date(application.updatedAt).toLocaleString()}</td>
@@ -74,7 +74,7 @@ export function ApplicationsView({ session, client }: { session: UserSession; cl
           <SubtabPanel baseId="applications" tabId="review" activeId={activeId}>
             <OfficerApplicationsReview session={session} client={client} />
           </SubtabPanel>
-          <SubtabPanel baseId="applications" tabId="mine" activeId={activeId} className="content-stack">
+          <SubtabPanel baseId="applications" tabId="mine" activeId={activeId} className="grid gap-4">
             {trackerContent}
           </SubtabPanel>
         </>

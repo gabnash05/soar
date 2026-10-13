@@ -73,13 +73,13 @@ export const ModalDialog = ({
           <DialogHeader className="sticky top-0 z-10 flex-row items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-white)] p-5">
             <div>
               <DialogTitle className="text-xl font-extrabold tracking-[-0.02em] text-[var(--color-navy)]">{title}</DialogTitle>
-              {description ? <DialogDescription className="mt-1 max-w-[58ch] text-[var(--color-muted)]">{description}</DialogDescription> : null}
+              {description ? <DialogDescription className="mt-1 max-w-[58ch] text-[var(--muted-foreground)]">{description}</DialogDescription> : null}
             </div>
             <Button type="button" variant="quiet" onClick={requestClose} aria-label={`Close ${title}`}>
               Close
             </Button>
           </DialogHeader>
-          <div className="modal-body min-w-0 p-5">{children}</div>
+          <div className="min-w-0 min-w-0 p-5">{children}</div>
         </DialogContent>
       </Dialog>
       <ConfirmDialog
@@ -127,9 +127,9 @@ export function ConfirmDialog({
       <AlertDialogContent className="rounded-2xl border-[var(--color-border)] bg-[var(--color-white)] text-[var(--color-ink)] shadow-[var(--shadow-floating)]">
         <AlertDialogHeader>
           <AlertDialogTitle className="text-lg font-extrabold text-[var(--color-navy)]">{title}</AlertDialogTitle>
-          <AlertDialogDescription className="text-[var(--color-muted)]">{description}</AlertDialogDescription>
+          <AlertDialogDescription className="text-[var(--muted-foreground)]">{description}</AlertDialogDescription>
         </AlertDialogHeader>
-        {error ? <p className="form-error" role="alert">{error}</p> : null}
+        {error ? <p className="rounded-[var(--radius-md)] border border-[var(--color-orange-deep)] bg-[var(--color-danger-soft)] px-3.5 py-3 text-[var(--color-navy)]" role="alert">{error}</p> : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction

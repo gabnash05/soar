@@ -298,6 +298,26 @@ describe('SOAR workflow pages', () => {
     expect(screen.getByRole('dialog', { name: /Add dated entry/i })).toBeInTheDocument();
   });
 
+  it('keeps one profile save action and confirms before persisting organization profile edits', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    client.saveOrganizationProfile = saveProfile;
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} />, ['/settings/organization?organizationId=robotics']);
+
+    const nameInput = await screen.findByLabelText(/^Organization name$/i);
+    expect(screen.getAllByRole('button', { name: /^Save profile$/i })).toHaveLength(1);
+    await user.type(nameInput, ' Updated');
+    await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+
+    const dialog = screen.getByRole('alertdialog', { name: /Save profile changes/i });
+    expect(dialog).toBeInTheDocument();
+    expect(saveProfile).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: /^Save profile$/i }));
+    await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+  });
+
   it('protects dirty profile edits before switching managed organizations', async () => {
     const user = userEvent.setup();
     const multiOfficerSession = {

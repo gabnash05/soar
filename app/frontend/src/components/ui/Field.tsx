@@ -14,23 +14,23 @@ interface FieldProps {
 }
 
 export const Field = ({ id, label, hint, error, optional, children }: FieldProps) => (
-  <div className="field grid min-w-0 gap-1.5">
-    <Label className="label-row flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)]" htmlFor={id}>
+  <div className="grid min-w-0 gap-1.5 grid min-w-0 gap-1.5">
+    <Label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)] flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)]" htmlFor={id}>
       <span>{label}</span>
-      {optional ? <span className="font-normal text-[var(--color-muted)]">Optional</span> : null}
+      {optional ? <span className="font-normal text-[var(--muted-foreground)]">Optional</span> : null}
     </Label>
     {children}
     {error ? (
-      <span className="help error text-xs font-bold text-[var(--color-orange-deep)]" role="alert">
+      <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)] text-xs font-bold text-[var(--color-orange-deep)]" role="alert">
         {error}
       </span>
     ) : hint ? (
-      <span className="help text-xs text-[var(--color-muted)]">{hint}</span>
+      <span className="text-xs text-[var(--muted-foreground)] text-xs text-[var(--muted-foreground)]">{hint}</span>
     ) : null}
   </div>
 );
 
-const controlClasses = 'control min-h-11 border-[var(--color-border)] bg-[var(--color-white)] text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus-visible:border-[var(--color-blue-deep)] focus-visible:ring-[var(--color-blue-soft)]';
+const controlClasses = 'control min-h-11 border-[var(--color-border)] bg-[var(--color-white)] text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] focus-visible:border-[var(--color-blue-deep)] focus-visible:ring-[var(--color-blue-soft)]';
 
 export const TextInput = ({ className = '', error, ...props }: InputHTMLAttributes<HTMLInputElement> & { error?: string }) => (
   <Input className={cn(controlClasses, error && 'error border-[var(--color-orange-deep)]', className)} aria-invalid={Boolean(error) || undefined} {...props} />

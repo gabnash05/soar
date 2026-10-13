@@ -18,9 +18,9 @@ const requestInputFromOption = (option?: DateEntry): MeetingRequestInput => ({
 
 export function MeetingDocumentButton({ request }: { request: MeetingRequest }) {
   const [message, setMessage] = useState('');
-  if (!request.document) return <span className="section-note">No document</span>;
+  if (!request.document) return <span className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No document</span>;
   return (
-    <div className="document-cell">
+    <div className="grid items-start gap-1.5 [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]">
       <Button
         type="button"
         variant="secondary"
@@ -36,7 +36,7 @@ export function MeetingDocumentButton({ request }: { request: MeetingRequest }) 
         Open document
       </Button>
       <span>{request.document.fileName} · {formatBytes(request.document.sizeBytes)}</span>
-      {message ? <span className="help error" role="alert">{message}</span> : null}
+      {message ? <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{message}</span> : null}
     </div>
   );
 }
@@ -133,16 +133,16 @@ export function MeetingsView({ session, client }: { session: UserSession; client
 
       <ModalDialog open={requestOpen} title="Request a meeting/interview" dirty={requestDirty} onClose={closeRequestDialog}>
         {requestOpen ? (
-          <form className="content-stack dialog-form" onSubmit={submit}>
-            <p className="section-note">Public dated events are informational; only meeting/interview availability can be requested.</p>
+          <form className="grid gap-4 grid gap-3.5" onSubmit={submit}>
+            <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">Public dated events are informational; only meeting/interview availability can be requested.</p>
             {options.length ? (
               <>
-                <div className="field">
-                  <label className="label-row" htmlFor="meeting-option">Posted availability</label>
+                <div className="grid min-w-0 gap-1.5">
+                  <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="meeting-option">Posted availability</label>
                   <select
                     data-autofocus
                     id="meeting-option"
-                    className="control"
+                    className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
                     value={form.dateEntryId}
                     onChange={(event) => {
                       const next = options.find((option) => option.id === event.target.value);
@@ -163,26 +163,26 @@ export function MeetingsView({ session, client }: { session: UserSession; client
                     ))}
                   </select>
                 </div>
-                {selectedOption ? <p className="help">{selectedOption.details}</p> : null}
-                <div className="grid grid-2">
-                  <div className="field">
-                    <label className="label-row" htmlFor="meeting-date">Requested date</label>
-                    <input id="meeting-date" className="control" type="date" value={form.requestedDate} onChange={(event) => patchForm({ requestedDate: event.target.value })} />
+                {selectedOption ? <p className="text-xs text-[var(--muted-foreground)]">{selectedOption.details}</p> : null}
+                <div className="grid md:grid-cols-2">
+                  <div className="grid min-w-0 gap-1.5">
+                    <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="meeting-date">Requested date</label>
+                    <input id="meeting-date" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="date" value={form.requestedDate} onChange={(event) => patchForm({ requestedDate: event.target.value })} />
                   </div>
-                  <div className="field">
-                    <label className="label-row" htmlFor="meeting-time">Requested time</label>
-                    <input id="meeting-time" className="control" type="time" value={form.requestedTime} onChange={(event) => patchForm({ requestedTime: event.target.value })} />
+                  <div className="grid min-w-0 gap-1.5">
+                    <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="meeting-time">Requested time</label>
+                    <input id="meeting-time" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.requestedTime} onChange={(event) => patchForm({ requestedTime: event.target.value })} />
                   </div>
                 </div>
-                <div className="field">
-                  <label className="label-row" htmlFor="meeting-note">Short note <span>Optional</span></label>
-                  <textarea id="meeting-note" className="control textarea" value={form.note} onChange={(event) => patchForm({ note: event.target.value })} placeholder="What do you want to discuss?" />
+                <div className="grid min-w-0 gap-1.5">
+                  <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="meeting-note">Short note <span>Optional</span></label>
+                  <textarea id="meeting-note" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.note} onChange={(event) => patchForm({ note: event.target.value })} placeholder="What do you want to discuss?" />
                 </div>
-                <div className="field">
-                  <label className="label-row" htmlFor="meeting-document">Formal request document <span>Optional</span></label>
+                <div className="grid min-w-0 gap-1.5">
+                  <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="meeting-document">Formal request document <span>Optional</span></label>
                   <input
                     id="meeting-document"
-                    className="control"
+                    className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
                     type="file"
                     accept="application/pdf"
                     onChange={(event) => {
@@ -198,8 +198,8 @@ export function MeetingsView({ session, client }: { session: UserSession; client
                       }
                     }}
                   />
-                  {documentError ? <span className="help error" role="alert">{documentError}</span> : <span className="help">PDF only, up to {formatBytes(MEETING_DOCUMENT_MAX_BYTES)}. Private access is limited to you and approved officers for this organization.</span>}
-                  {form.document ? <span className="help">Selected {form.document.fileName} · {formatBytes(form.document.sizeBytes)}</span> : null}
+                  {documentError ? <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{documentError}</span> : <span className="text-xs text-[var(--muted-foreground)]">PDF only, up to {formatBytes(MEETING_DOCUMENT_MAX_BYTES)}. Private access is limited to you and approved officers for this organization.</span>}
+                  {form.document ? <span className="text-xs text-[var(--muted-foreground)]">Selected {form.document.fileName} · {formatBytes(form.document.sizeBytes)}</span> : null}
                 </div>
                 <Button type="submit" variant="primary" disabled={busy || Boolean(documentError)}>{busy ? 'Sending…' : 'Send request as Pending'}</Button>
                 <ResultMessage result={result} />
@@ -218,8 +218,8 @@ export function MeetingsView({ session, client }: { session: UserSession; client
       ) : null}
 
       <SubtabPanel baseId="meetings" tabId="availability" activeId={activeId}>
-        <section className="surface-section compact-section">
-          <header className="section-heading inline-heading">
+        <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0 grid gap-3">
+          <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)] flex items-end justify-between gap-4 max-[820px]:flex-col max-[820px]:items-start">
             <div>
               <h2>Available meeting/interview dates</h2>
               <p>Choose a posted availability window, then send a request from the action above.</p>
@@ -227,17 +227,17 @@ export function MeetingsView({ session, client }: { session: UserSession; client
             {options.length ? <Button type="button" variant="secondary" onClick={openRequestDialog}>Request from this list</Button> : null}
           </header>
           {options.length ? (
-            <ul className="feed-list divided-list">
+            <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
               {options.map((entry) => (
                 <li key={entry.id}>
-                  <div className="feed-copy">
-                    <strong><Link className="org-author-link" to={`/app/organizations/${entry.organizationId}`}>{entry.organizationName}</Link> · {entry.title}</strong>
+                  <div className="min-w-0 flex-1 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:mt-0.5 [&_span]:block [&_span]:[overflow-wrap:anywhere] [&_span]:text-[0.88rem] [&_span]:text-[var(--muted-foreground)]">
+                    <strong><Link className="text-[var(--color-navy)] underline decoration-transparent underline-offset-4 hover:text-[var(--color-blue-deep)] hover:decoration-current focus-visible:text-[var(--color-blue-deep)] focus-visible:decoration-current" to={`/app/organizations/${entry.organizationId}`}>{entry.organizationName}</Link> · {entry.title}</strong>
                     <span>{formatDateEntry(entry)} · {entry.details}</span>
                   </div>
                 </li>
               ))}
             </ul>
-          ) : <p className="section-note">No availability records are loaded.</p>}
+          ) : <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No availability records are loaded.</p>}
         </section>
       </SubtabPanel>
 
@@ -248,7 +248,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
             headers={['Organization', 'Meeting title', 'Requested date/time', 'Status', 'Document', 'Meaning']}
             rows={requests.map((request) => (
               <tr key={request.id}>
-                <td><Link className="org-author-link" to={`/app/organizations/${request.organizationId}`}>{request.organizationName}</Link></td>
+                <td><Link className="text-[var(--color-navy)] underline decoration-transparent underline-offset-4 hover:text-[var(--color-blue-deep)] hover:decoration-current focus-visible:text-[var(--color-blue-deep)] focus-visible:decoration-current" to={`/app/organizations/${request.organizationId}`}>{request.organizationName}</Link></td>
                 <td>{request.meetingTitle}</td>
                 <td>{request.requestedDate}, {request.requestedTime}</td>
                 <td><MeetingStatusChip status={request.status} /></td>

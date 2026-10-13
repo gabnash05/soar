@@ -105,16 +105,16 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
             return tab;
           });
           return (
-            <section className="content-stack" aria-label="Managed organization settings">
-              <section className="management-context-bar" aria-label="Selected managed organization">
-                <div className="org-head">
+            <section className="grid gap-4" aria-label="Managed organization settings">
+              <section className="flex flex-wrap items-center justify-between gap-3.5 border-b border-[var(--color-border)] pb-4 pt-2.5 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[1.15rem] [&_h2]:font-bold [&_h2]:leading-tight [&_h2]:text-[var(--color-navy)]" aria-label="Selected managed organization">
+                <div className="flex min-w-0 items-center gap-3 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[1.05rem] [&_h2]:font-bold [&_h2]:leading-tight [&_h2]:text-[var(--color-navy)] [&_h3]:m-0 [&_h3]:font-[var(--font-display)] [&_h3]:text-[1.05rem] [&_h3]:font-bold [&_h3]:leading-tight [&_h3]:text-[var(--color-navy)]">
                   <OrganizationAvatar name={dashboard.organization.name} logoUrl={dashboard.organization.logoUrl} />
                   <div>
                     <h2>{dashboard.organization.name}</h2>
-                    <p className="section-note">{dashboard.organization.shortDescription}</p>
+                    <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">{dashboard.organization.shortDescription}</p>
                   </div>
                 </div>
-                <div className="component-row">
+                <div className="flex flex-wrap items-center gap-2">
                   <RoleBadge kind="officer">Approved officer access</RoleBadge>
                   {profileDirty ? <StatusChip tone="attention">Unsaved profile edits</StatusChip> : null}
                 </div>

@@ -81,7 +81,7 @@ export const CheckoutStatusPage = () => {
 
   if (!intentId) {
     return (
-      <main className="auth-page">
+      <main className="grid min-h-screen place-items-center p-[clamp(18px,4vw,48px)] max-sm:px-3.5">
         <StateBlock symbol="!" title="Checkout intent missing" actions={<ButtonLink to="/register" variant="secondary">Start registration</ButtonLink>}>
           Start from registration so SOAR can link the payment intent to your future account.
         </StateBlock>
@@ -90,34 +90,34 @@ export const CheckoutStatusPage = () => {
   }
 
   return (
-    <main className="auth-page wide">
-      <Card className="auth-card split-card">
+    <main className="grid min-h-screen place-items-center p-[clamp(18px,4vw,48px)] max-sm:px-3.5 items-center">
+      <Card className="w-[min(520px,100%)] grid w-[min(980px,100%)] gap-[clamp(20px,4vw,44px)] md:grid-cols-[minmax(0,0.9fr)_minmax(280px,1fr)]">
         <div>
-          <div className="auth-logo"><SoarLogo /><span>SOAR</span></div>
-          <p className="eyebrow">Checkout status</p>
+          <div className="mb-5 inline-flex items-center gap-2 font-[var(--font-display)] text-xl font-extrabold leading-none text-[var(--color-navy)]"><SoarLogo /><span>SOAR</span></div>
+          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">Checkout status</p>
           <h1>Confirm six-month access</h1>
           {loading ? <LoadingBlock label="Checking payment status" /> : null}
           {status ? (
-            <div className="status-panel">
+            <div className="my-[18px] grid gap-2.5 rounded-[var(--radius-md)] bg-[var(--color-off-white)] p-4">
               <StatusChip tone={status.canCreateAccount ? 'approved' : status.status === 'pending' ? 'attention' : 'danger'}>{status.status}</StatusChip>
               <h2>{status.canCreateAccount ? 'Payment confirmed' : 'Account creation locked'}</h2>
               <p>{status.message}</p>
-              <dl className="summary-list">
+              <dl className="mt-[18px] grid gap-px overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-border)] p-0 [&_div]:grid [&_div]:grid-cols-[minmax(120px,0.45fr)_minmax(0,1fr)] [&_div]:gap-3 [&_div]:bg-[var(--color-white)] [&_div]:p-3 max-[820px]:[&_div]:grid-cols-1 max-[820px]:[&_div]:gap-0.5 [&_dt]:text-[13px] [&_dt]:text-[var(--muted-foreground)] [&_dd]:m-0 [&_dd]:[overflow-wrap:anywhere] [&_dd]:font-bold [&_dd]:text-[var(--color-navy)]">
                 <div><dt>Intent</dt><dd>{status.intentId}</dd></div>
                 <div><dt>Amount</dt><dd>PHP{status.amountPhp}</dd></div>
                 <div><dt>Reference</dt><dd>{status.providerReference || 'Not confirmed yet'}</dd></div>
               </dl>
             </div>
           ) : null}
-          {gateway.mode === 'fixture' ? <div className="notice compact warning">Demo payment confirmation is simulated locally.</div> : null}
-          <div className="auth-links"><Link to="/register">Start over</Link><Link to="/login">Sign in instead</Link></div>
+          {gateway.mode === 'fixture' ? <div className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm bg-[var(--color-orange-soft)] text-[var(--color-navy)]">Demo payment confirmation is simulated locally.</div> : null}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 font-bold text-[var(--color-blue-deep)] max-sm:flex-col max-sm:items-stretch"><Link to="/register">Start over</Link><Link to="/login">Sign in instead</Link></div>
         </div>
 
-        <form onSubmit={handleCreate} className="form-grid" aria-disabled={!status?.canCreateAccount}>
+        <form onSubmit={handleCreate} className="grid content-start gap-3.5" aria-disabled={!status?.canCreateAccount}>
           <h2>Create account</h2>
-          <p className="card-note">This step is enabled only after provider-confirmed payment. Email verification is still required before the main app.</p>
-          {(localError || error) ? <div className="form-error" role="alert">{localError || error}</div> : null}
-          <dl className="summary-list compact-summary">
+          <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">This step is enabled only after provider-confirmed payment. Email verification is still required before the main app.</p>
+          {(localError || error) ? <div className="rounded-[var(--radius-md)] border border-[var(--color-orange-deep)] bg-[var(--color-danger-soft)] px-3.5 py-3 text-[var(--color-navy)]" role="alert">{localError || error}</div> : null}
+          <dl className="mt-[18px] grid gap-px overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-border)] p-0 [&_div]:grid [&_div]:grid-cols-[minmax(120px,0.45fr)_minmax(0,1fr)] [&_div]:gap-3 [&_div]:bg-[var(--color-white)] [&_div]:p-3 max-[820px]:[&_div]:grid-cols-1 max-[820px]:[&_div]:gap-0.5 [&_dt]:text-[13px] [&_dt]:text-[var(--muted-foreground)] [&_dd]:m-0 [&_dd]:[overflow-wrap:anywhere] [&_dd]:font-bold [&_dd]:text-[var(--color-navy)] mt-0">
             <div><dt>Name</dt><dd>{draft?.displayName || 'Missing draft'}</dd></div>
             <div><dt>Email</dt><dd>{draft?.email || 'Missing draft'}</dd></div>
             <div><dt>Account type</dt><dd>{draft?.role === 'sponsor' ? 'Sponsor' : 'Student'}</dd></div>

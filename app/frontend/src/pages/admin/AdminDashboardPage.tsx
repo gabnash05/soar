@@ -11,8 +11,8 @@ import {
 
 function DepartmentTable({ data }: { data: AdminStatistics }) {
   return (
-    <div className="table-scroll" role="region" aria-label="Registered students by department">
-      <table className="data-table department-table">
+    <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)]" role="region" aria-label="Registered students by department">
+      <table className="w-full min-w-[640px] border-collapse [&_caption]:px-3 [&_caption]:py-2.5 [&_caption]:text-left [&_caption]:text-[0.85rem] [&_caption]:font-bold [&_caption]:text-[var(--muted-foreground)] [&_th]:border-b [&_th]:border-[var(--color-border)] [&_th]:bg-[var(--color-off-white)] [&_th]:p-3 [&_th]:text-left [&_th]:align-top [&_th]:text-[0.82rem] [&_th]:uppercase [&_th]:tracking-[0.04em] [&_th]:text-[var(--color-navy)] [&_td]:border-b [&_td]:border-[var(--color-border)] [&_td]:p-3 [&_td]:text-left [&_td]:align-top min-w-[420px]">
         <caption>Registered student accounts across SOAR grouped by saved department. No student identities, emails, applications, or organization membership data are included.</caption>
         <thead>
           <tr>
@@ -72,28 +72,28 @@ export function AdminDashboardView({ session, client }: { session: UserSession; 
       {loading ? <LoadingBlock label="Loading aggregate statistics" /> : null}
       {error ? <ErrorState onRetry={reload}>{error}</ErrorState> : null}
       {data && !loading && !error ? (
-        <section className="content-stack" aria-label="Aggregate SOAR statistics">
+        <section className="grid gap-4" aria-label="Aggregate SOAR statistics">
           {client.mode === 'fixture' ? (
-            <p className="notice compact">Demo mode: admin statistics are simulated aggregate data. Missing legacy department data is labelled honestly.</p>
+            <p className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm">Demo mode: admin statistics are simulated aggregate data. Missing legacy department data is labelled honestly.</p>
           ) : sourceMessage ? (
-            <p className="notice compact">{sourceMessage}</p>
+            <p className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm">{sourceMessage}</p>
           ) : null}
-          <div className="grid grid-3">
-            <section className="department-stat-summary">
+          <div className="grid md:grid-cols-3">
+            <section className="grid w-[min(320px,100%)] gap-0.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)] p-4 [&_strong]:font-[var(--font-display)] [&_strong]:text-[2.4rem] [&_strong]:font-black [&_strong]:leading-none [&_strong]:tracking-[-0.04em] [&_strong]:text-[var(--color-navy)] [&_span]:text-[var(--muted-foreground)]">
               <strong>{data.students.totalRegisteredStudents}</strong>
               <span>registered student accounts</span>
             </section>
-            <section className="department-stat-summary">
+            <section className="grid w-[min(320px,100%)] gap-0.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)] p-4 [&_strong]:font-[var(--font-display)] [&_strong]:text-[2.4rem] [&_strong]:font-black [&_strong]:leading-none [&_strong]:tracking-[-0.04em] [&_strong]:text-[var(--color-navy)] [&_span]:text-[var(--muted-foreground)]">
               <strong>{data.students.departments.length}</strong>
               <span>saved department groups</span>
             </section>
-            <section className="department-stat-summary">
+            <section className="grid w-[min(320px,100%)] gap-0.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)] p-4 [&_strong]:font-[var(--font-display)] [&_strong]:text-[2.4rem] [&_strong]:font-black [&_strong]:leading-none [&_strong]:tracking-[-0.04em] [&_strong]:text-[var(--color-navy)] [&_span]:text-[var(--muted-foreground)]">
               <strong>{data.organizations.totalOrganizations}</strong>
               <span>registered organizations</span>
             </section>
           </div>
           <DepartmentTable data={data} />
-          <p className="section-note">Generated {new Date(data.generatedAt).toLocaleString()}. Counts are registered SOAR accounts, not organization members or applicants.</p>
+          <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">Generated {new Date(data.generatedAt).toLocaleString()}. Counts are registered SOAR accounts, not organization members or applicants.</p>
         </section>
       ) : null}
     </WorkflowPageFrame>

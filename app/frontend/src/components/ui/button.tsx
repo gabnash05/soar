@@ -8,16 +8,16 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        default: "bg-[var(--color-gold)] text-[var(--color-navy)] hover:bg-[oklch(76%_0.1663_78.4)]",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-[var(--color-border)] bg-[var(--color-white)] text-[var(--color-navy)] hover:bg-[var(--color-navy-soft)] hover:text-[var(--color-navy)] aria-expanded:bg-[var(--color-navy-soft)] aria-expanded:text-[var(--color-navy)] dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-[var(--color-navy-soft)] text-[var(--color-navy)] hover:bg-[color-mix(in_oklch,var(--color-navy-soft),var(--color-navy)_5%)] aria-expanded:bg-[var(--color-navy-soft)] aria-expanded:text-[var(--color-navy)]",
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+          "text-[var(--color-blue-deep)] hover:bg-[var(--color-blue-soft)] hover:text-[var(--color-blue-deep)] aria-expanded:bg-[var(--color-blue-soft)] aria-expanded:text-[var(--color-blue-deep)] dark:hover:bg-muted/50",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
-        link: "text-primary underline-offset-4 hover:underline",
+          "bg-[var(--color-danger-soft)] text-[var(--color-orange-deep)] hover:bg-[color-mix(in_oklch,var(--color-danger-soft),var(--color-orange-deep)_12%)] focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+        link: "text-[var(--color-blue-deep)] underline-offset-4 hover:underline",
       },
       size: {
         default:

@@ -67,27 +67,27 @@ export const RegistrationIntentPage = () => {
   };
 
   return (
-    <main className="auth-page wide">
-      <Card className="auth-card split-card">
+    <main className="grid min-h-screen place-items-center p-[clamp(18px,4vw,48px)] max-sm:px-3.5 items-center">
+      <Card className="w-[min(520px,100%)] grid w-[min(980px,100%)] gap-[clamp(20px,4vw,44px)] md:grid-cols-[minmax(0,0.9fr)_minmax(280px,1fr)]">
         <div>
-          <div className="auth-logo"><SoarLogo /><span>SOAR</span></div>
-          <p className="eyebrow">Payment before account creation</p>
+          <div className="mb-5 inline-flex items-center gap-2 font-[var(--font-display)] text-xl font-extrabold leading-none text-[var(--color-navy)]"><SoarLogo /><span>SOAR</span></div>
+          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">Payment before account creation</p>
           <h1>Start six-month access</h1>
-          <p className="card-note">
+          <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">
 SOAR costs PHP10 per account for six months. Account creation unlocks after a successful checkout.
           </p>
-          <div className="notice compact">
+          <div className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm">
             Officers do not choose a separate signup. Register as a student with student ID; organization owners or admins grant officer access later.
           </div>
-          {gateway.mode === 'fixture' ? <div className="notice compact warning">Demo checkout is simulated locally and does not create a real charge.</div> : null}
-          <ol className="mini-steps">
+          {gateway.mode === 'fixture' ? <div className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm bg-[var(--color-orange-soft)] text-[var(--color-navy)]">Demo checkout is simulated locally and does not create a real charge.</div> : null}
+          <ol className="m-0 grid list-none gap-3 p-0 [&_li]:grid [&_li]:grid-cols-[minmax(0,0.35fr)_minmax(0,1fr)] [&_li]:items-start [&_li]:gap-2.5 [&_li]:border-t [&_li]:border-[var(--color-border)] [&_li]:py-3 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:block [&_span]:text-[13px] [&_span]:text-[var(--muted-foreground)]">
             <li><strong>Account type</strong><span>Choose student or sponsor.</span></li>
             <li><strong>Checkout</strong><span>Pay the PHP10 six-month access fee.</span></li>
             <li><strong>Create account</strong><span>Complete your details after payment is confirmed.</span></li>
           </ol>
         </div>
-        <form onSubmit={handleSubmit} className="form-grid" noValidate>
-          {(localError || error) ? <div className="form-error" role="alert">{localError || error}</div> : null}
+        <form onSubmit={handleSubmit} className="grid content-start gap-3.5" noValidate>
+          {(localError || error) ? <div className="rounded-[var(--radius-md)] border border-[var(--color-orange-deep)] bg-[var(--color-danger-soft)] px-3.5 py-3 text-[var(--color-navy)]" role="alert">{localError || error}</div> : null}
           <Field id="role" label="Account type">
             <Select id="role" value={role} onChange={(event) => setRole(event.target.value as RegistrationRoleIntent)}>
               <option value="student">Student (also used for future officers)</option>
@@ -115,7 +115,7 @@ SOAR costs PHP10 per account for six months. Account creation unlocks after a su
             </Field>
           )}
           <Button type="submit" disabled={submitting}>{submitting ? 'Creating checkout…' : 'Continue to PHP10 checkout'}</Button>
-          <div className="auth-links">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 font-bold text-[var(--color-blue-deep)] max-sm:flex-col max-sm:items-stretch">
             <Link to="/login">Already have an account?</Link>
             <ButtonLink to="/" variant="quiet">Back</ButtonLink>
           </div>

@@ -1,5 +1,6 @@
 import { useEffect, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { cn } from '../../lib/utils';
 
 export interface SubtabItem {
   id: string;
@@ -62,8 +63,8 @@ export function SubtabNav({
   };
 
   return (
-    <nav className="subtab-nav" aria-label={label}>
-      <div className="subtab-list" role="tablist" aria-label={label} onKeyDown={handleKeyDown}>
+    <nav className="min-w-0 border-b border-[var(--color-border)]" aria-label={label}>
+      <div className="flex min-w-0 gap-1.5 overflow-x-auto pb-px [scrollbar-width:thin]" role="tablist" aria-label={label} onKeyDown={handleKeyDown}>
         {items.map((item) => {
           const selected = item.id === activeId;
           return (
@@ -74,7 +75,11 @@ export function SubtabNav({
               aria-selected={selected}
               aria-controls={`${baseId}-panel-${item.id}`}
               tabIndex={selected ? 0 : -1}
-              className={`subtab ${selected ? 'active' : ''}`.trim()}
+              className={cn(
+                'inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-t-[10px] px-3.5 font-extrabold whitespace-nowrap text-[var(--muted-foreground)] no-underline hover:bg-[var(--color-navy-soft)] hover:text-[var(--color-navy)]',
+                '[&_strong]:grid [&_strong]:min-h-[22px] [&_strong]:min-w-[22px] [&_strong]:place-items-center [&_strong]:rounded-full [&_strong]:bg-[var(--color-gold-soft)] [&_strong]:px-1.5 [&_strong]:text-xs [&_strong]:text-[var(--color-navy)]',
+                selected && 'bg-[var(--color-white)] text-[var(--color-navy)] shadow-[inset_0_-3px_0_var(--color-gold)]',
+              )}
               to={getTabTo(item.id)}
             >
               <span>{item.label}</span>
@@ -106,7 +111,7 @@ export function SubtabPanel({
       role="tabpanel"
       aria-labelledby={`${baseId}-tab-${tabId}`}
       hidden={activeId !== tabId}
-      className={`subtab-panel ${className}`.trim()}
+      className={cn('block', className)}
     >
       {children}
     </section>
