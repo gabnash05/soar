@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { SoarLogo } from './SoarLogo';
 import { Button, RoleBadge, StatusChip } from './ui';
 import { useAuth } from '../context/AuthContext';
-import { hasActiveAccess, hasApprovedOfficerGrant, isStudentAccount } from '../lib/contracts';
+import { hasActiveAccess, hasApprovedOfficerGrant, isStatsAdminAccount, isStudentAccount } from '../lib/contracts';
 import { appNavRoutes } from '../router/nav';
 
 const firstApprovedGrant = (session: NonNullable<ReturnType<typeof useAuth>['session']>) =>
@@ -19,17 +19,20 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
   const activeAccess = hasActiveAccess(session);
   const officer = hasApprovedOfficerGrant(session);
   const student = isStudentAccount(session);
+  const statsAdmin = isStatsAdminAccount(session);
 
   const navRoutes = useMemo(
     () =>
       appNavRoutes.filter((route) => {
-        if (route.requiresStudent && !student) return false;
-        if (route.requiresOfficerGrant && !officer) return false;
-        if (route.requiresActiveAccess && !activeAccess) return false;
-        if (!activeAccess && !allowLockedMain && route.to.startsWith('/app')) return false;
+        if (route.requiresAdmin && !statsAdmin) return false;
+        if (!statsAdmin && route.requiresStudent && !student) return false;
+        if (!statsAdmin && route.requiresOfficerGrant && !officer) return false;
+        if (!statsAdmin && route.requiresActiveAccess && !activeAccess) return false;
+        if (!statsAdmin && !activeAccess && !allowLockedMain && route.to.startsWith('/app')) return false;
+        if (statsAdmin && route.to !== '/admin' && route.to !== '/settings/account') return false;
         return true;
       }),
-    [activeAccess, allowLockedMain, officer, student],
+    [activeAccess, allowLockedMain, officer, statsAdmin, student],
   );
 
   const handleSignOut = async () => {
@@ -52,8 +55,8 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
     return to;
   };
 
-  const accessTone = activeAccess ? 'approved' : session.access.status === 'expired' ? 'attention' : 'danger';
-  const accessLabel = activeAccess ? 'Active access' : session.access.status === 'expired' ? 'Expired access' : 'Access locked';
+  const accessTone = statsAdmin ? 'info' : activeAccess ? 'approved' : session.access.status === 'expired' ? 'attention' : 'danger';
+  const accessLabel = statsAdmin ? 'Admin statistics' : activeAccess ? 'Active access' : session.access.status === 'expired' ? 'Expired access' : 'Access locked';
 
   return (
     <div className="app-shell">
@@ -68,7 +71,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
         >
           Menu
         </Button>
-        <NavLink className="brand-lockup" to={activeAccess ? '/app' : '/settings/access'}>
+        <NavLink className="brand-lockup" to={statsAdmin ? '/admin' : activeAccess ? '/app' : '/settings/access'}>
           <SoarLogo />
           <span>
             <strong>SOAR</strong>
@@ -87,16 +90,21 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
             <SoarLogo />
             <div>
               <strong>{session.displayName}</strong>
-              <div className="role-badge-row">
-                <RoleBadge kind={session.accountKind}>{session.accountKind === 'student' ? 'Student' : 'Sponsor'}</RoleBadge>
-                {officer ? <RoleBadge kind="officer">Approved officer</RoleBadge> : null}
-              </div>
+              {gateway.mode === 'fixture' ? (
+                <div className="role-badge-row" aria-label="Demo persona roles">
+                  <span className="sr-only">Demo persona</span>
+                  <RoleBadge kind={session.accountKind}>{session.accountKind === 'admin' ? 'Stats admin' : session.accountKind === 'student' ? 'Student' : 'Sponsor'}</RoleBadge>
+                  {officer ? <RoleBadge kind="officer">Approved officer</RoleBadge> : null}
+                </div>
+              ) : (
+                <small>{statsAdmin ? 'Stats admin' : session.email}</small>
+              )}
             </div>
           </div>
           {!session.emailVerified ? (
             <div className="sidebar-alert">Verify your email before using the main app.</div>
           ) : null}
-          {!activeAccess ? (
+          {!statsAdmin && !activeAccess ? (
             <div className="sidebar-alert">Main SOAR pages are locked until PHP10 six-month access is active.</div>
           ) : null}
           <nav className="app-nav" aria-label="SOAR sections">
@@ -115,7 +123,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
               );
             })}
           </nav>
-          {officer && defaultManagedGrant ? (
+          {!statsAdmin && officer && defaultManagedGrant ? (
             <div className="grant-card">
               <span>Officer permission</span>
               <strong>{defaultManagedGrant.organizationName}</strong>

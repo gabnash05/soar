@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { SoarLogo } from '../../components/SoarLogo';
-import { ButtonLink, Card, StatusChip } from '../../components/ui';
+import { ButtonLink, Card, RoleBadge } from '../../components/ui';
 
 export const EntryPage = () => (
   <main className="entry-page">
@@ -27,17 +27,17 @@ export const EntryPage = () => (
 
     <section className="entry-grid" aria-label="SOAR capabilities">
       <Card>
-        <StatusChip tone="approved">Students</StatusChip>
+        <RoleBadge kind="student">Student workspace</RoleBadge>
         <h2>Track applications honestly</h2>
         <p>Opening an external form never counts as a submission. Students explicitly confirm in SOAR after returning from the form.</p>
       </Card>
       <Card>
-        <StatusChip tone="info">Sponsors</StatusChip>
+        <RoleBadge kind="sponsor">Sponsor workspace</RoleBadge>
         <h2>Browse and request meetings</h2>
         <p>Sponsors can view organization information and meeting status without unrelated application or officer tools.</p>
       </Card>
       <Card>
-        <StatusChip tone="progress">Officers</StatusChip>
+        <RoleBadge kind="officer">Approved officer grant</RoleBadge>
         <h2>Organization grants only</h2>
         <p>Officers manage only the organizations where they have access, with controls placed on the relevant pages.</p>
       </Card>

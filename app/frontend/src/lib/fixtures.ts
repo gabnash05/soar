@@ -50,26 +50,30 @@ const expiredAccess = (): AccessEntitlement => ({
 const makeFixtureSession = (email: string, overrides: Partial<UserSession> = {}): UserSession => {
   const lower = email.toLowerCase();
   const sponsor = lower.includes('sponsor');
+  const admin = lower.includes('admin');
   const officer = lower.includes('officer');
   const expired = lower.includes('expired');
   const unverified = lower.includes('unverified');
-  const fixtureUid = lower.includes('sponsor')
-    ? 'sponsor-1'
-    : lower.includes('officer')
-      ? 'officer-1'
-      : lower.includes('student')
-        ? 'student-1'
-        : `fixture-${lower.replace(/[^a-z0-9]+/g, '-')}`;
+  const fixtureUid = lower.includes('admin')
+    ? 'admin-1'
+    : lower.includes('sponsor')
+      ? 'sponsor-1'
+      : lower.includes('officer')
+        ? 'officer-1'
+        : lower.includes('student')
+          ? 'student-1'
+          : `fixture-${lower.replace(/[^a-z0-9]+/g, '-')}`;
   return {
     uid: fixtureUid,
     email,
-    displayName: sponsor ? 'Sam Sponsor' : officer ? 'Mara Officer' : 'Mara Santos',
-    accountKind: sponsor ? 'sponsor' : 'student',
-    studentId: sponsor ? undefined : '2026-0001',
-    department: sponsor ? undefined : 'Computer Science',
+    displayName: admin ? 'SOAR Stats Admin' : sponsor ? 'Sam Sponsor' : officer ? 'Mara Officer' : 'Mara Santos',
+    accountKind: admin ? 'admin' : sponsor ? 'sponsor' : 'student',
+    studentId: sponsor || admin ? undefined : '2026-0001',
+    department: sponsor || admin ? undefined : 'Computer Science',
     companyName: sponsor ? 'Community Partner Co.' : undefined,
+    admin: admin ? { statistics: true } : undefined,
     emailVerified: !unverified,
-    access: expired ? expiredAccess() : activeAccess(),
+    access: admin ? { status: 'missing', annualFeePhp: 10, feePhp: 10, periodMonths: 6, periodLabel: '6 months', renewalAvailable: false } : expired ? expiredAccess() : activeAccess(),
     officerGrants: officer
       ? [
           {
@@ -156,7 +160,7 @@ export const createFixtureGateway = (): BackendGateway => ({
   async signIn(input) {
     if (!input.email.includes('@')) {
       throw new ValidationProblemError('Use one of the named fixture emails.', {
-        email: 'Try student@example.edu, officer@example.edu, sponsor@example.com, expired@example.edu, or unverified@example.edu.',
+        email: 'Try student@example.edu, officer@example.edu, sponsor@example.com, admin@example.test, expired@example.edu, or unverified@example.edu.',
       });
     }
     const session = makeFixtureSession(input.email);

@@ -79,7 +79,7 @@ export const AccountSettingsPage = () => {
             <Button type="submit" disabled={savingName}>{savingName ? 'Saving…' : 'Save name'}</Button>
           </form>
           <dl className="summary-list">
-            <div><dt>Account type</dt><dd><RoleBadge kind={session.accountKind}>{session.accountKind === 'student' ? 'Student' : 'Sponsor'}</RoleBadge></dd></div>
+            <div><dt>Account type</dt><dd><RoleBadge kind={session.accountKind}>{session.accountKind === 'admin' ? 'Stats admin' : session.accountKind === 'student' ? 'Student' : 'Sponsor'}</RoleBadge></dd></div>
             {session.studentId ? <div><dt>Student ID</dt><dd>{session.studentId}</dd></div> : null}
             {session.department ? <div><dt>Department</dt><dd>{session.department}</dd></div> : null}
             {session.companyName ? <div><dt>Company / organization</dt><dd>{session.companyName}</dd></div> : null}

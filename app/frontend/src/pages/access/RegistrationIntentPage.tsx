@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { SoarLogo } from '../../components/SoarLogo';
 import { Button, ButtonLink, Card, Field, Select, TextInput } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
-import type { AccountKind, RegistrationPaymentInput } from '../../lib/contracts';
+import type { RegistrationPaymentInput, RegistrationRoleIntent } from '../../lib/contracts';
 import { navigateToHostedCheckout } from '../../lib/redirects';
 
 const DRAFT_KEY = 'soar:registration-draft';
@@ -25,7 +25,7 @@ const writeRegistrationDraft = (draft: RegistrationPaymentInput & { intentId?: s
 
 export const RegistrationIntentPage = () => {
   const { startRegistrationPayment, error, clearError, gateway } = useAuth();
-  const [role, setRole] = useState<AccountKind>('student');
+  const [role, setRole] = useState<RegistrationRoleIntent>('student');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [studentId, setStudentId] = useState('');
@@ -89,7 +89,7 @@ SOAR costs PHP10 per account for six months. Account creation unlocks after a su
         <form onSubmit={handleSubmit} className="form-grid" noValidate>
           {(localError || error) ? <div className="form-error" role="alert">{localError || error}</div> : null}
           <Field id="role" label="Account type">
-            <Select id="role" value={role} onChange={(event) => setRole(event.target.value as AccountKind)}>
+            <Select id="role" value={role} onChange={(event) => setRole(event.target.value as RegistrationRoleIntent)}>
               <option value="student">Student (also used for future officers)</option>
               <option value="sponsor">Sponsor / outside user</option>
             </Select>

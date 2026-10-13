@@ -36,12 +36,13 @@ SOAR is successful when the delivered hosted website:
 | Student | Discover organizations, read announcements, follow application instructions, confirm external-form submission, track application stages, request meetings/interviews, and manage allowed personal settings. | Name, email, password, student ID number, optional department, email verification, and confirmed six-month payment before account creation. | Announcements, organization directory/profiles, application tracker, meeting tracker, personal account settings, payment/access status. |
 | Organization officer | Manage an approved organization and its operational workflows. Officers are also students for account-identification purposes. | Name, email, password, student ID number, optional department, email verification, confirmed six-month payment before account creation, and officer access approved through the organization-owner process. | Officer dashboard, organization settings, recruitment settings, announcements, applicants, calendar/date entries, meeting requests, personal account settings, payment/access status. |
 | Sponsor | Outside-user role with no special sponsor-only tools. Sponsors can view organization information and request meetings through an account. | Name, email, password, email verification, optional company/organization name, and confirmed six-month payment before account creation. No TIN or government ID is required by the confirmed scope. | Role-appropriate browsing, organization profiles, announcements, meeting requests/tracking, personal account settings, payment/access status. |
+| Provisioned stats admin | Read-only aggregate statistics for project oversight. This is not public signup and not a general superuser role. | Trusted operator provisions Firebase claim plus backend account fields outside the public app. No paid student access is required for the admin statistics dashboard only. | Aggregate student totals/per-department counts and organization count. No identities, private documents, org editing, payment overrides, or user-management powers. |
 
 ### Organization ownership and officer access
 
 - A project administrator assigns each organization's initial owner.
 - The initial owner approves officer access for that organization.
-- This is a controlled setup/approval workflow only. It should not be expanded into a general admin dashboard, membership-management system, or sponsor tooling unless a later scope change approves that work.
+- This is a controlled setup/approval workflow only. The only approved admin surface is the narrow read-only aggregate statistics dashboard; it is not a general admin dashboard, membership-management system, or sponsor tooling.
 - There is no initial proof-of-election/proof-upload requirement in the confirmed scope.
 
 ### Personal-account vs organization settings
@@ -84,7 +85,7 @@ SOAR is successful when the delivered hosted website:
 - Officers can publish text announcements with up to four images and can delete their own posts.
 - Posts show newest first with organization name, logo, and posting date.
 - Posts appear consistently in the main feed and on the organization profile.
-- Users can like/unlike a post, copy a direct post link, open comments, add a comment, and edit/delete their own comments.
+- Users can like/unlike a post, use the Share action to copy a direct post link, open comments, add a comment, and edit/delete their own comments.
 - Like counts and saved comment counts remain consistent across pages.
 - Empty posts/comments and failed saves produce clear messages.
 
@@ -121,6 +122,7 @@ SOAR is successful when the delivered hosted website:
   - applicants
   - calendar/date entries
   - meeting requests
+- Student department statistics are no longer shown in organization management. They are visible only in the provisioned admin aggregate dashboard.
 - Use readable status labels, clear save messages, and confirmation before deleting a post or calendar entry.
 - Officers manage only organizations for which they have approved access.
 
@@ -197,7 +199,7 @@ The classmate site should be used later as a minimum quality comparison for poli
 | Included pages are readable on phones and computers; navigation, forms, images, and tables fit; loading/empty/error messages are clear. | Layout and design; UI/UX baseline. |
 | Registration, sign-in, sign-out, email verification, and email password recovery work; role-specific registration details match the confirmed scope. | Accounts, roles, and settings. |
 | Name changes follow the 30-day limit, and email changes take effect after verification of the new address. | Personal-account settings. |
-| Organization owner/officer access is limited to approved organization management without adding a general admin dashboard or membership system. | Organization ownership and officer access; officer dashboard. |
+| Organization owner/officer access is limited to approved organization management, while the provisioned admin dashboard remains aggregate-read-only and not a membership system. | Organization ownership and officer access; officer dashboard; admin aggregate statistics. |
 | Name search finds organizations; profile changes, posts, images, likes, and comments appear correctly in directory, feed, and profile pages. | Organizations/profiles; announcements; image uploads. |
 | Application links open; only explicit confirmed external submissions enter checking; officer stage changes appear in the student tracker without duplicate entries per recruitment opportunity/position. | Applications. |
 | Officers can add, change, and remove calendar entries; permitted images save and display after refresh and sign-in. | Calendar/date entries; image uploads; saved data. |
@@ -223,7 +225,7 @@ The following are outside the agreed scope unless separately approved:
 - post/application/meeting alerts by email, text, or push notification
 - a native phone app
 - automatic recurring charges
-- a general admin dashboard or full membership-management system
+- a general admin dashboard or full membership-management system beyond the approved read-only aggregate statistics page
 
 Do not treat unanswered product questions or implementation convenience as permission to add any of these.
 

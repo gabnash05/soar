@@ -105,12 +105,7 @@ export function OrganizationView({ organizationId, session, client }: { organiza
   ];
   const { activeId, getTabTo } = useQueryTab(tabItems.map((item) => item.id), 'feed');
 
-  const headerActions = (
-    <>
-      <ButtonLink to="/app/meetings" variant="primary">Request meeting</ButtonLink>
-      <ButtonLink to="/app/directory" variant="secondary">Back to directory</ButtonLink>
-    </>
-  );
+  const headerActions = <ButtonLink to="/app/directory" variant="secondary">Back to directory</ButtonLink>;
 
   return (
     <WorkflowPageFrame
@@ -181,9 +176,14 @@ export function OrganizationView({ organizationId, session, client }: { organiza
           </SubtabPanel>
 
           <SubtabPanel baseId="organization-profile" tabId="dates" activeId={activeId}>
-            <section className="grid grid-2 profile-date-grid">
-              <DateEntryList title="Dated public events" entries={split.events} emptyCopy="No public event dates are posted for this organization yet." />
-              <DateEntryList title="Meeting/interview availability" entries={split.availability} emptyCopy="No requestable meeting or interview availability is posted yet." />
+            <section className="content-stack">
+              <div className="grid grid-2 profile-date-grid">
+                <DateEntryList title="Dated public events" entries={split.events} emptyCopy="No public event dates are posted for this organization yet." />
+                <DateEntryList title="Meeting/interview availability" entries={split.availability} emptyCopy="No requestable meeting or interview availability is posted yet." />
+              </div>
+              <div className="button-row">
+                <ButtonLink to={`/app/meetings?organizationId=${encodeURIComponent(organization.id)}`} variant="primary">Request meeting</ButtonLink>
+              </div>
             </section>
           </SubtabPanel>
 

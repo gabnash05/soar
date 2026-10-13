@@ -5,7 +5,7 @@
 - App root: `app/frontend`.
 - Framework: React + TypeScript + Vite. This repo had no existing frontend framework, so the lightweight Vite client is the foundation path.
 - Routing: `react-router-dom` browser routes with explicit guards.
-- Styling: project CSS tokens in `src/styles/tokens.css` and component/page styles in `src/styles/app.css`; no CSS framework dependency.
+- Styling: Tailwind CSS v4 plus official shadcn/ui source components. SOAR brand tokens remain in `src/styles/tokens.css`; `src/styles/app.css` is the Tailwind/shadcn entry plus the remaining transition bridge for existing semantic class names while the app finishes utility conversion.
 - Runtime services: environment-driven Firebase client initialization plus typed backend gateway interfaces. The browser never stores provider secrets and never calls payment-provider secret APIs.
 - Fixture mode: `VITE_SOAR_USE_FIXTURES=true` enables named development fixtures. Fixture mode is opt-in and should not be used as production readiness evidence.
 
@@ -20,7 +20,8 @@ Frontend owns public/access/settings routes, the app shell, and workflow route c
 | `/app/organizations/:organizationId` | `src/pages/workflows/OrganizationPage.tsx` | `default function OrganizationPage()` | active access | organization profile, recruitment, events, meeting/application entry points |
 | `/app/applications` | `src/pages/workflows/ApplicationsPage.tsx` | `default function ApplicationsPage()` | active student access | student application tracker |
 | `/app/meetings` | `src/pages/workflows/MeetingsPage.tsx` | `default function MeetingsPage()` | active access | requester meeting tracker |
-| `/app/officer` | `src/pages/workflows/OfficerPage.tsx` | `default function OfficerPage()` | active access + approved organization grant | officer tools for approved organizations only |
+| `/settings/organization` | `src/pages/settings/OrganizationSettingsPage.tsx` | `default function OrganizationSettingsPage()` | active access + approved organization grant | organization management for approved grants only |
+| `/admin` | `src/pages/admin/AdminDashboardPage.tsx` | `default function AdminDashboardPage()` | provisioned stats admin | read-only aggregate statistics dashboard |
 
 Workflow pages now render complete fixture-mode screens and production API loading/error states. Fixture mode is opt-in local sample data; production mode calls configured backend services and does not fall back to fixture success.
 
@@ -28,11 +29,11 @@ Workflow pages now render complete fixture-mode screens and production API loadi
 
 Use the shared domain types from `src/lib/contracts.ts`:
 
-- `AccountKind = 'student' | 'sponsor'` (officer is an organization grant on a student account, not an account kind).
+- `AccountKind = 'student' | 'sponsor' | 'admin'` (officer is an organization grant on a student account, not an account kind; `admin` is a trusted provisioned aggregate-statistics account only).
 - `AccessStatus = 'active' | 'pending' | 'failed' | 'cancelled' | 'expired' | 'revoked' | 'missing'`. Backend entitlement documents use `active | expired | revoked`; checkout-intent responses may additionally use pending/failed/cancelled/missing before an entitlement exists.
 - `ApplicationStage = 'Pending' | 'Under review' | 'Accepted' | 'Declined'`.
 - `MeetingStatus = 'Pending' | 'Approved' | 'Declined'`.
-- `UserSession` includes trusted `access` and `officerGrants` from backend/auth claims, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI.
+- `UserSession` includes trusted `access`, `officerGrants`, and optional `admin.statistics` from backend/auth claims/account docs, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI. Stats admins use established authentication and do not need paid student access for `/admin` only.
 
 Workflow pages should consume foundation hooks/components instead of creating a parallel adapter:
 
@@ -75,7 +76,7 @@ It consumes the content lane's organization, announcement, comment, like, multi-
 List responses may be arrays or `{ items, nextPageToken? }`; the UI currently renders the first page with clear loading, empty, error and save-result states.
 Application stages preserve the request-service labels `Pending | Under review | Accepted | Declined` and still tolerate older snake/lowercase response values when reading.
 Meeting statuses preserve the request-service labels `Pending | Approved | Declined` and still tolerate older lowercase response values when reading.
-Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired access is locked by the shared route guard. Comment edit/delete controls render only for owned comments and backend ownership remains authoritative. Meeting documents are PDF-only, uploaded through authenticated Firebase Storage targets, and downloaded through authenticated backend streaming (`GET /requests/meetings/:meetingRequestId/document`) instead of direct SDK reads, public download URLs, or permanent bearer URLs. Announcement media supports up to four total items, images plus at most one bounded MP4/WebM video, with a 30 MB aggregate limit and no transcoding/adaptive-streaming platform. Organization `contactPhone` is optional and public only when supplied. Department counts are aggregate-only manager views from saved student account data.
+Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired access is locked by the shared route guard. Comment edit/delete controls render only for owned comments and backend ownership remains authoritative. Meeting documents are PDF-only, uploaded through authenticated Firebase Storage targets, and downloaded through authenticated backend streaming (`GET /requests/meetings/:meetingRequestId/document`) instead of direct SDK reads, public download URLs, or permanent bearer URLs. Announcement media supports up to four total items, images plus at most one bounded MP4/WebM video, with a 30 MB aggregate limit and no transcoding/adaptive-streaming platform. Organization `contactPhone` is optional and public only when supplied. Department counts are removed from organization management and are available only from `GET /admin/statistics` to provisioned stats admins; responses remain aggregate-only and contain no student identities, emails, private meeting data, payment data, or organization-management powers.
 
 ## Design-system precedence
 

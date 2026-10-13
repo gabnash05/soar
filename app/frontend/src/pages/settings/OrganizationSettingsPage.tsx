@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, ButtonLink, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
+import { ButtonLink, ConfirmDialog, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
-import type { StudentDepartmentCounts, WorkflowDataClient } from '../workflows/contracts';
+import type { WorkflowDataClient } from '../workflows/contracts';
 import {
   AnnouncementSection,
   DateEntriesSection,
@@ -11,11 +11,9 @@ import {
   ProfileRecruitmentSection,
 } from '../workflows/OfficerPage';
 import {
-  ErrorState,
   OrganizationAvatar,
   RouteUnavailableState,
   SourceNotice,
-  useWorkflowQuery,
   useWorkflowSession,
   WorkflowPageFrame,
 } from '../workflows/pageParts';
@@ -25,45 +23,7 @@ const managementTabs = [
   { id: 'details', label: 'Details' },
   { id: 'announcements', label: 'Announcements' },
   { id: 'dates', label: 'Dates & availability' },
-  { id: 'students', label: 'Student stats' },
 ];
-
-function StudentDepartmentCountsSection({ organizationId, session, client }: { organizationId: string; session: UserSession; client: WorkflowDataClient }) {
-  const { data, loading, error, sourceMessage, reload } = useWorkflowQuery<StudentDepartmentCounts>(() => client.getStudentDepartmentCounts(organizationId, session), [client, organizationId, session.uid]);
-
-  return (
-    <section className="surface-section compact-section">
-      <header className="section-heading">
-        <h2>Registered students by department</h2>
-        <p>Aggregate counts come from saved student account data across SOAR. They are not organization membership or applicant counts, and no identities, emails, or raw account records are shown.</p>
-      </header>
-      {client.mode === 'fixture' ? <p className="notice compact">Demo mode: department counts are simulated aggregate data. Missing legacy data is labelled honestly.</p> : sourceMessage ? <p className="notice compact">{sourceMessage}</p> : null}
-      {loading ? <LoadingBlock label="Loading department counts" /> : null}
-      {error ? <ErrorState onRetry={reload}>{error}</ErrorState> : null}
-      {data && !loading && !error ? (
-        <div className="department-stats-grid">
-          <div className="department-stat-summary">
-            <strong>{data.totalRegisteredStudents}</strong>
-            <span>registered student accounts across SOAR</span>
-          </div>
-          <div className="table-scroll" role="region" aria-label="Registered students by saved department">
-            <table className="data-table department-table">
-              <caption>{data.description}</caption>
-              <thead><tr><th>Department</th><th>Registered students</th></tr></thead>
-              <tbody>
-                {data.items.map((item) => (
-                  <tr key={item.departmentKey || item.department}><td>{item.department || 'Unspecified'}</td><td>{item.count}</td></tr>
-                ))}
-                {data.missingDepartmentCount ? <tr><td>Unspecified legacy accounts</td><td>{data.missingDepartmentCount}</td></tr> : null}
-              </tbody>
-            </table>
-          </div>
-          <p className="section-note">Generated {new Date(data.generatedAt).toLocaleString()}. Missing legacy data is shown as unspecified rather than guessed.</p>
-        </div>
-      ) : null}
-    </section>
-  );
-}
 
 export function OrganizationSettingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const grants = useMemo(() => getApprovedOfficerGrants(session), [session]);
@@ -76,6 +36,7 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
   );
   const [selectedOrganizationId, setSelectedOrganizationId] = useState(initialOrganizationId);
   const [profileDirty, setProfileDirty] = useState(false);
+  const [pendingOrganizationId, setPendingOrganizationId] = useState<string | null>(null);
 
   useEffect(() => {
     if (requestedOrganizationId && grants.some((grant) => grant.organizationId === requestedOrganizationId)) {
@@ -109,9 +70,7 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
     );
   }
 
-  const changeOrganization = (organizationId: string) => {
-    if (organizationId === selectedOrganizationId) return;
-    if (profileDirty && !window.confirm('Switch organizations and discard unsaved profile changes?')) return;
+  const switchOrganization = (organizationId: string) => {
     setProfileDirty(false);
     setSelectedOrganizationId(organizationId);
     const next = new URLSearchParams(searchParams);
@@ -119,18 +78,22 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
     setSearchParams(next);
   };
 
+  const changeOrganization = (organizationId: string) => {
+    if (organizationId === selectedOrganizationId) return;
+    if (profileDirty) {
+      setPendingOrganizationId(organizationId);
+      return;
+    }
+    switchOrganization(organizationId);
+  };
+
   return (
     <WorkflowPageFrame
       eyebrow="Organization settings"
       title="Organization settings"
-      description={selectedGrant ? `Selected organization: ${selectedGrant.organizationName}. Edit details first, then switch tabs for announcements, dates, and aggregate student statistics.` : 'Edit organization details first, then switch tabs for announcements, dates, and aggregate student statistics.'}
+      description={selectedGrant ? `Selected organization: ${selectedGrant.organizationName}. Edit details first, then switch tabs for announcements and dates.` : 'Edit organization details first, then switch tabs for announcements and dates.'}
       session={session}
-      actions={selectedGrant && profileFormId ? (
-        <>
-          {activeId === 'details' ? <Button type="submit" form={profileFormId} variant="primary">Save profile</Button> : null}
-          <ButtonLink to={`/app/organizations/${selectedGrant.organizationId}`} variant="secondary">View public profile</ButtonLink>
-        </>
-      ) : undefined}
+      actions={selectedGrant ? <ButtonLink to={`/app/organizations/${selectedGrant.organizationId}`} variant="secondary">View public profile</ButtonLink> : undefined}
     >
       <SourceNotice client={client} />
       <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={changeOrganization} session={session} />
@@ -168,13 +131,23 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
               <SubtabPanel baseId="organization-management" tabId="dates" activeId={activeId}>
                 <DateEntriesSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
               </SubtabPanel>
-              <SubtabPanel baseId="organization-management" tabId="students" activeId={activeId}>
-                <StudentDepartmentCountsSection organizationId={dashboard.organization.id} session={session} client={client} />
-              </SubtabPanel>
             </section>
           );
         }}
       </OfficerDashboardBlock>
+      <ConfirmDialog
+        open={Boolean(pendingOrganizationId)}
+        title="Switch organizations?"
+        description="This will discard unsaved profile edits for the current organization before opening the next one."
+        confirmLabel="Discard and switch"
+        cancelLabel="Keep editing"
+        destructive
+        onOpenChange={(open) => { if (!open) setPendingOrganizationId(null); }}
+        onConfirm={() => {
+          if (pendingOrganizationId) switchOrganization(pendingOrganizationId);
+          setPendingOrganizationId(null);
+        }}
+      />
     </WorkflowPageFrame>
   );
 }

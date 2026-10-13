@@ -205,14 +205,17 @@ export interface StudentDepartmentCount {
   count: number;
 }
 
-export interface StudentDepartmentCounts {
-  organizationId: string;
-  scope: 'registered_students_across_soar';
-  description: string;
-  totalRegisteredStudents: number;
-  missingDepartmentCount: number;
-  items: StudentDepartmentCount[];
+export interface AdminStatistics {
   generatedAt: string;
+  scope: 'registered_soar_totals';
+  students: {
+    totalRegisteredStudents: number;
+    missingDepartmentCount: number;
+    departments: StudentDepartmentCount[];
+  };
+  organizations: {
+    totalOrganizations: number;
+  };
 }
 
 export interface WorkflowDataClient {
@@ -238,7 +241,7 @@ export interface WorkflowDataClient {
   saveOrganizationProfile(input: OrganizationProfileInput, session: UserSession): Promise<WorkflowMutationResult<OrganizationProfile>>;
   publishAnnouncement(input: AnnouncementInput, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   deleteAnnouncement(announcementId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
-  getStudentDepartmentCounts(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<StudentDepartmentCounts>>;
+  getAdminStatistics(session: UserSession): Promise<WorkflowQueryResult<AdminStatistics>>;
   updateApplicationStage(applicationId: string, stage: ApplicationStage, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<ApplicationRecord>>;
   saveDateEntry(input: DateEntryInput, session: UserSession): Promise<WorkflowMutationResult<DateEntry>>;
   deleteDateEntry(dateEntryId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;

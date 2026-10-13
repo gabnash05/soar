@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Button, ButtonLink, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
+import { Button, ButtonLink, ConfirmDialog, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
 import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, WORKFLOW_VIDEO_MAX_BYTES, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
 import { createEmptyOfficerDateEntry } from './adapters';
@@ -58,6 +58,8 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
   const [logoError, setLogoError] = useState('');
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
+  const [confirmSaveError, setConfirmSaveError] = useState<string | null>(null);
   const dirty = profileInputDirty(form, dashboard);
 
   useEffect(() => {
@@ -72,13 +74,22 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    setConfirmSaveError(null);
+    setConfirmSaveOpen(true);
+  };
+
+  const confirmSave = async () => {
     setBusy(true);
+    setConfirmSaveError(null);
     const next = await client.saveOrganizationProfile(form, session);
     setResult(next);
     setBusy(false);
     if (next.ok) {
+      setConfirmSaveOpen(false);
       onDirtyChange?.(false);
       onChanged();
+    } else {
+      setConfirmSaveError(next.message);
     }
   };
 
@@ -131,6 +142,17 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
         </div>
         <ResultMessage result={result} />
       </form>
+      <ConfirmDialog
+        open={confirmSaveOpen}
+        title="Save profile changes?"
+        description={`These changes update the public profile for ${dashboard.organization.name}. Review the fields before saving.`}
+        confirmLabel="Save profile"
+        cancelLabel="Review changes"
+        busy={busy}
+        error={confirmSaveError}
+        onOpenChange={setConfirmSaveOpen}
+        onConfirm={confirmSave}
+      />
     </section>
   );
 }
@@ -272,6 +294,24 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
   const [composerResult, setComposerResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerDirty, setComposerDirty] = useState(false);
+  const [deleteAnnouncementId, setDeleteAnnouncementId] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const confirmDeleteAnnouncement = async () => {
+    if (!deleteAnnouncementId) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    const next = await client.deleteAnnouncement(deleteAnnouncementId, dashboard.organization.id, session);
+    setResult(next);
+    setDeleteBusy(false);
+    if (next.ok) {
+      setDeleteAnnouncementId(null);
+      onChanged();
+    } else {
+      setDeleteError(next.message);
+    }
+  };
 
   return (
     <section className="surface-section">
@@ -280,7 +320,6 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
           <h2>Published announcements</h2>
           <p>{allowPosting ? 'Create announcements for this organization.' : 'Review this organization\'s announcement history. Publish new posts from the Announcements feed.'}</p>
         </div>
-        {allowPosting ? <Button type="button" onClick={() => setComposerOpen(true)}>Post announcement</Button> : null}
       </header>
       {allowPosting ? (
         <>
@@ -306,17 +345,29 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
           {dashboard.announcements.map((announcement) => (
             <li key={announcement.id}>
               <div className="feed-copy"><strong>{announcement.body}</strong><span>{new Date(announcement.createdAt).toLocaleDateString()}</span></div>
-              <Button type="button" variant="danger" onClick={async () => {
-                if (!window.confirm('Delete this announcement?')) return;
-                const next = await client.deleteAnnouncement(announcement.id, dashboard.organization.id, session);
-                setResult(next);
-                if (next.ok) onChanged();
-              }}>Delete</Button>
+              <Button type="button" variant="danger" onClick={() => { setDeleteError(null); setDeleteAnnouncementId(announcement.id); }}>Delete</Button>
             </li>
           ))}
         </ul>
       ) : <p className="section-note">No announcements yet.</p>}
+      {allowPosting ? (
+        <div className="button-row">
+          <Button type="button" onClick={() => setComposerOpen(true)}>Post announcement</Button>
+        </div>
+      ) : null}
       <ResultMessage result={result} />
+      <ConfirmDialog
+        open={Boolean(deleteAnnouncementId)}
+        title="Delete this announcement?"
+        description="This removes the announcement from the feed and public organization profile. Comments and likes for the post will no longer be visible."
+        confirmLabel="Delete announcement"
+        cancelLabel="Keep announcement"
+        destructive
+        busy={deleteBusy}
+        error={deleteError}
+        onOpenChange={(open) => { if (!open) setDeleteAnnouncementId(null); }}
+        onConfirm={confirmDeleteAnnouncement}
+      />
     </section>
   );
 }
@@ -367,6 +418,9 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
   const [busy, setBusy] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [deleteDateEntryId, setDeleteDateEntryId] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
@@ -407,6 +461,21 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
     }
   };
 
+  const confirmDeleteDateEntry = async () => {
+    if (!deleteDateEntryId) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    const next = await client.deleteDateEntry(deleteDateEntryId, dashboard.organization.id, session);
+    setResult(next);
+    setDeleteBusy(false);
+    if (next.ok) {
+      setDeleteDateEntryId(null);
+      onChanged();
+    } else {
+      setDeleteError(next.message);
+    }
+  };
+
   return (
     <section className="surface-section">
       <header className="section-heading inline-heading">
@@ -443,18 +512,25 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
               <div className="feed-copy"><strong>{entry.title}</strong><span>{entry.kind === 'event' ? 'Public event' : 'Meeting/interview availability'} · {formatDateEntry(entry)} · {entry.details}</span></div>
               <div className="component-row">
                 <Button type="button" variant="secondary" onClick={() => openEdit(entry)}>Edit</Button>
-                <Button type="button" variant="danger" onClick={async () => {
-                  if (!window.confirm('Remove this dated entry?')) return;
-                  const next = await client.deleteDateEntry(entry.id, dashboard.organization.id, session);
-                  setResult(next);
-                  if (next.ok) onChanged();
-                }}>Remove</Button>
+                <Button type="button" variant="danger" onClick={() => { setDeleteError(null); setDeleteDateEntryId(entry.id); }}>Remove</Button>
               </div>
             </li>
           ))}
         </ul>
       ) : <p className="section-note">No dated entries yet.</p>}
       {!dialogOpen ? <ResultMessage result={result} /> : null}
+      <ConfirmDialog
+        open={Boolean(deleteDateEntryId)}
+        title="Remove this dated entry?"
+        description="This removes the event or availability slot from the public organization profile. Existing meeting requests keep their own status history."
+        confirmLabel="Remove entry"
+        cancelLabel="Keep entry"
+        destructive
+        busy={deleteBusy}
+        error={deleteError}
+        onOpenChange={(open) => { if (!open) setDeleteDateEntryId(null); }}
+        onConfirm={confirmDeleteDateEntry}
+      />
     </section>
   );
 }

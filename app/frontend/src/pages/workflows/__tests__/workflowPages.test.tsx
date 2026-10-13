@@ -11,6 +11,7 @@ import { FeedView } from '../FeedPage';
 import { MeetingsView } from '../MeetingsPage';
 import { EntryPage } from '../../access/EntryPage';
 import { OrganizationSettingsView } from '../../settings/OrganizationSettingsPage';
+import { AdminDashboardView } from '../../admin/AdminDashboardPage';
 import { OfficerView } from '../OfficerPage';
 import { OrganizationView } from '../OrganizationPage';
 
@@ -49,6 +50,17 @@ const officerSession: UserSession = {
   uid: 'officer-1',
   displayName: 'Lia Cruz',
   officerGrants: [{ organizationId: 'robotics', organizationName: 'Robotics Guild', status: 'approved', grantedBy: 'owner-1', grantedAt: '2026-01-10T00:00:00.000Z' }],
+};
+
+const adminSession: UserSession = {
+  uid: 'admin-1',
+  email: 'admin@example.test',
+  displayName: 'SOAR Stats Admin',
+  accountKind: 'admin',
+  emailVerified: true,
+  access: { status: 'missing', annualFeePhp: 10, feePhp: 10, periodMonths: 6, periodLabel: '6 months', renewalAvailable: false },
+  officerGrants: [],
+  admin: { statistics: true },
 };
 
 beforeAll(() => {
@@ -179,7 +191,9 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByRole('link', { name: /Manage organization/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Review applications/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Review meetings/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Request meeting/i })).toHaveAttribute('href', '/app/meetings');
+    expect(screen.queryByRole('link', { name: /Request meeting/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: /Dates & availability/i }));
+    expect(screen.getByRole('link', { name: /Request meeting/i })).toHaveAttribute('href', '/app/meetings?organizationId=robotics');
   });
 
   it('uses prominent organization identity areas in the directory and profile', async () => {
@@ -194,7 +208,6 @@ describe('SOAR workflow pages', () => {
 
   it('protects dirty announcement dialogs and returns focus to the trigger', async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
     renderInRouter(<FeedView session={officerSession} client={createFixtureWorkflowDataClient()} />);
 
     const trigger = await screen.findByRole('button', { name: /Post announcement/i });
@@ -202,13 +215,14 @@ describe('SOAR workflow pages', () => {
     await user.type(screen.getByLabelText(/Post text/i), 'Draft update');
 
     await user.click(screen.getByRole('button', { name: /Close Post announcement/i }));
-    expect(confirm).toHaveBeenCalledWith('Discard unsaved changes?');
+    expect(screen.getByRole('alertdialog', { name: /Discard unsaved changes/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Keep editing/i }));
     expect(screen.getByLabelText(/Post text/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Close Post announcement/i }));
+    await user.click(screen.getByRole('button', { name: /^Discard$/i }));
     await waitFor(() => expect(screen.queryByLabelText(/Post text/i)).not.toBeInTheDocument());
     await waitFor(() => expect(trigger).toHaveFocus());
-    confirm.mockRestore();
   });
 
   it('surfaces officer announcement posting at the top of the announcements page with grant context', async () => {
@@ -286,7 +300,6 @@ describe('SOAR workflow pages', () => {
 
   it('protects dirty profile edits before switching managed organizations', async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
     const multiOfficerSession = {
       ...officerSession,
       officerGrants: [
@@ -299,13 +312,14 @@ describe('SOAR workflow pages', () => {
     const nameInput = await screen.findByLabelText(/^Organization name$/i);
     await user.type(nameInput, ' Draft');
     await user.selectOptions(screen.getByLabelText(/^Organization$/i), 'literary');
-    expect(confirm).toHaveBeenCalledWith('Switch organizations and discard unsaved profile changes?');
+    expect(screen.getByRole('alertdialog', { name: /Switch organizations/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/^Organization$/i)).toHaveValue('robotics');
     expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Robotics Guild Draft');
+    await user.click(screen.getByRole('button', { name: /Keep editing/i }));
 
     await user.selectOptions(screen.getByLabelText(/^Organization$/i), 'literary');
+    await user.click(screen.getByRole('button', { name: /Discard and switch/i }));
     await waitFor(() => expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Literary Circle'));
-    confirm.mockRestore();
   });
 
   it('validates comments and updates accessible icon like state and count on the feed', async () => {
@@ -331,7 +345,6 @@ describe('SOAR workflow pages', () => {
 
   it('lets commenters edit and delete only their own comments while keeping counts refreshed', async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
     renderInRouter(<FeedView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
     await screen.findByText(/Tryouts and build night/i);
@@ -344,10 +357,10 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByText(/Updated question for officers/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Delete$/i }));
-    expect(confirm).toHaveBeenCalledWith('Delete your comment?');
+    expect(screen.getByRole('alertdialog', { name: /Delete your comment/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Delete comment/i }));
     expect(await screen.findByText(/Comment deleted in demo mode/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByRole('button', { name: /comments/i }).some((button) => button.textContent?.includes('0'))).toBe(true));
-    confirm.mockRestore();
   });
 
   it('shows optional organization phone only when present on public profiles', async () => {
@@ -360,10 +373,16 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByText(/Phone:/i)).not.toBeInTheDocument();
   });
 
-  it('shows only aggregate student department counts in organization management', async () => {
-    renderInRouter(<OrganizationSettingsView session={officerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics&tab=students']);
+  it('removes student statistics from organization management and shows aggregates only in admin', async () => {
+    const { unmount } = renderInRouter(<OrganizationSettingsView session={officerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics&tab=students']);
 
-    expect(await screen.findByRole('heading', { name: /Registered students by department/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Organization settings/i, level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Student stats/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Registered students by department/i)).not.toBeInTheDocument();
+    unmount();
+
+    renderInRouter(<AdminDashboardView session={adminSession} client={createFixtureWorkflowDataClient()} />, ['/admin']);
+    expect(await screen.findByRole('heading', { name: /SOAR aggregate dashboard/i })).toBeInTheDocument();
     expect(screen.getByText(/simulated aggregate data/i)).toBeInTheDocument();
     expect(await screen.findByText('Computer Science')).toBeInTheDocument();
     expect(await screen.findByText('Engineering')).toBeInTheDocument();
@@ -380,7 +399,7 @@ describe('SOAR workflow pages', () => {
 
     const directPost = await screen.findByText(/Volunteer briefing slots are posted/i);
     expect(directPost.closest('article')).toHaveAttribute('id', 'announcement-post-health-briefing');
-    await user.click(screen.getAllByRole('button', { name: /Copy link/i })[0]);
+    await user.click(screen.getAllByRole('button', { name: /Share direct link/i })[0]);
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/app?announcementId=post-robotics-tryouts'));
     expect(await screen.findByText(/Announcement link copied/i)).toBeInTheDocument();
   });

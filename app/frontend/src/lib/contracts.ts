@@ -1,4 +1,4 @@
-export type AccountKind = 'student' | 'sponsor';
+export type AccountKind = 'student' | 'sponsor' | 'admin';
 
 export type AccessStatus = 'active' | 'pending' | 'failed' | 'cancelled' | 'expired' | 'revoked' | 'missing';
 
@@ -37,12 +37,13 @@ export interface UserSession {
   studentId?: string;
   department?: string;
   companyName?: string;
+  admin?: { statistics?: boolean };
   emailVerified: boolean;
   access: AccessEntitlement;
   officerGrants: OrganizationGrant[];
 }
 
-export type RegistrationRoleIntent = AccountKind;
+export type RegistrationRoleIntent = Exclude<AccountKind, 'admin'>;
 
 export interface RegistrationPaymentInput {
   role: RegistrationRoleIntent;
@@ -146,3 +147,6 @@ export const hasApprovedOfficerGrant = (session: UserSession | null | undefined)
 
 export const isStudentAccount = (session: UserSession | null | undefined): boolean =>
   session?.accountKind === 'student';
+
+export const isStatsAdminAccount = (session: UserSession | null | undefined): boolean =>
+  session?.accountKind === 'admin' && session.admin?.statistics === true && session.emailVerified;

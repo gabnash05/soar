@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, ButtonLink, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
+import { MessageCircle, Share2 } from 'lucide-react';
+import { Button, ButtonLink, ConfirmDialog, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
 import { useAuth, useBackendGateway } from '../../context/AuthContext';
 import type { ApplicationStage, MeetingStatus, UserSession } from '../../lib/contracts';
 import { getWorkflowDataClientForGatewayMode, unavailableWorkflowDataClient } from './adapters';
@@ -269,6 +270,8 @@ export function AnnouncementCard({
   const [editingBody, setEditingBody] = useState('');
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deleteCommentId, setDeleteCommentId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const media = announcement.media?.length ? announcement.media : announcement.image ? [announcement.image] : [];
   const commentCount = announcement.commentCount ?? announcement.comments.length;
 
@@ -324,13 +327,19 @@ export function AnnouncementCard({
     }
   };
 
-  const deleteComment = async (commentId: string) => {
-    if (!window.confirm('Delete your comment?')) return;
+  const deleteComment = async () => {
+    if (!deleteCommentId) return;
     setBusy(true);
-    const next = await client.deleteAnnouncementComment(announcement.id, commentId, session);
+    setDeleteError(null);
+    const next = await client.deleteAnnouncementComment(announcement.id, deleteCommentId, session);
     setResult(next);
     setBusy(false);
-    if (next.ok) onChanged?.();
+    if (next.ok) {
+      setDeleteCommentId(null);
+      onChanged?.();
+    } else {
+      setDeleteError(next.message);
+    }
   };
 
   const organizationPath = `/app/organizations/${announcement.organizationId}`;
@@ -345,7 +354,6 @@ export function AnnouncementCard({
           <h2><Link className="org-author-link" to={organizationPath}>{announcement.organizationName}</Link></h2>
           <p className="section-note">{new Date(announcement.createdAt).toLocaleDateString()} · newest announcements first</p>
         </div>
-        <Button type="button" variant="quiet" className="copy-link-button" onClick={copyLink}>Copy link</Button>
       </div>
       {media.length ? (
         <div className={`announcement-media-grid media-count-${Math.min(media.length, 4)}`}>
@@ -377,7 +385,12 @@ export function AnnouncementCard({
           <span className="like-count" aria-hidden="true">{announcement.likeCount}</span>
         </Button>
         <Button type="button" variant="quiet" onClick={() => setCommentsOpen((open) => !open)}>
+          <MessageCircle aria-hidden="true" className="size-4" />
           {commentsOpen ? 'Hide comments' : 'Open comments'} ({commentCount})
+        </Button>
+        <Button type="button" variant="quiet" onClick={copyLink} aria-label={`Share direct link to announcement from ${announcement.organizationName}`}>
+          <Share2 aria-hidden="true" className="size-4" />
+          Share
         </Button>
       </div>
       {commentsOpen ? (
@@ -409,7 +422,7 @@ export function AnnouncementCard({
                         {(canEdit || canDelete) ? (
                           <div className="component-row comment-actions">
                             {canEdit ? <Button type="button" variant="quiet" onClick={() => startEditing(item.id, item.body)}>Edit</Button> : null}
-                            {canDelete ? <Button type="button" variant="danger" onClick={() => deleteComment(item.id)}>Delete</Button> : null}
+                            {canDelete ? <Button type="button" variant="danger" onClick={() => { setDeleteError(null); setDeleteCommentId(item.id); }}>Delete</Button> : null}
                           </div>
                         ) : null}
                       </>
@@ -422,6 +435,18 @@ export function AnnouncementCard({
         </section>
       ) : null}
       <ResultMessage result={result} />
+      <ConfirmDialog
+        open={Boolean(deleteCommentId)}
+        title="Delete your comment?"
+        description="This removes your comment from the post and refreshes the comment count. The announcement itself stays unchanged."
+        confirmLabel="Delete comment"
+        cancelLabel="Keep comment"
+        destructive
+        busy={busy}
+        error={deleteError}
+        onOpenChange={(open) => { if (!open) setDeleteCommentId(null); }}
+        onConfirm={deleteComment}
+      />
     </article>
   );
 }

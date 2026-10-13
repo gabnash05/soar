@@ -14,7 +14,7 @@ import type {
   OrganizationProfile,
   OrganizationProfileInput,
   OrganizationSummary,
-  StudentDepartmentCounts,
+  AdminStatistics,
   WorkflowDataClient,
   WorkflowMutationResult,
   WorkflowQueryResult,
@@ -71,14 +71,11 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   saveOrganizationProfile: () => unavailableMutation<OrganizationProfile>(),
   publishAnnouncement: () => unavailableMutation<Announcement>(),
   deleteAnnouncement: () => unavailableMutation(),
-  getStudentDepartmentCounts: (organizationId) => unavailableQuery<StudentDepartmentCounts>({
-    organizationId,
-    scope: 'registered_students_across_soar',
-    description: 'Registered student account counts are unavailable right now.',
-    totalRegisteredStudents: 0,
-    missingDepartmentCount: 0,
-    items: [],
+  getAdminStatistics: () => unavailableQuery<AdminStatistics>({
     generatedAt: new Date().toISOString(),
+    scope: 'registered_soar_totals',
+    students: { totalRegisteredStudents: 0, missingDepartmentCount: 0, departments: [] },
+    organizations: { totalOrganizations: 0 },
   }),
   updateApplicationStage: () => unavailableMutation<ApplicationRecord>(),
   saveDateEntry: () => unavailableMutation<DateEntry>(),
@@ -689,37 +686,35 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       return { ok: true, persisted: true, source: 'fixture', message: 'Announcement deleted in demo mode.' };
     },
 
-    async getStudentDepartmentCounts(organizationId, session) {
-      if (!isApprovedOfficerFor(session, organizationId)) {
+    async getAdminStatistics(session) {
+      if (session.accountKind !== 'admin' || session.admin?.statistics !== true) {
         return {
           data: {
-            organizationId,
-            scope: 'registered_students_across_soar',
-            description: 'Registered student accounts across SOAR grouped by saved department; not organization members or applicants.',
-            totalRegisteredStudents: 0,
-            missingDepartmentCount: 0,
-            items: [],
             generatedAt: new Date().toISOString(),
+            scope: 'registered_soar_totals',
+            students: { totalRegisteredStudents: 0, missingDepartmentCount: 0, departments: [] },
+            organizations: { totalOrganizations: 0 },
           },
           source: 'fixture',
-          message: 'Approved organization-specific officer access is required.',
+          message: 'Provisioned aggregate-statistics admin access is required.',
         };
       }
       return {
         data: {
-          organizationId,
-          scope: 'registered_students_across_soar',
-          description: 'Registered student accounts across SOAR grouped by saved department; not organization members or applicants.',
-          totalRegisteredStudents: 6,
-          missingDepartmentCount: 1,
-          items: [
-            { departmentKey: 'computer science', department: 'Computer Science', count: 3 },
-            { departmentKey: 'engineering', department: 'Engineering', count: 2 },
-          ],
           generatedAt: new Date().toISOString(),
+          scope: 'registered_soar_totals',
+          students: {
+            totalRegisteredStudents: 6,
+            missingDepartmentCount: 1,
+            departments: [
+              { departmentKey: 'computer science', department: 'Computer Science', count: 3 },
+              { departmentKey: 'engineering', department: 'Engineering', count: 2 },
+            ],
+          },
+          organizations: { totalOrganizations: organizations.length },
         },
         source: 'fixture',
-        message: 'Demo mode: department counts are simulated aggregate data and include legacy students without a saved department as Unspecified.',
+        message: 'Demo mode: admin dashboard uses simulated aggregate counts. Missing legacy data is labelled honestly.',
       };
     },
 

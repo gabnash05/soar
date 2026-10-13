@@ -23,7 +23,7 @@ import type {
   OrganizationProfile,
   OrganizationProfileInput,
   OrganizationSummary,
-  StudentDepartmentCounts,
+  AdminStatistics,
   WorkflowDataClient,
   WorkflowMutationResult,
   WorkflowQueryResult,
@@ -264,9 +264,8 @@ function mapMeetingRequest(raw: unknown): MeetingRequest {
   };
 }
 
-function mapStudentDepartmentCounts(raw: unknown, organizationId: string): StudentDepartmentCounts {
-  const item = asRecord(raw);
-  const rows = pickArray<unknown>(item.items).map((row) => {
+function mapDepartmentRows(rawRows: unknown): AdminStatistics['students']['departments'] {
+  return pickArray<unknown>(rawRows).map((row) => {
     const record = asRecord(row);
     return {
       departmentKey: pickString(record.departmentKey || record.department).toLowerCase(),
@@ -274,14 +273,24 @@ function mapStudentDepartmentCounts(raw: unknown, organizationId: string): Stude
       count: pickNumber(record.count, 0),
     };
   });
+}
+
+function mapAdminStatistics(raw: unknown): AdminStatistics {
+  const item = asRecord(raw);
+  const students = asRecord(item.students);
+  const organizations = asRecord(item.organizations);
+  const departments = mapDepartmentRows(students.departments);
   return {
-    organizationId: pickString(item.organizationId, organizationId),
-    scope: 'registered_students_across_soar',
-    description: pickString(item.description, 'Registered student accounts across SOAR grouped by saved department; not organization members or applicants.'),
-    totalRegisteredStudents: pickNumber(item.totalRegisteredStudents, rows.reduce((sum, row) => sum + row.count, 0)),
-    missingDepartmentCount: pickNumber(item.missingDepartmentCount, 0),
-    items: rows,
     generatedAt: pickString(item.generatedAt, new Date().toISOString()),
+    scope: 'registered_soar_totals',
+    students: {
+      totalRegisteredStudents: pickNumber(students.totalRegisteredStudents, departments.reduce((sum, row) => sum + row.count, 0)),
+      missingDepartmentCount: pickNumber(students.missingDepartmentCount, 0),
+      departments,
+    },
+    organizations: {
+      totalOrganizations: pickNumber(organizations.totalOrganizations, 0),
+    },
   };
 }
 
@@ -498,9 +507,9 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return { ok: true, persisted: true, source: 'production', message: 'Announcement deleted.' };
     },
 
-    async getStudentDepartmentCounts(organizationId) {
-      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}/student-department-counts`, await activeHeaders());
-      return queryResult(mapStudentDepartmentCounts(response, organizationId));
+    async getAdminStatistics() {
+      const response = await apiFetch<unknown>('/admin/statistics', await activeHeaders());
+      return queryResult(mapAdminStatistics(response));
     },
 
     async updateApplicationStage(applicationId, stage: ApplicationStage, organizationId) {
