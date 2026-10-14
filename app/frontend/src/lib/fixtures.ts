@@ -1,4 +1,5 @@
 import { type AccessEntitlement } from './contracts';
+import { isCanonicalDepartment, normalizeDepartmentKey } from './departments';
 import type { BackendGateway } from './backendGateway';
 import {
   type CheckoutStatus,
@@ -14,6 +15,7 @@ import {
 const SESSION_KEY = 'soar:development-fixture:session';
 const PAYMENT_PREFIX = 'soar:development-fixture:payment:';
 const NAME_CHANGE_PREFIX = 'soar:development-fixture:name-changed:';
+const FIXTURE_ACCOUNTS_KEY = 'soar:development-fixture:registered-accounts';
 
 const futureIso = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 const pastIso = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
@@ -47,40 +49,46 @@ const expiredAccess = (): AccessEntitlement => ({
   renewalAvailable: true,
 });
 
+export interface FixtureRegisteredAccount {
+  uid: string;
+  accountKind: UserSession['accountKind'];
+  department?: string;
+  departmentKey?: string;
+}
+
+const fixtureDepartment = 'Computer Engineering Department';
+
 const makeFixtureSession = (email: string, overrides: Partial<UserSession> = {}): UserSession => {
   const lower = email.toLowerCase();
   const sponsor = lower.includes('sponsor');
-  const admin = lower.includes('admin');
   const officer = lower.includes('officer');
   const expired = lower.includes('expired');
   const unverified = lower.includes('unverified');
-  const fixtureUid = lower.includes('admin')
-    ? 'admin-1'
-    : lower.includes('sponsor')
-      ? 'sponsor-1'
-      : lower.includes('officer')
-        ? 'officer-1'
-        : lower.includes('student')
-          ? 'student-1'
-          : `fixture-${lower.replace(/[^a-z0-9]+/g, '-')}`;
+  const fixtureUid = lower.includes('sponsor')
+    ? 'sponsor-1'
+    : lower.includes('officer')
+      ? 'officer-1'
+      : lower.includes('student')
+        ? 'student-1'
+        : `fixture-${lower.replace(/[^a-z0-9]+/g, '-')}`;
   return {
     uid: fixtureUid,
     email,
-    displayName: admin ? 'SOAR Stats Admin' : sponsor ? 'Sam Sponsor' : officer ? 'Mara Officer' : 'Mara Santos',
-    accountKind: admin ? 'admin' : sponsor ? 'sponsor' : 'student',
-    studentId: sponsor || admin ? undefined : '2026-0001',
-    department: sponsor || admin ? undefined : 'Computer Science',
+    displayName: sponsor ? 'Sam Sponsor' : officer ? 'Mara Officer' : 'Mara Santos',
+    accountKind: sponsor ? 'sponsor' : 'student',
+    studentId: sponsor ? undefined : '2026-0001',
+    department: sponsor ? undefined : fixtureDepartment,
+    departmentKey: sponsor ? undefined : normalizeDepartmentKey(fixtureDepartment),
     companyName: sponsor ? 'Community Partner Co.' : undefined,
-    admin: admin ? { statistics: true } : undefined,
     emailVerified: !unverified,
-    access: admin ? { status: 'missing', annualFeePhp: 10, feePhp: 10, periodMonths: 6, periodLabel: '6 months', renewalAvailable: false } : expired ? expiredAccess() : activeAccess(),
+    access: expired ? expiredAccess() : activeAccess(),
     officerGrants: officer
       ? [
           {
             organizationId: 'robotics',
-            organizationName: 'Robotics Guild',
+            organizationName: 'Computer Engineering Department',
             status: 'active',
-            grantedBy: 'project-admin',
+            grantedBy: 'trusted-setup',
             grantedAt: pastIso(20),
           },
         ]
@@ -88,6 +96,40 @@ const makeFixtureSession = (email: string, overrides: Partial<UserSession> = {})
     ...overrides,
   };
 };
+
+const initialRegisteredAccounts: FixtureRegisteredAccount[] = [
+  { uid: 'student-1', accountKind: 'student', department: 'Computer Engineering Department', departmentKey: normalizeDepartmentKey('Computer Engineering Department') },
+  { uid: 'officer-1', accountKind: 'student', department: 'Computer Engineering Department', departmentKey: normalizeDepartmentKey('Computer Engineering Department') },
+  { uid: 'student-cpe-2', accountKind: 'student', department: 'Computer Engineering Department', departmentKey: normalizeDepartmentKey('Computer Engineering Department') },
+  { uid: 'student-civil-1', accountKind: 'student', department: 'Civil Engineering Department', departmentKey: normalizeDepartmentKey('Civil Engineering Department') },
+  { uid: 'student-civil-2', accountKind: 'student', department: 'Civil Engineering Department', departmentKey: normalizeDepartmentKey('Civil Engineering Department') },
+  { uid: 'student-architecture-1', accountKind: 'student', department: 'Architecture Department', departmentKey: normalizeDepartmentKey('Architecture Department') },
+  { uid: 'student-electrical-1', accountKind: 'student', department: 'Electrical Engineering Department', departmentKey: normalizeDepartmentKey('Electrical Engineering Department') },
+  { uid: 'student-electrical-2', accountKind: 'student', department: 'Electrical Engineering Department', departmentKey: normalizeDepartmentKey('Electrical Engineering Department') },
+  { uid: 'student-electronics-1', accountKind: 'student', department: 'Electronics Engineering Department', departmentKey: normalizeDepartmentKey('Electronics Engineering Department') },
+  { uid: 'student-geodetic-1', accountKind: 'student', department: 'Geodetic Engineering', departmentKey: normalizeDepartmentKey('Geodetic Engineering') },
+  { uid: 'student-legacy-missing-department', accountKind: 'student' },
+  { uid: 'sponsor-1', accountKind: 'sponsor' },
+];
+
+const readRegisteredAccountOverrides = (): FixtureRegisteredAccount[] => {
+  try {
+    const value = localStorage.getItem(FIXTURE_ACCOUNTS_KEY);
+    return value ? (JSON.parse(value) as FixtureRegisteredAccount[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeRegisteredAccountOverride = (account: FixtureRegisteredAccount) => {
+  const records = readRegisteredAccountOverrides().filter((item) => item.uid !== account.uid);
+  localStorage.setItem(FIXTURE_ACCOUNTS_KEY, JSON.stringify([...records, account]));
+};
+
+export const readFixtureRegisteredAccounts = (): FixtureRegisteredAccount[] => [
+  ...initialRegisteredAccounts,
+  ...readRegisteredAccountOverrides(),
+];
 
 const readSession = (): UserSession | null => {
   try {
@@ -128,7 +170,7 @@ const validateRegistration = (input: RegisterAccountInput) => {
   if (!input.email.includes('@')) problems.email = 'Enter a valid email address.';
   if (input.password.length < 8) problems.password = 'Use at least 8 characters.';
   if (input.role === 'student' && !input.studentId?.trim()) problems.studentId = 'Student ID is required for students and future officers.';
-  if (input.role === 'student' && input.department && input.department.length > 80) problems.department = 'Department must be 80 characters or fewer.';
+  if (input.role === 'student' && !isCanonicalDepartment(input.department)) problems.department = 'Choose your department from the list.';
   if (Object.keys(problems).length) {
     throw new ValidationProblemError('Fix the highlighted fields.', problems);
   }
@@ -160,7 +202,7 @@ export const createFixtureGateway = (): BackendGateway => ({
   async signIn(input) {
     if (!input.email.includes('@')) {
       throw new ValidationProblemError('Use one of the named fixture emails.', {
-        email: 'Try student@example.edu, officer@example.edu, sponsor@example.com, admin@example.test, expired@example.edu, or unverified@example.edu.',
+        email: 'Try student@example.edu, officer@example.edu, sponsor@example.com, expired@example.edu, or unverified@example.edu.',
       });
     }
     const session = makeFixtureSession(input.email);
@@ -210,13 +252,20 @@ export const createFixtureGateway = (): BackendGateway => ({
       displayName: input.displayName,
       accountKind: input.role,
       studentId: input.role === 'student' ? input.studentId : undefined,
-      department: input.role === 'student' ? input.department?.trim() || undefined : undefined,
+      department: input.role === 'student' ? input.department : undefined,
+      departmentKey: input.role === 'student' && input.department ? normalizeDepartmentKey(input.department) : undefined,
       companyName: input.role === 'sponsor' ? input.companyName : undefined,
       emailVerified: false,
       access: activeAccess(checkout.providerReference),
       officerGrants: [],
     });
     writeSession(session);
+    writeRegisteredAccountOverride({
+      uid: session.uid,
+      accountKind: session.accountKind,
+      department: session.department,
+      departmentKey: session.departmentKey,
+    });
     return session;
   },
 

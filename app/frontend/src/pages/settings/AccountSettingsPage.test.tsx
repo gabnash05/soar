@@ -7,7 +7,7 @@ import { AccountSettingsPage } from './AccountSettingsPage';
 
 const renderAccountSettings = () => {
   const session = makeSession({
-    officerGrants: [{ organizationId: 'robotics', organizationName: 'Robotics Guild', status: 'approved' }],
+    officerGrants: [{ organizationId: 'robotics', organizationName: 'Computer Engineering Department', status: 'approved' }],
   });
   return render(
     <MemoryRouter initialEntries={["/settings/account"]}>

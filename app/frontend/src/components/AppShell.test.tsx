@@ -33,35 +33,25 @@ describe('AppShell navigation', () => {
   it('shows Manage Organization only for active officer grants without adding a catch-all tools tab', async () => {
     renderShell(
       makeSession({
-        officerGrants: [{ organizationId: 'coding', organizationName: 'Coding Society', status: 'active' }],
+        officerGrants: [{ organizationId: 'robotics', organizationName: 'Computer Engineering Department', status: 'active' }],
       }),
     );
 
     await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
     expect(screen.queryByText('Officer tools')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Manage Organization' })).toHaveAttribute('href', '/settings/organization?organizationId=coding');
+    expect(screen.getByRole('link', { name: 'Manage Organization' })).toHaveAttribute('href', '/settings/organization?organizationId=robotics');
     expect(screen.queryByRole('navigation', { name: /Mobile SOAR navigation/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Manage this organization/i })).toHaveAttribute('href', '/settings/organization?organizationId=coding');
-    expect(screen.getByText('Coding Society')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Manage this organization/i })).toHaveAttribute('href', '/settings/organization?organizationId=robotics');
+    expect(screen.getByText('Computer Engineering Department')).toBeInTheDocument();
   });
 
-  it('shows narrow admin statistics navigation without demo persona badges in production mode', async () => {
-    const admin = makeSession({
-      accountKind: 'admin',
-      studentId: undefined,
-      department: undefined,
-      access: { status: 'missing', annualFeePhp: 10, feePhp: 10, periodMonths: 6, periodLabel: '6 months', renewalAvailable: false },
-      admin: { statistics: true },
-    });
-    const gateway = { ...createMockGateway(admin), mode: 'production' as const, label: 'Production gateway' };
-    renderShell(admin, gateway);
+  it('does not expose removed admin statistics navigation for ordinary sessions', async () => {
+    const gateway = { ...createMockGateway(makeSession()), mode: 'production' as const, label: 'Production gateway' };
+    renderShell(makeSession(), gateway);
 
     await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
-    expect(screen.getByRole('link', { name: 'Admin statistics' })).toHaveAttribute('href', '/admin');
+    expect(screen.queryByRole('link', { name: /Admin statistics/i })).not.toBeInTheDocument();
     expect(screen.queryByText('Demo persona')).not.toBeInTheDocument();
-    expect(screen.queryByText('Student')).not.toBeInTheDocument();
-    expect(screen.queryByText('Sponsor')).not.toBeInTheDocument();
-    expect(screen.queryByText('Manage Organization')).not.toBeInTheDocument();
-    expect(screen.queryByText('Applications')).not.toBeInTheDocument();
+    expect(screen.getByText('Applications')).toBeInTheDocument();
   });
 });

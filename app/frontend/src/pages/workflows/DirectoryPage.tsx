@@ -35,7 +35,7 @@ export function DirectoryView({ session, client }: { session: UserSession; clien
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Try Robotics Guild or a name that does not exist"
+            placeholder="Try Computer Engineering Department or a name that does not exist"
           />
         </div>
       </section>

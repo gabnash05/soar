@@ -20,8 +20,7 @@ Frontend owns public/access/settings routes, the app shell, and workflow route c
 | `/app/organizations/:organizationId` | `src/pages/workflows/OrganizationPage.tsx` | `default function OrganizationPage()` | active access | organization profile, recruitment, events, meeting/application entry points |
 | `/app/applications` | `src/pages/workflows/ApplicationsPage.tsx` | `default function ApplicationsPage()` | active student access | student application tracker |
 | `/app/meetings` | `src/pages/workflows/MeetingsPage.tsx` | `default function MeetingsPage()` | active access | requester meeting tracker |
-| `/settings/organization` | `src/pages/settings/OrganizationSettingsPage.tsx` | `default function OrganizationSettingsPage()` | active access + approved organization grant | organization management for approved grants only |
-| `/admin` | `src/pages/admin/AdminDashboardPage.tsx` | `default function AdminDashboardPage()` | provisioned stats admin | read-only aggregate statistics dashboard |
+| `/settings/organization` | `src/pages/settings/OrganizationSettingsPage.tsx` | `default function OrganizationSettingsPage()` | active access + approved organization grant | organization management for approved grants only, including department registered-student aggregate |
 
 Workflow pages now render complete fixture-mode screens and production API loading/error states. Fixture mode is opt-in local sample data; production mode calls configured backend services and does not fall back to fixture success.
 
@@ -29,11 +28,11 @@ Workflow pages now render complete fixture-mode screens and production API loadi
 
 Use the shared domain types from `src/lib/contracts.ts`:
 
-- `AccountKind = 'student' | 'sponsor' | 'admin'` (officer is an organization grant on a student account, not an account kind; `admin` is a trusted provisioned aggregate-statistics account only).
+- `AccountKind = 'student' | 'sponsor'` (officer is an organization grant on a student account, not an account kind; the temporary aggregate-statistics admin product role has been removed).
 - `AccessStatus = 'active' | 'pending' | 'failed' | 'cancelled' | 'expired' | 'revoked' | 'missing'`. Backend entitlement documents use `active | expired | revoked`; checkout-intent responses may additionally use pending/failed/cancelled/missing before an entitlement exists.
 - `ApplicationStage = 'Pending' | 'Under review' | 'Accepted' | 'Declined'`.
 - `MeetingStatus = 'Pending' | 'Approved' | 'Declined'`.
-- `UserSession` includes trusted `access`, `officerGrants`, and optional `admin.statistics` from backend/auth claims/account docs, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI. Stats admins use established authentication and do not need paid student access for `/admin` only.
+- `UserSession` includes trusted `access`, `officerGrants`, and optional student `department` / `departmentKey` from backend/auth claims/account docs, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI.
 
 Workflow pages should consume foundation hooks/components instead of creating a parallel adapter:
 
@@ -61,7 +60,7 @@ Current HTTP paths used by the production identity/payment gateway match the mer
 | Method | Path | Frontend expectation |
 | --- | --- | --- |
 | `GET` | `/session` | Returns trusted `UserSession` for the current Firebase ID token. |
-| `POST` | `/payments/registration/start` | Creates provider checkout for PHP10 six-month registration payment and returns `RegistrationPaymentIntent`; passwords are not sent here. Student starts may include optional normalized free-text `department`. |
+| `POST` | `/payments/registration/start` | Creates provider checkout for PHP10 six-month registration payment and returns `RegistrationPaymentIntent`; passwords are not sent here. Student starts include one canonical department label chosen from the frontend department list. Sponsors send no department. |
 | `GET` | `/payments/registration/status?intentId=:intentId` | Returns `CheckoutStatus`; only `status: active` with `canCreateAccount: true` unlocks account creation, and the backend validates its registration-binding cookie. |
 | `POST` | `/payments/registration/complete` | Server creates the paid Firebase account from a confirmed registration intent. The merged paid-access handler returns completion metadata (`uid`, `completed`, `accessExpiresAt`); the frontend then signs in and reloads `/session` for trusted profile/access/grant details. |
 | `POST` | `/payments/renewals/start` | Creates manual renewal checkout for the signed-in account. |
@@ -76,7 +75,7 @@ It consumes the content lane's organization, announcement, comment, like, multi-
 List responses may be arrays or `{ items, nextPageToken? }`; the UI currently renders the first page with clear loading, empty, error and save-result states.
 Application stages preserve the request-service labels `Pending | Under review | Accepted | Declined` and still tolerate older snake/lowercase response values when reading.
 Meeting statuses preserve the request-service labels `Pending | Approved | Declined` and still tolerate older lowercase response values when reading.
-Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired access is locked by the shared route guard. Comment edit/delete controls render only for owned comments and backend ownership remains authoritative. Meeting documents are PDF-only, uploaded through authenticated Firebase Storage targets, and downloaded through authenticated backend streaming (`GET /requests/meetings/:meetingRequestId/document`) instead of direct SDK reads, public download URLs, or permanent bearer URLs. Announcement media supports up to four total items, images plus at most one bounded MP4/WebM video, with a 30 MB aggregate limit and no transcoding/adaptive-streaming platform. Organization `contactPhone` is optional and public only when supplied. Department counts are removed from organization management and are available only from `GET /admin/statistics` to provisioned stats admins; responses remain aggregate-only and contain no student identities, emails, private meeting data, payment data, or organization-management powers.
+Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired access is locked by the shared route guard. Comment edit/delete controls render only for owned comments and backend ownership remains authoritative. Meeting documents are PDF-only, uploaded through authenticated Firebase Storage targets, and downloaded through authenticated backend streaming (`GET /requests/meetings/:meetingRequestId/document`) instead of direct SDK reads, public download URLs, or permanent bearer URLs. Announcement media supports up to four total items, images plus at most one bounded MP4/WebM video, with a 30 MB aggregate limit and no transcoding/adaptive-streaming platform. Organization `contactPhone` is optional and public only when supplied. Department registered-student counts are available only inside approved organization management from `GET /organizations/:orgId/student-department-counts`; responses remain aggregate-only and contain no student identities, emails, private meeting data, payment data, or global organization-management powers.
 
 ## Design-system precedence
 

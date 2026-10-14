@@ -11,7 +11,6 @@ import { FeedView } from '../FeedPage';
 import { MeetingsView } from '../MeetingsPage';
 import { EntryPage } from '../../access/EntryPage';
 import { OrganizationSettingsView } from '../../settings/OrganizationSettingsPage';
-import { AdminDashboardView } from '../../admin/AdminDashboardPage';
 import { OfficerView } from '../OfficerPage';
 import { OrganizationView } from '../OrganizationPage';
 
@@ -49,19 +48,9 @@ const officerSession: UserSession = {
   ...studentSession,
   uid: 'officer-1',
   displayName: 'Lia Cruz',
-  officerGrants: [{ organizationId: 'robotics', organizationName: 'Robotics Guild', status: 'approved', grantedBy: 'owner-1', grantedAt: '2026-01-10T00:00:00.000Z' }],
+  officerGrants: [{ organizationId: 'robotics', organizationName: 'Computer Engineering Department', status: 'approved', grantedBy: 'owner-1', grantedAt: '2026-01-10T00:00:00.000Z' }],
 };
 
-const adminSession: UserSession = {
-  uid: 'admin-1',
-  email: 'admin@example.test',
-  displayName: 'SOAR Stats Admin',
-  accountKind: 'admin',
-  emailVerified: true,
-  access: { status: 'missing', annualFeePhp: 10, feePhp: 10, periodMonths: 6, periodLabel: '6 months', renewalAvailable: false },
-  officerGrants: [],
-  admin: { statistics: true },
-};
 
 beforeAll(() => {
   Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:fixture-preview'), configurable: true });
@@ -87,13 +76,13 @@ describe('SOAR workflow pages', () => {
     const user = userEvent.setup();
     renderInRouter(<DirectoryView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
-    expect(await screen.findByText('Robotics Guild')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Robotics Guild' })).toHaveAttribute('href', '/app/organizations/robotics');
-    expect(screen.getByRole('link', { name: /Open Robotics Guild profile/i })).toHaveAttribute('href', '/app/organizations/robotics');
+    expect(await screen.findByText('Computer Engineering Department')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Computer Engineering Department' })).toHaveAttribute('href', '/app/organizations/robotics');
+    expect(screen.getByRole('link', { name: /Open Computer Engineering Department profile/i })).toHaveAttribute('href', '/app/organizations/robotics');
     await user.type(screen.getByLabelText(/search by organization name/i), 'no match');
 
     expect(screen.getByText(/No organizations match this search/i)).toBeInTheDocument();
-    expect(screen.queryByText('Robotics Guild')).not.toBeInTheDocument();
+    expect(screen.queryByText('Computer Engineering Department')).not.toBeInTheDocument();
   });
 
   it('keeps external application confirmation locked until the form link is activated', async () => {
@@ -125,7 +114,7 @@ describe('SOAR workflow pages', () => {
   it('defaults organization profiles to the feed with role-appropriate profile tabs', async () => {
     const { unmount } = renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={createFixtureWorkflowDataClient()} />, ['/app/organizations/robotics']);
 
-    expect(await screen.findByRole('heading', { name: /Robotics Guild/i, level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Computer Engineering Department/i, level: 1 })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Feed' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'About' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Dates & availability' })).toBeInTheDocument();
@@ -134,7 +123,7 @@ describe('SOAR workflow pages', () => {
     unmount();
 
     renderInRouter(<OrganizationView organizationId="health" session={sponsorSession} client={createFixtureWorkflowDataClient()} />, ['/app/organizations/health?tab=apply']);
-    expect(await screen.findByRole('heading', { name: /Campus Health Alliance/i, level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Civil Engineering Department/i, level: 1 })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Feed' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'Meetings' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Apply' })).not.toBeInTheDocument();
@@ -144,7 +133,7 @@ describe('SOAR workflow pages', () => {
     const user = userEvent.setup();
     renderInRouter(<MeetingsView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
-    await screen.findAllByText(/Build Team interview window/i);
+    await screen.findAllByText(/Computer Engineering consultation window/i);
     await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
     await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
     expect(await screen.findByText(/repeated identical request/i)).toBeInTheDocument();
@@ -171,22 +160,22 @@ describe('SOAR workflow pages', () => {
     const stageSelect = await screen.findByLabelText(/Stage for Mara Santos/i);
     await user.selectOptions(stageSelect, 'Declined');
     expect(await screen.findByText(/Application moved to Declined in demo mode/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Open Mic Crew/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Architecture Department Portfolio Updates/i)).not.toBeInTheDocument();
   });
 
   it('links feed post authors to organization profiles without a redundant profile button', async () => {
     renderInRouter(<FeedView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
-    expect(await screen.findByText(/Tryouts and build night/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Robotics Guild' })).toHaveAttribute('href', '/app/organizations/robotics');
-    expect(screen.getByRole('link', { name: /Open Robotics Guild profile/i })).toHaveAttribute('href', '/app/organizations/robotics');
+    expect(await screen.findByText(/Computer Engineering project night/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Computer Engineering Department' })).toHaveAttribute('href', '/app/organizations/robotics');
+    expect(screen.getByRole('link', { name: /Open Computer Engineering Department profile/i })).toHaveAttribute('href', '/app/organizations/robotics');
     expect(screen.queryByText(/Open organization profile/i)).not.toBeInTheDocument();
   });
 
   it('keeps public organization profiles public-facing even for managers', async () => {
     renderInRouter(<OrganizationView organizationId="robotics" session={officerSession} client={createFixtureWorkflowDataClient()} />);
 
-    expect(await screen.findByRole('heading', { name: /Robotics Guild/i, level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Computer Engineering Department/i, level: 1 })).toBeInTheDocument();
     expect(screen.getByText(/You manage this organization/i)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Manage organization/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Review applications/i })).not.toBeInTheDocument();
@@ -198,12 +187,12 @@ describe('SOAR workflow pages', () => {
 
   it('uses prominent organization identity areas in the directory and profile', async () => {
     const { container: directoryContainer } = renderInRouter(<DirectoryView session={studentSession} client={createFixtureWorkflowDataClient()} />);
-    expect(await screen.findByText('Robotics Guild')).toBeInTheDocument();
-    expect(directoryContainer.querySelector('.org-identity-art')).toHaveTextContent('RG');
+    expect(await screen.findByText('Computer Engineering Department')).toBeInTheDocument();
+    expect(directoryContainer.querySelector('.org-identity-art')).toHaveTextContent('CE');
 
     const { container: profileContainer } = renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={createFixtureWorkflowDataClient()} />);
-    expect(await screen.findByText(/Builds robots, runs workshops/i)).toBeInTheDocument();
-    expect(profileContainer.querySelector('.profile-identity-art')).toHaveTextContent('RG');
+    expect(await screen.findByText(/Department organization for Computer Engineering students/i)).toBeInTheDocument();
+    expect(profileContainer.querySelector('.profile-identity-art')).toHaveTextContent('CE');
   });
 
   it('protects dirty announcement dialogs and returns focus to the trigger', async () => {
@@ -231,7 +220,7 @@ describe('SOAR workflow pages', () => {
       ...officerSession,
       officerGrants: [
         ...officerSession.officerGrants,
-        { organizationId: 'literary', organizationName: 'Literary Circle', status: 'approved' as const },
+        { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' as const },
       ],
     };
     renderInRouter(<FeedView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />);
@@ -241,11 +230,11 @@ describe('SOAR workflow pages', () => {
     expect(organizationSelector).toHaveValue('robotics');
 
     await user.selectOptions(organizationSelector, 'literary');
-    await user.type(screen.getByLabelText(/Post text/i), 'Open mic crew orientation starts Friday.');
+    await user.type(screen.getByLabelText(/Post text/i), 'Architecture portfolio orientation starts Friday.');
     await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));
 
     expect(await screen.findByText(/Announcement published in demo mode/i)).toBeInTheDocument();
-    expect(await screen.findByText(/Open mic crew orientation starts Friday/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Architecture portfolio orientation starts Friday/i)).toBeInTheDocument();
   });
 
   it('guards organization settings to approved officer grants and supports managed organization context', async () => {
@@ -254,23 +243,23 @@ describe('SOAR workflow pages', () => {
       ...officerSession,
       officerGrants: [
         ...officerSession.officerGrants,
-        { organizationId: 'literary', organizationName: 'Literary Circle', status: 'approved' as const },
+        { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' as const },
       ],
     };
     renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics']);
 
     expect(await screen.findByRole('heading', { name: /Organization settings/i, level: 1 })).toBeInTheDocument();
-    expect(screen.getByText(/Selected organization: Robotics Guild/i)).toBeInTheDocument();
+    expect(screen.getByText(/Selected organization: Computer Engineering Department/i)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^Details$/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getAllByRole('link', { name: /View public profile/i })).toHaveLength(1);
     expect(screen.queryByLabelText(/Post text/i)).not.toBeInTheDocument();
     const organizationSelector = screen.getByLabelText(/^Organization$/i);
     expect(organizationSelector).toHaveValue('robotics');
-    expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Robotics Guild');
+    expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Computer Engineering Department');
 
     await user.selectOptions(organizationSelector, 'literary');
-    await waitFor(() => expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Literary Circle'));
-    expect(screen.queryByDisplayValue('Campus Health Alliance')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Architecture Department'));
+    expect(screen.queryByDisplayValue('Civil Engineering Department')).not.toBeInTheDocument();
   });
 
   it('scopes manage-organization announcement history and dates to the selected organization tab', async () => {
@@ -279,20 +268,20 @@ describe('SOAR workflow pages', () => {
       ...officerSession,
       officerGrants: [
         ...officerSession.officerGrants,
-        { organizationId: 'literary', organizationName: 'Literary Circle', status: 'approved' as const },
+        { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' as const },
       ],
     };
     const { unmount } = renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics&tab=announcements']);
 
     expect(await screen.findByRole('tab', { name: /Announcements/i })).toHaveAttribute('aria-selected', 'true');
-    expect(await screen.findByText(/Tryouts and build night/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Open mic signup/i)).not.toBeInTheDocument();
+    expect((await screen.findAllByText(/Computer Engineering project night/i)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Architecture portfolio clinic signup/i)).not.toBeInTheDocument();
     unmount();
 
     renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=literary&tab=dates']);
     expect(await screen.findByRole('tab', { name: /Dates & availability/i })).toHaveAttribute('aria-selected', 'true');
-    await waitFor(() => expect(screen.getAllByText(/Open Mic Night/i).length).toBeGreaterThan(0));
-    expect(screen.queryByText(/Build Night/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText(/Architecture portfolio clinic/i).length).toBeGreaterThan(0));
+    expect(screen.queryByText(/Computer Engineering project night/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
     expect(screen.getByRole('dialog', { name: /Add dated entry/i })).toBeInTheDocument();
@@ -324,7 +313,7 @@ describe('SOAR workflow pages', () => {
       ...officerSession,
       officerGrants: [
         ...officerSession.officerGrants,
-        { organizationId: 'literary', organizationName: 'Literary Circle', status: 'approved' as const },
+        { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' as const },
       ],
     };
     renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics']);
@@ -334,31 +323,31 @@ describe('SOAR workflow pages', () => {
     await user.selectOptions(screen.getByLabelText(/^Organization$/i), 'literary');
     expect(screen.getByRole('alertdialog', { name: /Switch organizations/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/^Organization$/i)).toHaveValue('robotics');
-    expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Robotics Guild Draft');
+    expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Computer Engineering Department Draft');
     await user.click(screen.getByRole('button', { name: /Keep editing/i }));
 
     await user.selectOptions(screen.getByLabelText(/^Organization$/i), 'literary');
     await user.click(screen.getByRole('button', { name: /Discard and switch/i }));
-    await waitFor(() => expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Literary Circle'));
+    await waitFor(() => expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Architecture Department'));
   });
 
   it('validates comments and updates accessible icon like state and count on the feed', async () => {
     const user = userEvent.setup();
     renderInRouter(<FeedView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
-    await screen.findByText(/Tryouts and build night/i);
+    await screen.findByText(/Computer Engineering project night/i);
     await user.click(screen.getAllByRole('button', { name: /Open comments/i })[0]);
     await user.click(screen.getByRole('button', { name: /Add comment/i }));
     expect(await screen.findByText(/Enter a comment before posting/i)).toBeInTheDocument();
 
-    const like = screen.getByRole('button', { name: /Like announcement from Robotics Guild; 12 likes/i });
+    const like = screen.getByRole('button', { name: /Like announcement from Computer Engineering Department; 12 likes/i });
     expect(like).toHaveAttribute('aria-pressed', 'false');
     expect(like.querySelector('.like-icon')).toBeInTheDocument();
     expect(like.querySelector('.like-count')).toHaveTextContent('12');
 
     await user.click(like);
     await waitFor(() => expect(screen.getByText(/Liked in demo mode/i)).toBeInTheDocument());
-    const unlike = screen.getByRole('button', { name: /Unlike announcement from Robotics Guild; 13 likes/i });
+    const unlike = screen.getByRole('button', { name: /Unlike announcement from Computer Engineering Department; 13 likes/i });
     expect(unlike).toHaveAttribute('aria-pressed', 'true');
     expect(unlike.querySelector('.like-count')).toHaveTextContent('13');
   });
@@ -367,7 +356,7 @@ describe('SOAR workflow pages', () => {
     const user = userEvent.setup();
     renderInRouter(<FeedView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
-    await screen.findByText(/Tryouts and build night/i);
+    await screen.findByText(/Computer Engineering project night/i);
     await user.click(screen.getAllByRole('button', { name: /Open comments \(1\)/i })[0]);
     await user.click(screen.getByRole('button', { name: /^Edit$/i }));
     await user.clear(screen.getByLabelText(/Edit comment by Mara Santos/i));
@@ -389,24 +378,19 @@ describe('SOAR workflow pages', () => {
     unmount();
 
     renderInRouter(<OrganizationView organizationId="literary" session={studentSession} client={createFixtureWorkflowDataClient()} />);
-    expect(await screen.findByRole('heading', { name: /Literary Circle/i, level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Architecture Department/i, level: 1 })).toBeInTheDocument();
     expect(screen.queryByText(/Phone:/i)).not.toBeInTheDocument();
   });
 
-  it('removes student statistics from organization management and shows aggregates only in admin', async () => {
-    const { unmount } = renderInRouter(<OrganizationSettingsView session={officerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics&tab=students']);
+  it('shows department-organization registered student counts only in management context', async () => {
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics&tab=students']);
 
     expect(await screen.findByRole('heading', { name: /Organization settings/i, level: 1 })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /Student stats/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Registered students by department/i)).not.toBeInTheDocument();
-    unmount();
-
-    renderInRouter(<AdminDashboardView session={adminSession} client={createFixtureWorkflowDataClient()} />, ['/admin']);
-    expect(await screen.findByRole('heading', { name: /SOAR aggregate dashboard/i })).toBeInTheDocument();
-    expect(screen.getByText(/simulated aggregate data/i)).toBeInTheDocument();
-    expect(await screen.findByText('Computer Science')).toBeInTheDocument();
-    expect(await screen.findByText('Engineering')).toBeInTheDocument();
-    expect(await screen.findByText(/Unspecified legacy accounts/i)).toBeInTheDocument();
+    const countCard = await screen.findByRole('region', { name: /Registered students from this department/i });
+    expect(within(countCard).getByText('Computer Engineering Department')).toBeInTheDocument();
+    expect(within(countCard).getByText('3')).toBeInTheDocument();
+    expect(within(countCard).getByText(/saved fixture student records/i)).toBeInTheDocument();
     expect(screen.queryByText(/mara@example.edu/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Mara Santos/i)).not.toBeInTheDocument();
   });
@@ -417,7 +401,7 @@ describe('SOAR workflow pages', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     renderInRouter(<FeedView session={studentSession} client={createFixtureWorkflowDataClient()} />, ['/app?announcementId=post-health-briefing']);
 
-    const directPost = await screen.findByText(/Volunteer briefing slots are posted/i);
+    const directPost = await screen.findByText(/Civil Engineering field briefing slots are posted/i);
     expect(directPost.closest('article')).toHaveAttribute('id', 'announcement-post-health-briefing');
     await user.click(screen.getAllByRole('button', { name: /Share direct link/i })[0]);
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/app?announcementId=post-robotics-tryouts'));
@@ -449,7 +433,7 @@ describe('SOAR workflow pages', () => {
     const user = userEvent.setup();
     renderInRouter(<MeetingsView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
-    await screen.findAllByText(/Build Team interview window/i);
+    await screen.findAllByText(/Computer Engineering consultation window/i);
     await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
     const permissiveUser = userEvent.setup({ applyAccept: false });
     await permissiveUser.upload(screen.getByLabelText(/Formal request document/i), new File(['not a pdf'], 'request.png', { type: 'image/png' }));

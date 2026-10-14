@@ -7,7 +7,8 @@ export const makeSession = (overrides: Partial<UserSession> = {}): UserSession =
   displayName: 'Mara Santos',
   accountKind: 'student',
   studentId: '2026-0001',
-  department: 'Computer Science',
+  department: 'Computer Engineering Department',
+  departmentKey: 'computer engineering department',
   emailVerified: true,
   access: {
     status: 'active',

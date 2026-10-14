@@ -23,7 +23,7 @@ import type {
   OrganizationProfile,
   OrganizationProfileInput,
   OrganizationSummary,
-  AdminStatistics,
+  OrganizationDepartmentStudentCount,
   WorkflowDataClient,
   WorkflowMutationResult,
   WorkflowQueryResult,
@@ -191,6 +191,8 @@ async function mapOrganizationSummary(raw: unknown): Promise<OrganizationSummary
     contactEmail: pickString(item.contactEmail),
     contactPhone: pickString(item.contactPhone) || undefined,
     recruitmentTitle: pickString(item.recruitmentTitle || recruitment.title),
+    department: pickString(item.department) || undefined,
+    departmentKey: pickString(item.departmentKey) || undefined,
   };
 }
 
@@ -264,33 +266,23 @@ function mapMeetingRequest(raw: unknown): MeetingRequest {
   };
 }
 
-function mapDepartmentRows(rawRows: unknown): AdminStatistics['students']['departments'] {
-  return pickArray<unknown>(rawRows).map((row) => {
-    const record = asRecord(row);
-    return {
-      departmentKey: pickString(record.departmentKey || record.department).toLowerCase(),
-      department: pickString(record.department, 'Unspecified'),
-      count: pickNumber(record.count, 0),
-    };
-  });
+function unwrapDepartmentCount(raw: unknown): unknown {
+  const item = asRecord(raw);
+  return item.item ?? item.data ?? raw;
 }
 
-function mapAdminStatistics(raw: unknown): AdminStatistics {
-  const item = asRecord(raw);
-  const students = asRecord(item.students);
-  const organizations = asRecord(item.organizations);
-  const departments = mapDepartmentRows(students.departments);
+function mapOrganizationDepartmentStudentCount(raw: unknown, organizationId: string): OrganizationDepartmentStudentCount {
+  const item = asRecord(unwrapDepartmentCount(raw));
+  const department = pickString(item.department);
+  const departmentKey = pickString(item.departmentKey || item.department).toLowerCase();
   return {
+    organizationId: pickString(item.organizationId, organizationId),
+    department,
+    departmentKey,
+    registeredStudentCount: pickNumber(item.registeredStudentCount, pickNumber(item.count, 0)),
+    scope: 'registered_students_in_organization_department',
+    description: pickString(item.description, 'Registered student accounts whose saved department matches this organization department; not organization members or applicants.'),
     generatedAt: pickString(item.generatedAt, new Date().toISOString()),
-    scope: 'registered_soar_totals',
-    students: {
-      totalRegisteredStudents: pickNumber(students.totalRegisteredStudents, departments.reduce((sum, row) => sum + row.count, 0)),
-      missingDepartmentCount: pickNumber(students.missingDepartmentCount, 0),
-      departments,
-    },
-    organizations: {
-      totalOrganizations: pickNumber(organizations.totalOrganizations, 0),
-    },
   };
 }
 
@@ -507,9 +499,17 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return { ok: true, persisted: true, source: 'production', message: 'Announcement deleted.' };
     },
 
-    async getAdminStatistics() {
-      const response = await apiFetch<unknown>('/admin/statistics', await activeHeaders());
-      return queryResult(mapAdminStatistics(response));
+    async getOrganizationDepartmentStudentCount(organizationId) {
+      try {
+        const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}/student-department-counts`, await activeHeaders());
+        return queryResult<OrganizationDepartmentStudentCount | undefined>(mapOrganizationDepartmentStudentCount(response, organizationId));
+      } catch (error) {
+        const problem = error as Error & { code?: string; status?: number };
+        if (problem.code === 'organization_department_missing' || problem.status === 409) {
+          return queryResult<OrganizationDepartmentStudentCount | undefined>(undefined, problem.message || 'This organization has no assigned department link yet.');
+        }
+        throw error;
+      }
     },
 
     async updateApplicationStage(applicationId, stage: ApplicationStage, organizationId) {

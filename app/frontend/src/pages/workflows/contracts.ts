@@ -89,6 +89,8 @@ export interface OrganizationSummary {
   contactEmail: string;
   contactPhone?: string;
   recruitmentTitle: string;
+  department?: string;
+  departmentKey?: string;
 }
 
 export interface OrganizationProfile extends OrganizationSummary {
@@ -199,23 +201,14 @@ export interface OfficerDashboard {
   meetingRequests: MeetingRequest[];
 }
 
-export interface StudentDepartmentCount {
-  departmentKey: string;
+export interface OrganizationDepartmentStudentCount {
+  organizationId: string;
   department: string;
-  count: number;
-}
-
-export interface AdminStatistics {
+  departmentKey: string;
+  registeredStudentCount: number;
+  scope: 'registered_students_in_organization_department';
+  description: string;
   generatedAt: string;
-  scope: 'registered_soar_totals';
-  students: {
-    totalRegisteredStudents: number;
-    missingDepartmentCount: number;
-    departments: StudentDepartmentCount[];
-  };
-  organizations: {
-    totalOrganizations: number;
-  };
 }
 
 export interface WorkflowDataClient {
@@ -241,7 +234,7 @@ export interface WorkflowDataClient {
   saveOrganizationProfile(input: OrganizationProfileInput, session: UserSession): Promise<WorkflowMutationResult<OrganizationProfile>>;
   publishAnnouncement(input: AnnouncementInput, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   deleteAnnouncement(announcementId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
-  getAdminStatistics(session: UserSession): Promise<WorkflowQueryResult<AdminStatistics>>;
+  getOrganizationDepartmentStudentCount(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OrganizationDepartmentStudentCount | undefined>>;
   updateApplicationStage(applicationId: string, stage: ApplicationStage, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<ApplicationRecord>>;
   saveDateEntry(input: DateEntryInput, session: UserSession): Promise<WorkflowMutationResult<DateEntry>>;
   deleteDateEntry(dateEntryId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;

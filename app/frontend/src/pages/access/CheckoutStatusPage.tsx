@@ -4,6 +4,7 @@ import { SoarLogo } from '../../components/SoarLogo';
 import { Button, ButtonLink, Card, Field, LoadingBlock, StateBlock, TextInput, StatusChip } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import type { CheckoutStatus } from '../../lib/contracts';
+import { isCanonicalDepartment } from '../../lib/departments';
 import { markFixturePaymentConfirmedFromUrl } from '../../lib/fixtures';
 import { readRegistrationDraft } from './RegistrationIntentPage';
 
@@ -49,6 +50,10 @@ export const CheckoutStatusPage = () => {
     setLocalError(null);
     if (!draft?.email || !draft.displayName || !draft.role) {
       setLocalError('Registration details were not found. Start the payment flow again so the account can be tied to the right person.');
+      return;
+    }
+    if (draft.role === 'student' && !isCanonicalDepartment(draft.department)) {
+      setLocalError('Department selection is required for student registration. Start the registration flow again and choose from the department list.');
       return;
     }
     if (password.length < 8) {
@@ -122,7 +127,7 @@ export const CheckoutStatusPage = () => {
             <div><dt>Email</dt><dd>{draft?.email || 'Missing draft'}</dd></div>
             <div><dt>Account type</dt><dd>{draft?.role === 'sponsor' ? 'Sponsor' : 'Student'}</dd></div>
             {draft?.studentId ? <div><dt>Student ID</dt><dd>{draft.studentId}</dd></div> : null}
-            {draft?.department ? <div><dt>Department</dt><dd>{draft.department}</dd></div> : null}
+            {draft?.role === 'student' ? <div><dt>Department</dt><dd>{draft.department || 'Missing department selection'}</dd></div> : null}
           </dl>
           <Field id="password" label="Password" hint="Use at least 8 characters.">
             <TextInput id="password" type="password" autoComplete="new-password" required disabled={!status?.canCreateAccount || submitting} value={password} onChange={(event) => setPassword(event.target.value)} />

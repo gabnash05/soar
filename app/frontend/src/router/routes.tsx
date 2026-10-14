@@ -8,7 +8,7 @@ import {
 import { AppShell } from '../components/AppShell';
 import { LoadingBlock, StateBlock, ButtonLink } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
-import { hasActiveAccess, hasApprovedOfficerGrant, isStatsAdminAccount, isStudentAccount } from '../lib/contracts';
+import { hasActiveAccess, hasApprovedOfficerGrant, isStudentAccount } from '../lib/contracts';
 import { CheckoutStatusPage } from '../pages/access/CheckoutStatusPage';
 import { EmailVerificationPage } from '../pages/access/EmailVerificationPage';
 import { EntryPage } from '../pages/access/EntryPage';
@@ -18,7 +18,6 @@ import { RegistrationIntentPage } from '../pages/access/RegistrationIntentPage';
 import { AccessSettingsPage } from '../pages/settings/AccessSettingsPage';
 import { AccountSettingsPage } from '../pages/settings/AccountSettingsPage';
 import { OrganizationSettingsPage } from '../pages/settings/OrganizationSettingsPage';
-import { AdminDashboardPage } from '../pages/admin/AdminDashboardPage';
 import {
   ApplicationsPage,
   DirectoryPage,
@@ -33,7 +32,6 @@ const GuardLayout = ({
   requireActiveAccess = false,
   requireStudent = false,
   requireOfficerGrant = false,
-  requireAdmin = false,
   allowExpired = false,
 }: {
   requireSession?: boolean;
@@ -41,7 +39,6 @@ const GuardLayout = ({
   requireActiveAccess?: boolean;
   requireStudent?: boolean;
   requireOfficerGrant?: boolean;
-  requireAdmin?: boolean;
   allowExpired?: boolean;
 }) => {
   const { session, loading } = useAuth();
@@ -55,16 +52,6 @@ const GuardLayout = ({
 
   if (session && requireVerified && !session.emailVerified) {
     return <Navigate to="/access/verify-email" replace />;
-  }
-
-  if (session && requireAdmin && !isStatsAdminAccount(session)) {
-    return (
-      <main className="mx-auto grid min-h-screen w-[min(760px,100%)] place-items-center p-6">
-        <StateBlock symbol="!" title="Admin statistics unavailable">
-          This dashboard is available only to provisioned aggregate-statistics admins.
-        </StateBlock>
-      </main>
-    );
   }
 
   if (session && requireActiveAccess && !hasActiveAccess(session)) {
@@ -101,7 +88,6 @@ Organization management controls appear only where your account has access.
 const PublicOnly = ({ children }: { children: ReactNode }) => {
   const { session, loading } = useAuth();
   if (loading) return <main className="grid min-h-screen place-items-center p-6"><LoadingBlock label="Loading session" /></main>;
-  if (session?.emailVerified && isStatsAdminAccount(session)) return <Navigate to="/admin" replace />;
   if (session?.emailVerified && hasActiveAccess(session)) return <Navigate to="/app" replace />;
   if (session && !session.emailVerified) return <Navigate to="/access/verify-email" replace />;
   if (session && !hasActiveAccess(session)) return <Navigate to="/settings/access" replace />;
@@ -169,13 +155,6 @@ export const router = createBrowserRouter([
           { path: 'account', element: <AccountSettingsPage /> },
           { path: 'access', element: <AccessSettingsPage /> },
           { path: 'organization', element: <GuardLayout requireVerified requireActiveAccess requireOfficerGrant />, children: [{ index: true, element: <OrganizationSettingsPage /> }] },
-        ],
-      },
-      {
-        path: '/admin',
-        element: <AppShell allowLockedMain />,
-        children: [
-          { element: <GuardLayout requireVerified requireAdmin />, children: [{ index: true, element: <AdminDashboardPage /> }] },
         ],
       },
     ],

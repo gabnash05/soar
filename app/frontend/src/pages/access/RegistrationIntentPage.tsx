@@ -1,9 +1,11 @@
 import { FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SoarLogo } from '../../components/SoarLogo';
-import { Button, ButtonLink, Card, Field, Select, TextInput } from '../../components/ui';
+import { Button, ButtonLink, Card, Field, Select as NativeSelect, TextInput } from '../../components/ui';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useAuth } from '../../context/AuthContext';
 import type { RegistrationPaymentInput, RegistrationRoleIntent } from '../../lib/contracts';
+import { CANONICAL_DEPARTMENTS, isCanonicalDepartment } from '../../lib/departments';
 import { navigateToHostedCheckout } from '../../lib/redirects';
 
 const DRAFT_KEY = 'soar:registration-draft';
@@ -22,6 +24,29 @@ export const readRegistrationDraft = (): RegistrationDraft | null => {
 const writeRegistrationDraft = (draft: RegistrationPaymentInput & { intentId?: string }) => {
   sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
 };
+
+function DepartmentSelect({ value, onChange, error }: { value: string; onChange: (value: string) => void; error?: string }) {
+  return (
+    <Field id="department" label="Department" error={error} hint="Required for student accounts. Choose the department exactly as it appears in the school list.">
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger
+          id="department"
+          aria-invalid={Boolean(error) || undefined}
+          className="control min-h-11 w-full justify-between border-[var(--color-border)] bg-[var(--color-white)] px-3 py-2 text-[var(--color-ink)] focus-visible:border-[var(--color-blue-deep)] focus-visible:ring-[var(--color-blue-soft)] data-placeholder:text-[var(--color-muted)]"
+        >
+          <SelectValue placeholder="Choose your department" />
+        </SelectTrigger>
+        <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)]">
+          <SelectGroup>
+            {CANONICAL_DEPARTMENTS.map((item) => (
+              <SelectItem key={item} value={item}>{item}</SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </Field>
+  );
+}
 
 export const RegistrationIntentPage = () => {
   const { startRegistrationPayment, error, clearError, gateway } = useAuth();
@@ -42,9 +67,8 @@ export const RegistrationIntentPage = () => {
       setLocalError('Student ID is required for students and future officers.');
       return;
     }
-    const normalizedDepartment = department.trim().replace(/\s+/g, ' ');
-    if (role === 'student' && normalizedDepartment.length > 80) {
-      setLocalError('Department must be 80 characters or fewer.');
+    if (role === 'student' && !isCanonicalDepartment(department)) {
+      setLocalError('Choose your department from the list before continuing.');
       return;
     }
     setSubmitting(true);
@@ -54,7 +78,7 @@ export const RegistrationIntentPage = () => {
         displayName: displayName.trim(),
         email: email.trim(),
         studentId: role === 'student' ? studentId.trim() : undefined,
-        department: role === 'student' ? normalizedDepartment || undefined : undefined,
+        department: role === 'student' ? department : undefined,
         companyName: role === 'sponsor' ? companyName.trim() || undefined : undefined,
         returnUrl: `${window.location.origin}/access/checkout`,
       };
@@ -76,8 +100,8 @@ export const RegistrationIntentPage = () => {
           <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">
 SOAR costs PHP10 per account for six months. Account creation unlocks after a successful checkout.
           </p>
-          <div className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm">
-            Officers do not choose a separate signup. Register as a student with student ID; organization owners or admins grant officer access later.
+          <div className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-sm text-[var(--color-blue-deep)]">
+            Officers do not choose a separate signup. Register as a student with student ID; authorized organization staff grant officer access later.
           </div>
           {gateway.mode === 'fixture' ? <div className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm bg-[var(--color-orange-soft)] text-[var(--color-navy)]">Demo checkout is simulated locally and does not create a real charge.</div> : null}
           <ol className="m-0 grid list-none gap-3 p-0 [&_li]:grid [&_li]:grid-cols-[minmax(0,0.35fr)_minmax(0,1fr)] [&_li]:items-start [&_li]:gap-2.5 [&_li]:border-t [&_li]:border-[var(--color-border)] [&_li]:py-3 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:block [&_span]:text-[13px] [&_span]:text-[var(--muted-foreground)]">
@@ -89,10 +113,10 @@ SOAR costs PHP10 per account for six months. Account creation unlocks after a su
         <form onSubmit={handleSubmit} className="grid content-start gap-3.5" noValidate>
           {(localError || error) ? <div className="rounded-[var(--radius-md)] border border-[var(--color-orange-deep)] bg-[var(--color-danger-soft)] px-3.5 py-3 text-[var(--color-navy)]" role="alert">{localError || error}</div> : null}
           <Field id="role" label="Account type">
-            <Select id="role" value={role} onChange={(event) => setRole(event.target.value as RegistrationRoleIntent)}>
+            <NativeSelect id="role" value={role} onChange={(event) => setRole(event.target.value as RegistrationRoleIntent)}>
               <option value="student">Student (also used for future officers)</option>
               <option value="sponsor">Sponsor / outside user</option>
-            </Select>
+            </NativeSelect>
           </Field>
           <Field id="displayName" label="Full name">
             <TextInput id="displayName" required autoComplete="name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
@@ -105,9 +129,7 @@ SOAR costs PHP10 per account for six months. Account creation unlocks after a su
               <Field id="studentId" label="Student ID" hint="Required for students and regular student accounts that may receive officer grants.">
                 <TextInput id="studentId" required value={studentId} onChange={(event) => setStudentId(event.target.value)} />
               </Field>
-              <Field id="department" label="Department" optional hint="Saved on your student account for aggregate department counts. Leave blank if your department is not listed by your school yet.">
-                <TextInput id="department" autoComplete="organization-title" value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={80} />
-              </Field>
+              <DepartmentSelect value={department} onChange={(value) => { setDepartment(value); if (localError?.toLowerCase().includes('department')) setLocalError(null); }} error={localError?.toLowerCase().includes('department') ? localError : undefined} />
             </>
           ) : (
             <Field id="companyName" label="Company or organization name" optional>
