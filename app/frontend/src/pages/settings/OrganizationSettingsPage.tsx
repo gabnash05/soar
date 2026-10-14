@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ButtonLink, ConfirmDialog, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
+import { ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
-import type { WorkflowDataClient } from '../workflows/contracts';
+import type { OrganizationProfile, WorkflowDataClient } from '../workflows/contracts';
 import {
   AnnouncementSection,
   DateEntriesSection,
@@ -14,6 +14,7 @@ import {
   OrganizationAvatar,
   RouteUnavailableState,
   SourceNotice,
+  useWorkflowQuery,
   useWorkflowSession,
   WorkflowPageFrame,
 } from '../workflows/pageParts';
@@ -24,6 +25,55 @@ const managementTabs = [
   { id: 'announcements', label: 'Announcements' },
   { id: 'dates', label: 'Dates & availability' },
 ];
+
+function DepartmentStudentCountPanel({ organization, session, client }: { organization: OrganizationProfile; session: UserSession; client: WorkflowDataClient }) {
+  const { data, loading, error, sourceMessage } = useWorkflowQuery(
+    () => client.getOrganizationDepartmentStudentCount(organization.id, session),
+    [client, organization.id, session.uid],
+  );
+
+  if (loading) {
+    return <LoadingBlock label="Loading department student count" />;
+  }
+
+  if (error) {
+    return (
+      <section className="flex flex-wrap items-center justify-between gap-3.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)] p-4 shadow-[var(--shadow-soft)] [&_p]:m-0 [&_p]:max-w-[62ch] [&_p]:text-[var(--muted-foreground)] [&_span]:text-xs [&_span]:font-extrabold [&_span]:uppercase [&_span]:tracking-[0.06em] [&_span]:text-[var(--color-blue-deep)] [&_strong]:font-[var(--font-display)] [&_strong]:text-[clamp(2rem,4vw,3rem)] [&_strong]:font-black [&_strong]:leading-none [&_strong]:tracking-[-0.04em] [&_strong]:text-[var(--color-navy)]" aria-label="Registered students from this department">
+        <div className="grid gap-1">
+          <span>Department count unavailable</span>
+          <strong>{organization.department ?? 'Department not assigned'}</strong>
+        </div>
+        <p>{error}</p>
+      </section>
+    );
+  }
+
+  if (!data) {
+    return (
+      <section className="flex flex-wrap items-center justify-between gap-3.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-off-white)] p-4 [&_p]:m-0 [&_p]:max-w-[62ch] [&_p]:text-[var(--muted-foreground)] [&_span]:text-xs [&_span]:font-extrabold [&_span]:uppercase [&_span]:tracking-[0.06em] [&_span]:text-[var(--color-blue-deep)] [&_strong]:font-[var(--font-display)] [&_strong]:text-[clamp(2rem,4vw,3rem)] [&_strong]:font-black [&_strong]:leading-none [&_strong]:tracking-[-0.04em] [&_strong]:text-[var(--color-navy)]" aria-label="Registered students from this department">
+        <div className="grid gap-1">
+          <span>Department not assigned</span>
+          <strong>{organization.name}</strong>
+        </div>
+        <p>This organization does not have an authoritative department link yet, so SOAR does not show a registered-student count.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-3.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)] p-4 shadow-[var(--shadow-soft)] [&_p]:m-0 [&_p]:max-w-[62ch] [&_p]:text-[var(--muted-foreground)] [&_span]:text-xs [&_span]:font-extrabold [&_span]:uppercase [&_span]:tracking-[0.06em] [&_span]:text-[var(--color-blue-deep)] [&_strong]:font-[var(--font-display)] [&_strong]:text-[clamp(2rem,4vw,3rem)] [&_strong]:font-black [&_strong]:leading-none [&_strong]:tracking-[-0.04em] [&_strong]:text-[var(--color-navy)]" aria-label="Registered students from this department">
+      <div className="grid gap-1">
+        <span>{data.department}</span>
+        <strong>{data.registeredStudentCount}</strong>
+      </div>
+      <div className="grid gap-2">
+        <p>registered saved student accounts from this department. Officers with student accounts are included; sponsors, members, applicants, meetings, and legacy missing departments are not.</p>
+        {sourceMessage ? <p>{sourceMessage}</p> : null}
+        <p>Generated {new Date(data.generatedAt).toLocaleString()}.</p>
+      </div>
+    </section>
+  );
+}
 
 export function OrganizationSettingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const grants = useMemo(() => getApprovedOfficerGrants(session), [session]);
@@ -119,6 +169,8 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
                   {profileDirty ? <StatusChip tone="attention">Unsaved profile edits</StatusChip> : null}
                 </div>
               </section>
+
+              <DepartmentStudentCountPanel organization={dashboard.organization} session={session} client={client} />
 
               <SubtabNav label="Organization management tasks" baseId="organization-management" items={tabsWithCounts} activeId={activeId} getTabTo={getTabTo} />
 

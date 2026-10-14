@@ -36,7 +36,7 @@ describe('RegistrationIntentPage', () => {
     expect(gateway.startRegistrationPayment).not.toHaveBeenCalled();
   });
 
-  it('sends a normalized free-text department for student registration without inventing a catalog', async () => {
+  it('requires students to choose a canonical department before starting payment', async () => {
     const gateway = renderPage();
     const user = userEvent.setup();
 
@@ -44,13 +44,19 @@ describe('RegistrationIntentPage', () => {
     await user.type(screen.getByLabelText(/full name/i), 'Mara Santos');
     await user.type(screen.getByLabelText(/email address/i), 'mara@example.edu');
     await user.type(screen.getByLabelText(/student id/i), '2026-0001');
-    await user.type(screen.getByLabelText(/department/i), '  Computer   Science  ');
+    await user.click(screen.getByRole('button', { name: /continue to php10 checkout/i }));
+
+    expect((await screen.findAllByRole('alert')).some((alert) => /choose your department/i.test(alert.textContent ?? ''))).toBe(true);
+    expect(gateway.startRegistrationPayment).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('combobox', { name: /department/i }));
+    await user.click(await screen.findByRole('option', { name: 'Computer Engineering Department' }));
     await user.click(screen.getByRole('button', { name: /continue to php10 checkout/i }));
 
     expect(gateway.startRegistrationPayment).toHaveBeenCalledWith(expect.objectContaining({
       role: 'student',
       studentId: '2026-0001',
-      department: 'Computer Science',
+      department: 'Computer Engineering Department',
     }));
     expect(navigateToHostedCheckout).toHaveBeenCalledWith('/access/checkout?intentId=test-intent');
   });
@@ -61,6 +67,7 @@ describe('RegistrationIntentPage', () => {
 
     expect(screen.getByRole('combobox', { name: /account type/i })).toHaveTextContent(/student/i);
     expect(screen.getByRole('combobox', { name: /account type/i })).toHaveTextContent(/sponsor/i);
+    expect(screen.getByRole('combobox', { name: /department/i })).toHaveTextContent(/choose your department/i);
     expect(screen.queryByText(/officer signup/i)).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByRole('combobox', { name: /account type/i }), 'sponsor');

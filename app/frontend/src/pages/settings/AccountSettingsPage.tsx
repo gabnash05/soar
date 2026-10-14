@@ -79,7 +79,7 @@ export const AccountSettingsPage = () => {
             <Button type="submit" disabled={savingName}>{savingName ? 'Saving…' : 'Save name'}</Button>
           </form>
           <dl className="mt-[18px] grid gap-px overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-border)] p-0 [&_div]:grid [&_div]:grid-cols-[minmax(120px,0.45fr)_minmax(0,1fr)] [&_div]:gap-3 [&_div]:bg-[var(--color-white)] [&_div]:p-3 max-[820px]:[&_div]:grid-cols-1 max-[820px]:[&_div]:gap-0.5 [&_dt]:text-[13px] [&_dt]:text-[var(--muted-foreground)] [&_dd]:m-0 [&_dd]:[overflow-wrap:anywhere] [&_dd]:font-bold [&_dd]:text-[var(--color-navy)]">
-            <div><dt>Account type</dt><dd><RoleBadge kind={session.accountKind}>{session.accountKind === 'admin' ? 'Stats admin' : session.accountKind === 'student' ? 'Student' : 'Sponsor'}</RoleBadge></dd></div>
+            <div><dt>Account type</dt><dd><RoleBadge kind={session.accountKind}>{session.accountKind === 'student' ? 'Student' : 'Sponsor'}</RoleBadge></dd></div>
             {session.studentId ? <div><dt>Student ID</dt><dd>{session.studentId}</dd></div> : null}
             {session.department ? <div><dt>Department</dt><dd>{session.department}</dd></div> : null}
             {session.companyName ? <div><dt>Company / organization</dt><dd>{session.companyName}</dd></div> : null}
