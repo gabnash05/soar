@@ -1,11 +1,20 @@
 import type { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
-export const PUBLIC_ACCOUNT_ROLES = ['student', 'sponsor'] as const;
-export type PublicAccountRole = (typeof PUBLIC_ACCOUNT_ROLES)[number];
-export const ACCOUNT_ROLES = [...PUBLIC_ACCOUNT_ROLES, 'admin'] as const;
+export const DEPARTMENT_LABELS = [
+  'Civil Engineering Department',
+  'Architecture Department',
+  'Electrical Engineering Department',
+  'Computer Engineering Department',
+  'Mechanical Engineering Department',
+  'Electronics Engineering Department',
+  'Geodetic Engineering'
+] as const;
+export type DepartmentLabel = (typeof DEPARTMENT_LABELS)[number];
+
+export const ACCOUNT_ROLES = ['student', 'sponsor'] as const;
 export type AccountRole = (typeof ACCOUNT_ROLES)[number];
-export const ADMIN_STATUSES = ['active', 'revoked'] as const;
-export type AdminStatus = (typeof ADMIN_STATUSES)[number];
+export const PUBLIC_ACCOUNT_ROLES = ACCOUNT_ROLES;
+export type PublicAccountRole = AccountRole;
 
 export const ENTITLEMENT_STATUSES = ['active', 'expired', 'revoked'] as const;
 export type EntitlementStatus = (typeof ENTITLEMENT_STATUSES)[number];
@@ -29,7 +38,6 @@ export interface AccountDocument {
   department?: string;
   departmentKey?: string;
   companyName?: string;
-  adminStatus?: AdminStatus;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   lastNameChangedAt?: Timestamp;
@@ -84,6 +92,8 @@ export interface OrganizationDocument {
   description?: string;
   contactEmail?: string;
   contactPhone?: string;
+  department?: string;
+  departmentKey?: string;
   logoPath?: string;
   recruitment?: OrganizationRecruitment;
   createdAt: Timestamp;

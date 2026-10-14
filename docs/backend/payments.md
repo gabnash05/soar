@@ -103,7 +103,7 @@ Request body:
   "email": "ada@example.edu",
   "displayName": "Ada Lovelace",
   "studentId": "2026-0001",
-  "department": "Computer Science",
+  "department": "Computer Engineering Department",
   "companyName": null,
   "returnUrl": "https://soar.example/access/register"
 }
@@ -112,7 +112,7 @@ Request body:
 Rules:
 
 - `role` is `student` or `sponsor`. Officers are student accounts with organization grants, not an account role.
-- Students require `studentId` and may include optional bounded free-text `department`; sponsors may include `companyName` and must not include `department`.
+- Students require `studentId` and one supported canonical `department` label; sponsors may include `companyName` and must not include `department`.
 - Password is not accepted here and must not be sent before provider payment confirmation.
 - Backend checks for existing account/email through the identity adapter.
 

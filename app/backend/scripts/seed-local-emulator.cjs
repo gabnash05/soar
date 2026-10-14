@@ -103,21 +103,6 @@ async function seedAccounts(db, auth, users) {
   const { now, expires } = nowAndExpiry();
   for (const user of users) {
     await upsertAuthUser(auth, user);
-    if (user.role === 'admin') {
-      await auth.setCustomUserClaims(user.uid, { soarStatsAdmin: true });
-      await db.doc(`accounts/${user.uid}`).set({
-        uid: user.uid,
-        role: 'admin',
-        adminStatus: 'active',
-        displayName: user.displayName,
-        email: user.email,
-        emailVerified: true,
-        createdAt: now,
-        updatedAt: now
-      }, { merge: true });
-      continue;
-    }
-
     await auth.setCustomUserClaims(user.uid, null);
     await db.doc(`accounts/${user.uid}`).set({
       uid: user.uid,
@@ -157,55 +142,106 @@ async function seedOrganizations(db) {
   const { now } = nowAndExpiry();
   const orgs = [
     {
-      orgId: 'robotics',
-      name: 'Robotics Guild',
-      slug: 'robotics-guild',
+      orgId: 'civil-engineering',
+      name: 'Civil Engineering Department',
+      slug: 'civil-engineering-department',
+      department: 'Civil Engineering Department',
       ownerUid: 'demo-owner-robotics',
-      shortDescription: 'Builds robots, runs workshops, and recruits student makers.',
-      description: 'Robotics Guild helps students design practical builds, share lab time, and prepare for competitions through hands-on teams.',
-      contactEmail: 'robotics@example.edu',
+      shortDescription: 'Civil engineering department organization for student updates and requests.',
+      description: 'Civil Engineering Department shares announcements, opportunities, and meeting availability for SOAR users.',
+      contactEmail: 'civil.engineering@example.edu',
       contactPhone: '+63 2 8123 4567',
       recruitment: {
-        opportunityId: 'robotics-build-team-2026',
+        opportunityId: 'civil-engineering-2026',
+        title: 'Civil Engineering Opportunities 2026',
+        requirements: 'Students interested in civil engineering activities and department opportunities.',
+        instructions: 'Open the external form, submit it there, then return to SOAR and explicitly confirm the external submission.',
+        applicationLink: 'https://forms.gle/example-civil-engineering'
+      }
+    },
+    {
+      orgId: 'architecture',
+      name: 'Architecture Department',
+      slug: 'architecture-department',
+      department: 'Architecture Department',
+      ownerUid: 'demo-owner-robotics',
+      shortDescription: 'Architecture department organization for studio announcements and requests.',
+      description: 'Architecture Department posts studio opportunities, events, and meeting availability for SOAR users.',
+      contactEmail: 'architecture@example.edu',
+      contactPhone: '',
+      recruitment: {
+        opportunityId: 'architecture-2026',
+        title: 'Architecture Studio Opportunities',
+        requirements: 'Students available for studio events, exhibits, or publication support.',
+        instructions: 'Submit the external interest form, then confirm in SOAR so officers know to check the sheet.',
+        applicationLink: 'https://forms.gle/example-architecture'
+      }
+    },
+    {
+      orgId: 'electrical-engineering',
+      name: 'Electrical Engineering Department',
+      slug: 'electrical-engineering-department',
+      department: 'Electrical Engineering Department',
+      ownerUid: 'demo-owner-robotics',
+      shortDescription: 'Electrical engineering department organization for announcements and requests.',
+      description: 'Electrical Engineering Department coordinates department opportunities and meeting availability.',
+      contactEmail: 'electrical.engineering@example.edu',
+      contactPhone: '',
+      recruitment: {}
+    },
+    {
+      orgId: 'computer-engineering',
+      name: 'Computer Engineering Department',
+      slug: 'computer-engineering-department',
+      department: 'Computer Engineering Department',
+      ownerUid: 'demo-owner-robotics',
+      shortDescription: 'Computer engineering department organization for student makers and builders.',
+      description: 'Computer Engineering Department helps students coordinate practical builds, workshops, and department opportunities.',
+      contactEmail: 'computer.engineering@example.edu',
+      contactPhone: '+63 917 555 0101',
+      recruitment: {
+        opportunityId: 'computer-engineering-build-team-2026',
         title: 'Build Team 2026',
         requirements: 'Interested students, weekly build availability, and a short external form response.',
         instructions: 'Open the external Google Form, submit it there, then return to SOAR and explicitly confirm the external submission.',
-        applicationLink: 'https://forms.gle/example-robotics-build-team'
+        applicationLink: 'https://forms.gle/example-computer-engineering-build-team'
       }
     },
     {
-      orgId: 'literary',
-      name: 'Literary Circle',
-      slug: 'literary-circle',
+      orgId: 'mechanical-engineering',
+      name: 'Mechanical Engineering Department',
+      slug: 'mechanical-engineering-department',
+      department: 'Mechanical Engineering Department',
       ownerUid: 'demo-owner-robotics',
-      shortDescription: 'Hosts open mic nights, writing circles, and campus publications.',
-      description: 'Literary Circle creates a welcoming space for writers, editors, performers, and students who want to publish or perform work.',
-      contactEmail: 'literary@example.edu',
+      shortDescription: 'Mechanical engineering department organization for announcements and requests.',
+      description: 'Mechanical Engineering Department coordinates department opportunities and meeting availability.',
+      contactEmail: 'mechanical.engineering@example.edu',
       contactPhone: '',
-      recruitment: {
-        opportunityId: 'literary-open-mic-crew',
-        title: 'Open Mic Crew',
-        requirements: 'Students available for event preparation, stage support, or publication editing.',
-        instructions: 'Submit the external interest form, then confirm in SOAR so officers know to check the sheet.',
-        applicationLink: 'https://forms.gle/example-literary-open-mic'
-      }
+      recruitment: {}
     },
     {
-      orgId: 'health',
-      name: 'Campus Health Alliance',
-      slug: 'campus-health-alliance',
+      orgId: 'electronics-engineering',
+      name: 'Electronics Engineering Department',
+      slug: 'electronics-engineering-department',
+      department: 'Electronics Engineering Department',
       ownerUid: 'demo-owner-robotics',
-      shortDescription: 'Coordinates wellness campaigns and volunteer drives.',
-      description: 'Campus Health Alliance organizes wellness information drives and service opportunities with allied campus partners.',
-      contactEmail: 'health@example.edu',
-      contactPhone: '+63 917 555 0101',
-      recruitment: {
-        opportunityId: 'health-wellness-volunteers',
-        title: 'Wellness Volunteers',
-        requirements: 'Students interested in campus wellness, service coordination, and briefing attendance.',
-        instructions: 'Open the external volunteer form, submit it, then confirm the submission in SOAR.',
-        applicationLink: 'https://forms.gle/example-health-volunteers'
-      }
+      shortDescription: 'Electronics engineering department organization for announcements and requests.',
+      description: 'Electronics Engineering Department coordinates department opportunities and meeting availability.',
+      contactEmail: 'electronics.engineering@example.edu',
+      contactPhone: '',
+      recruitment: {}
+    },
+    {
+      orgId: 'geodetic-engineering',
+      name: 'Geodetic Engineering',
+      slug: 'geodetic-engineering',
+      department: 'Geodetic Engineering',
+      ownerUid: 'demo-owner-robotics',
+      shortDescription: 'Geodetic Engineering organization for announcements and requests.',
+      description: 'Geodetic Engineering coordinates department opportunities and meeting availability.',
+      contactEmail: 'geodetic.engineering@example.edu',
+      contactPhone: '',
+      recruitment: {}
     }
   ];
 
@@ -213,6 +249,7 @@ async function seedOrganizations(db) {
     await db.doc(`organizations/${org.orgId}`).set({
       ...org,
       searchName: org.name.toLowerCase(),
+      departmentKey: org.department.toLowerCase(),
       logoPath: '',
       createdAt: now,
       updatedAt: now,
@@ -228,7 +265,7 @@ async function seedOrganizations(db) {
     }, { merge: true });
   }
 
-  await db.doc('organizations/robotics/officerGrants/demo-officer-robotics').set({
+  await db.doc('organizations/computer-engineering/officerGrants/demo-officer-robotics').set({
     uid: 'demo-officer-robotics',
     status: 'active',
     grantedByUid: 'demo-owner-robotics',
@@ -242,11 +279,11 @@ async function seedContent(db) {
   const announcements = [
     ['post-robotics-tryouts', {
       announcementId: 'post-robotics-tryouts',
-      orgId: 'robotics',
-      organizationName: 'Robotics Guild',
+      orgId: 'computer-engineering',
+      organizationName: 'Computer Engineering Department',
       organizationLogoPath: '',
       authorUid: 'demo-officer-robotics',
-      body: 'Tryouts and build night are scheduled this Friday. Open the profile for requirements and meeting availability.',
+      body: 'Build team tryouts and lab night are scheduled this Friday. Open the profile for requirements and meeting availability.',
       image: null,
       likeCount: 0,
       commentCount: 0,
@@ -256,11 +293,11 @@ async function seedContent(db) {
     }],
     ['post-health-briefing', {
       announcementId: 'post-health-briefing',
-      orgId: 'health',
-      organizationName: 'Campus Health Alliance',
+      orgId: 'civil-engineering',
+      organizationName: 'Civil Engineering Department',
       organizationLogoPath: '',
       authorUid: 'demo-owner-robotics',
-      body: 'Volunteer briefing slots are posted. Pending meeting requests are not confirmed until an officer approves them.',
+      body: 'Department briefing slots are posted. Pending meeting requests are not confirmed until an officer approves them.',
       image: null,
       likeCount: 0,
       commentCount: 0,
@@ -275,10 +312,10 @@ async function seedContent(db) {
   }
 
   const entries = [
-    ['date-robotics-build-night', { orgId: 'robotics', organizationName: 'Robotics Guild', kind: 'event', title: 'Build Night', date: '2026-11-09', startTime: '18:00', endTime: '', details: 'Open lab night for students interested in robotics projects.', createdByUid: 'demo-officer-robotics' }],
-    ['date-robotics-interview', { orgId: 'robotics', organizationName: 'Robotics Guild', kind: 'availability', title: 'Build Team interview window', date: '2026-11-12', startTime: '14:00', endTime: '16:00', details: 'Request one time during this window after submitting the external form.', createdByUid: 'demo-officer-robotics' }],
-    ['date-literary-open-mic', { orgId: 'literary', organizationName: 'Literary Circle', kind: 'event', title: 'Open Mic Night', date: '2026-11-10', startTime: '17:30', endTime: '', details: 'Campus reading night and publication interest session.', createdByUid: 'demo-owner-robotics' }],
-    ['date-health-partner-meeting', { orgId: 'health', organizationName: 'Campus Health Alliance', kind: 'availability', title: 'Partner meeting slot', date: '2026-11-14', startTime: '09:00', endTime: '11:00', details: 'Sponsors and students can request this discussion slot.', createdByUid: 'demo-owner-robotics' }]
+    ['date-computer-engineering-build-night', { orgId: 'computer-engineering', organizationName: 'Computer Engineering Department', kind: 'event', title: 'Build Night', date: '2026-11-09', startTime: '18:00', endTime: '', details: 'Open lab night for students interested in computer engineering projects.', createdByUid: 'demo-officer-robotics' }],
+    ['date-computer-engineering-interview', { orgId: 'computer-engineering', organizationName: 'Computer Engineering Department', kind: 'availability', title: 'Build Team interview window', date: '2026-11-12', startTime: '14:00', endTime: '16:00', details: 'Request one time during this window after submitting the external form.', createdByUid: 'demo-officer-robotics' }],
+    ['date-architecture-open-studio', { orgId: 'architecture', organizationName: 'Architecture Department', kind: 'event', title: 'Open Studio Night', date: '2026-11-10', startTime: '17:30', endTime: '', details: 'Studio interest night and publication planning session.', createdByUid: 'demo-owner-robotics' }],
+    ['date-civil-engineering-partner-meeting', { orgId: 'civil-engineering', organizationName: 'Civil Engineering Department', kind: 'availability', title: 'Department meeting slot', date: '2026-11-14', startTime: '09:00', endTime: '11:00', details: 'Sponsors and students can request this discussion slot.', createdByUid: 'demo-owner-robotics' }]
   ];
 
   for (const [entryId, data] of entries) {
@@ -293,14 +330,14 @@ async function seedContent(db) {
 
 async function seedRequests(db) {
   const { now } = nowAndExpiry();
-  const applicationId = stableId('app', ['demo-student-1', 'robotics', 'robotics-build-team-2026']);
+  const applicationId = stableId('app', ['demo-student-1', 'computer-engineering', 'computer-engineering-build-team-2026']);
   await db.doc(`applications/${applicationId}`).set({
     applicationId,
     studentUid: 'demo-student-1',
     studentName: 'Mara Santos',
-    orgId: 'robotics',
-    organizationName: 'Robotics Guild',
-    opportunityId: 'robotics-build-team-2026',
+    orgId: 'computer-engineering',
+    organizationName: 'Computer Engineering Department',
+    opportunityId: 'computer-engineering-build-team-2026',
     opportunityTitle: 'Build Team 2026',
     status: 'Pending',
     externalFormOpenedAt: now,
@@ -309,15 +346,15 @@ async function seedRequests(db) {
     updatedAt: now
   }, { merge: true });
 
-  const studentMeetingId = stableId('meeting', ['demo-student-1', 'robotics', 'date-robotics-interview', '2026-11-12', '14:00']);
+  const studentMeetingId = stableId('meeting', ['demo-student-1', 'computer-engineering', 'date-computer-engineering-interview', '2026-11-12', '14:00']);
   await db.doc(`meetingRequests/${studentMeetingId}`).set({
     meetingRequestId: studentMeetingId,
     requesterUid: 'demo-student-1',
     requesterName: 'Mara Santos',
     requesterRole: 'student',
-    orgId: 'robotics',
-    organizationName: 'Robotics Guild',
-    dateEntryId: 'date-robotics-interview',
+    orgId: 'computer-engineering',
+    organizationName: 'Computer Engineering Department',
+    dateEntryId: 'date-computer-engineering-interview',
     meetingTitle: 'Build Team interview window',
     requestedDate: '2026-11-12',
     requestedTime: '14:00',
@@ -327,16 +364,16 @@ async function seedRequests(db) {
     updatedAt: now
   }, { merge: true });
 
-  const sponsorMeetingId = stableId('meeting', ['demo-sponsor-1', 'health', 'date-health-partner-meeting', '2026-11-14', '09:30']);
+  const sponsorMeetingId = stableId('meeting', ['demo-sponsor-1', 'civil-engineering', 'date-civil-engineering-partner-meeting', '2026-11-14', '09:30']);
   await db.doc(`meetingRequests/${sponsorMeetingId}`).set({
     meetingRequestId: sponsorMeetingId,
     requesterUid: 'demo-sponsor-1',
     requesterName: 'Ari Reyes',
     requesterRole: 'sponsor',
-    orgId: 'health',
-    organizationName: 'Campus Health Alliance',
-    dateEntryId: 'date-health-partner-meeting',
-    meetingTitle: 'Partner meeting slot',
+    orgId: 'civil-engineering',
+    organizationName: 'Civil Engineering Department',
+    dateEntryId: 'date-civil-engineering-partner-meeting',
+    meetingTitle: 'Department meeting slot',
     requestedDate: '2026-11-14',
     requestedTime: '09:30',
     status: 'Approved',
@@ -360,11 +397,10 @@ async function main() {
   const auth = admin.auth();
 
   const users = [
-    { uid: 'demo-student-1', email: 'student@example.test', displayName: 'Mara Santos', role: 'student', studentId: 'S-1001', department: 'Computer Science' },
+    { uid: 'demo-student-1', email: 'student@example.test', displayName: 'Mara Santos', role: 'student', studentId: 'S-1001', department: 'Computer Engineering Department' },
     { uid: 'demo-sponsor-1', email: 'sponsor@example.test', displayName: 'Ari Reyes', role: 'sponsor', companyName: 'Allied Demo Co.' },
-    { uid: 'demo-owner-robotics', email: 'owner@example.test', displayName: 'Rina Cruz', role: 'student', studentId: 'S-2001', department: 'Engineering' },
-    { uid: 'demo-officer-robotics', email: 'officer@example.test', displayName: 'Leo Tan', role: 'student', studentId: 'S-2002', department: 'Computer Science' },
-    { uid: 'demo-stats-admin', email: 'admin@example.test', displayName: 'Stats Admin', role: 'admin' }
+    { uid: 'demo-owner-robotics', email: 'owner@example.test', displayName: 'Rina Cruz', role: 'student', studentId: 'S-2001', department: 'Civil Engineering Department' },
+    { uid: 'demo-officer-robotics', email: 'officer@example.test', displayName: 'Leo Tan', role: 'student', studentId: 'S-2002', department: 'Computer Engineering Department' }
   ];
 
   await seedAccounts(db, auth, users);
@@ -375,7 +411,7 @@ async function main() {
   console.log('Seeded demo-soar-local Auth and Firestore with emulator-only SOAR demo data.');
   console.log('These accounts use simulated six-month access records and are not valid production payment evidence.');
   for (const user of users) {
-    console.log(`- ${user.email} / ${DEMO_PASSWORD} (${user.role}${user.role === 'admin' ? ', statistics admin demo' : user.uid.includes('officer') || user.uid.includes('owner') ? ', organization manager demo' : ''})`);
+    console.log(`- ${user.email} / ${DEMO_PASSWORD} (${user.role}${user.uid.includes('officer') || user.uid.includes('owner') ? ', organization manager demo' : ''})`);
   }
 }
 

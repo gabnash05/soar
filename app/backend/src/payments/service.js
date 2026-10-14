@@ -36,6 +36,16 @@ const DEFAULT_RATE_LIMITS = Object.freeze({
   completionPerIpPerHour: 20,
 });
 
+const DEPARTMENT_LABELS = Object.freeze([
+  'Civil Engineering Department',
+  'Architecture Department',
+  'Electrical Engineering Department',
+  'Computer Engineering Department',
+  'Mechanical Engineering Department',
+  'Electronics Engineering Department',
+  'Geodetic Engineering',
+]);
+
 function assertNoPassword(input) {
   if (!input || typeof input !== 'object') return;
   for (const key of Object.keys(input)) {
@@ -72,13 +82,17 @@ function normalizeDepartmentKey(value) {
   return normalizeDepartment(value).toLowerCase();
 }
 
-function validateDepartment(value) {
+const DEPARTMENT_BY_KEY = new Map(DEPARTMENT_LABELS.map((department) => [normalizeDepartmentKey(department), department]));
+
+function validateDepartment(value, required = false) {
   const department = normalizeDepartment(value);
-  if (!department) return null;
-  if (department.length < 2 || department.length > 100 || !/^[\p{L}\p{N}][\p{L}\p{N}\s&.,'’()/-]*$/u.test(department)) {
-    fail('invalid_department', 'Use a valid department name.');
+  if (!department) {
+    if (required) fail('missing_department', 'Department is required for student accounts.');
+    return null;
   }
-  return department;
+  const canonical = DEPARTMENT_BY_KEY.get(normalizeDepartmentKey(department));
+  if (!canonical) fail('invalid_department', 'Choose one of the supported departments.');
+  return canonical;
 }
 
 function sanitizeRegistrationProfile(input) {
@@ -93,7 +107,7 @@ function sanitizeRegistrationProfile(input) {
   };
   if (role === 'student') {
     profile.studentId = requireString(input.studentId || input.student_id || input.identificationNumber, 'missing_student_id', 'Student ID is required for student accounts.');
-    const department = validateDepartment(input.department || input.departmentName || input.department_name);
+    const department = validateDepartment(input.department || input.departmentName || input.department_name, true);
     if (department) {
       profile.department = department;
       profile.departmentKey = normalizeDepartmentKey(department);

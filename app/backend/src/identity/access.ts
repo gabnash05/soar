@@ -38,11 +38,6 @@ export async function requireActiveAccess(user: DecodedIdToken): Promise<void> {
   if (access.status !== 'active') {
     throw new AppError('access_inactive', 'Renew SOAR access before using the main app.', 403, 'renew_access');
   }
-
-  const account = await loadAccount(user.uid);
-  if (account.role === 'admin') {
-    throw new AppError('admin_scope_limited', 'Statistics admin accounts cannot use the main app workflows.', 403);
-  }
 }
 
 export async function loadAccount(uid: string): Promise<AccountDocument> {

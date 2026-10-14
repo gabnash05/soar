@@ -53,8 +53,7 @@ async function seedBaseData() {
       { uid: 'officer', role: 'student', displayName: 'Officer User', email: 'officer@example.test', emailVerified: true, studentId: 'S-004' },
       { uid: 'foreign', role: 'student', displayName: 'Foreign User', email: 'foreign@example.test', emailVerified: true, studentId: 'S-005' },
       { uid: 'expired', role: 'student', displayName: 'Expired User', email: 'expired@example.test', emailVerified: true, studentId: 'S-006' },
-      { uid: 'unverified', role: 'student', displayName: 'Unverified User', email: 'unverified@example.test', emailVerified: false, studentId: 'S-007' },
-      { uid: 'statsAdmin', role: 'admin', adminStatus: 'active', displayName: 'Stats Admin', email: 'admin@example.test', emailVerified: true }
+      { uid: 'unverified', role: 'student', displayName: 'Unverified User', email: 'unverified@example.test', emailVerified: false, studentId: 'S-007' }
     ];
 
     for (const account of accounts) {
@@ -216,21 +215,13 @@ describe('account and entitlement boundaries', () => {
   it('prevents client edits to identity-sensitive account and entitlement fields', async () => {
     await assertFails(updateDoc(doc(dbFor('student'), 'accounts', 'student'), { role: 'sponsor' }));
     await assertFails(updateDoc(doc(dbFor('student'), 'accounts', 'student'), { email: 'attacker@example.test' }));
-    await assertFails(updateDoc(doc(dbFor('student'), 'accounts', 'student'), { department: 'Attacker Department' }));
-    await assertFails(updateDoc(doc(dbFor('student'), 'accounts', 'student'), { adminStatus: 'active' }));
+    await assertFails(updateDoc(doc(dbFor('student'), 'accounts', 'student'), { department: 'Civil Engineering Department' }));
     await assertFails(updateDoc(doc(dbFor('student'), 'entitlements', 'student'), { accessExpiresAt: future }));
     await assertFails(setDoc(doc(dbFor('student'), 'entitlements', 'new-user'), { status: 'active', accessExpiresAt: future }));
   });
 });
 
-describe('admin and organization permissions', () => {
-  it('does not let provisioned stats admins use direct main-app SDK access', async () => {
-    await assertSucceeds(getDoc(doc(dbFor('statsAdmin'), 'accounts', 'statsAdmin')));
-    await assertFails(getDoc(doc(dbFor('statsAdmin'), 'organizations', 'org1')));
-    await assertFails(getDoc(doc(dbFor('statsAdmin'), 'meetingRequests', 'meeting1')));
-    await assertFails(updateDoc(doc(dbFor('statsAdmin'), 'accounts', 'statsAdmin'), { displayName: 'Self Edited Admin', updatedAt: serverTimestamp(), lastNameChangedAt: serverTimestamp() }));
-  });
-
+describe('organization permissions', () => {
   it('allows active users to read organizations but blocks direct SDK organization writes', async () => {
     await assertSucceeds(getDoc(doc(dbFor('student'), 'organizations', 'org1')));
     await assertFails(updateDoc(doc(dbFor('owner'), 'organizations', 'org1'), {

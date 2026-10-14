@@ -10,7 +10,7 @@ Implemented content services:
 - organization directory listing with name search;
 - organization profile and recruitment reads, including optional public contact phone;
 - approved organization-manager profile and recruitment updates;
-- announcement/content workflows while keeping registered-student statistics out of organization views;
+- department-linked organization registered-student counts for approved managers;
 - announcement feed and organization-scoped posts;
 - announcement create/delete by approved organization managers;
 - multiple announcement images or one bounded native video through the existing Storage design;
@@ -27,7 +27,7 @@ Not implemented in this lane:
 - meeting request services and officer decisions;
 - frontend integration changes;
 - previews, because image previews remain frontend-owned before upload;
-- payment-provider onboarding, production deploys, billing changes, live data migrations, notifications, analytics, broad dashboards beyond the admin-only aggregate statistics route, or CI setup.
+- payment-provider onboarding, production deploys, billing changes, live data migrations, notifications, analytics, broad dashboards beyond the approved department count, or CI setup.
 
 ## Shared security model
 
@@ -66,6 +66,8 @@ Pagination is intentionally small and bounded.
 
 ## Organizations
 
+Department organization links use only these canonical labels: `Civil Engineering Department`, `Architecture Department`, `Electrical Engineering Department`, `Computer Engineering Department`, `Mechanical Engineering Department`, `Electronics Engineering Department`, and `Geodetic Engineering`.
+
 ### `GET /organizations?q=&limit=&pageToken=`
 
 Lists organization summaries visible to active verified users.
@@ -77,15 +79,17 @@ Response:
 {
   "items": [
     {
-      "id": "robotics",
-      "orgId": "robotics",
-      "slug": "robotics-guild",
-      "name": "Robotics Guild",
-      "shortDescription": "Builds robots.",
-      "description": "Builds robots and runs workshops.",
-      "contactEmail": "robotics@example.edu",
+      "id": "computer-engineering",
+      "orgId": "computer-engineering",
+      "slug": "computer-engineering-department",
+      "name": "Computer Engineering Department",
+      "shortDescription": "Computer engineering department organization.",
+      "description": "Computer Engineering Department posts opportunities and meeting availability.",
+      "contactEmail": "computer.engineering@example.edu",
       "contactPhone": "+63 917 555 0101",
-      "logoPath": "organization-logos/robotics/logo.png",
+      "department": "Computer Engineering Department",
+      "departmentKey": "computer engineering department",
+      "logoPath": "organization-logos/computer-engineering/logo.png",
       "recruitmentTitle": "Build Team 2026",
       "updatedAt": "2026-10-08T00:00:00.000Z"
     }
@@ -98,9 +102,25 @@ Response:
 
 Returns a profile with recruitment, recent posts, dated entries, and optional public `contactPhone`.
 
-### Revoked organization statistics endpoint
+### `GET /organizations/:orgId/student-department-counts`
 
-`GET /organizations/:orgId/student-department-counts` and `/api/organizations/:orgId/student-department-counts` now return `403 admin_statistics_required`. Student statistics are no longer visible from organization manager/officer views. Use the admin-only aggregate route documented in `docs/backend/identity-foundation.md`.
+Returns the aggregate count of registered student accounts whose saved department matches the saved department link on `organizations/{orgId}`. This endpoint is currently limited to approved managers of `orgId` (owner or active officer grant) while product visibility is pending. It does not accept a department key from the client and returns no student identities, emails, account ids, applications, meetings, memberships, or global totals.
+
+Response:
+
+```json
+{
+  "organizationId": "computer-engineering",
+  "department": "Computer Engineering Department",
+  "departmentKey": "computer engineering department",
+  "registeredStudentCount": 12,
+  "scope": "registered_students_in_organization_department",
+  "description": "Registered student accounts whose saved department matches this organization department; not organization members or applicants.",
+  "generatedAt": "2026-10-13T00:00:00.000Z"
+}
+```
+
+If the organization has no supported department link, the endpoint returns `409 organization_department_missing`.
 
 ### `PATCH /organizations/:orgId`
 
@@ -111,12 +131,13 @@ Request fields:
 
 ```json
 {
-  "name": "Robotics Guild",
+  "name": "Computer Engineering Department",
   "shortDescription": "Short directory text.",
   "description": "Long profile text.",
-  "contactEmail": "robotics@example.edu",
+  "contactEmail": "computer.engineering@example.edu",
   "contactPhone": "+63 917 555 0101",
-  "logoPath": "organization-logos/robotics/logo.png",
+  "department": "Computer Engineering Department",
+  "logoPath": "organization-logos/computer-engineering/logo.png",
   "recruitment": {
     "title": "Build Team 2026",
     "requirements": "Student makers welcome.",
@@ -128,6 +149,7 @@ Request fields:
 
 `applicationLink` must be an `http` or `https` URL.
 `contactPhone` is optional and accepts bounded international-friendly phone text; an empty string clears it.
+`department` must be one of the supported canonical department labels or an empty string to clear a legacy/mistaken link.
 An empty string clears an optional text/link field.
 Logo paths must stay under `organization-logos/{orgId}/...`.
 

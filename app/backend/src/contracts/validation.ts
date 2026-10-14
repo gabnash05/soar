@@ -1,6 +1,6 @@
 import type { Timestamp } from 'firebase-admin/firestore';
 import { z } from 'zod';
-import { PUBLIC_ACCOUNT_ROLES } from './schema';
+import { ACCOUNT_ROLES, DEPARTMENT_LABELS } from './schema';
 
 const trimmedString = z.string().trim();
 
@@ -8,9 +8,43 @@ export const displayNameSchema = trimmedString.min(2).max(120);
 export const emailSchema = trimmedString.email().max(254).transform((value) => value.toLowerCase());
 export const passwordSchema = z.string().min(8).max(1024);
 export const studentIdSchema = trimmedString.min(2).max(64);
-const departmentPattern = /^[\p{L}\p{N}][\p{L}\p{N}\s&.,'’()/-]*$/u;
-export const departmentSchema = trimmedString.min(2).max(100).regex(departmentPattern, 'Use a department name, not a URL or code snippet.').transform((value) => value.replace(/\s+/g, ' '));
-export const departmentKeySchema = trimmedString.min(2).max(100);
+
+export function normalizeDepartment(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+export function normalizeDepartmentKey(value: string): string {
+  return normalizeDepartment(value).toLocaleLowerCase();
+}
+
+const departmentByKey = new Map(DEPARTMENT_LABELS.map((department) => [normalizeDepartmentKey(department), department]));
+const departmentKeys = new Set(DEPARTMENT_LABELS.map((department) => normalizeDepartmentKey(department)));
+
+export function canonicalDepartment(value: string): string | undefined {
+  return departmentByKey.get(normalizeDepartmentKey(value));
+}
+
+export function canonicalDepartmentKey(value: string): string | undefined {
+  const key = normalizeDepartmentKey(value);
+  return departmentKeys.has(key) ? key : undefined;
+}
+
+export const departmentSchema = trimmedString.min(2).max(100).transform((value, ctx) => {
+  const canonical = canonicalDepartment(value);
+  if (!canonical) {
+    ctx.addIssue({ code: 'custom', message: 'Choose one of the supported departments.' });
+    return z.NEVER;
+  }
+  return canonical;
+});
+export const departmentKeySchema = trimmedString.min(2).max(100).transform((value, ctx) => {
+  const key = canonicalDepartmentKey(value);
+  if (!key) {
+    ctx.addIssue({ code: 'custom', message: 'Choose one of the supported departments.' });
+    return z.NEVER;
+  }
+  return key;
+});
 export const companyNameSchema = trimmedString.min(2).max(140).optional();
 export const uidSchema = trimmedString.min(1).max(128);
 export const orgIdSchema = trimmedString.min(2).max(128).regex(/^[A-Za-z0-9_-]+$/);
@@ -20,7 +54,7 @@ export const paidRegistrationCompletionSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   displayName: displayNameSchema,
-  role: z.enum(PUBLIC_ACCOUNT_ROLES),
+  role: z.enum(ACCOUNT_ROLES),
   studentId: studentIdSchema.optional(),
   department: departmentSchema.optional(),
   departmentKey: departmentKeySchema.optional(),
@@ -42,12 +76,24 @@ export const paidRegistrationCompletionSchema = z.object({
     ctx.addIssue({ code: 'custom', path: ['studentId'], message: 'studentId is required for student accounts.' });
   }
 
+  if (value.role === 'student' && !value.department) {
+    ctx.addIssue({ code: 'custom', path: ['department'], message: 'department is required for student accounts.' });
+  }
+
+  if (value.role === 'student' && value.department && value.departmentKey && value.departmentKey !== normalizeDepartmentKey(value.department)) {
+    ctx.addIssue({ code: 'custom', path: ['departmentKey'], message: 'departmentKey must match the selected department.' });
+  }
+
   if (value.role === 'sponsor' && value.studentId) {
     ctx.addIssue({ code: 'custom', path: ['studentId'], message: 'Sponsors must not include a studentId.' });
   }
 
   if (value.role === 'sponsor' && value.department) {
     ctx.addIssue({ code: 'custom', path: ['department'], message: 'Sponsors must not include a department.' });
+  }
+
+  if (value.role === 'sponsor' && value.departmentKey) {
+    ctx.addIssue({ code: 'custom', path: ['departmentKey'], message: 'Sponsors must not include a departmentKey.' });
   }
 });
 
@@ -58,6 +104,7 @@ export const organizationProfileSchema = z.object({
   description: trimmedString.max(4000).optional(),
   contactEmail: emailSchema.optional(),
   contactPhone: z.string().trim().max(40).regex(/^$|^\+?[0-9][0-9\s().-]{5,30}(?:\s?(?:x|ext\.?|extension)\s?\d{1,6})?$/i, 'Use a valid contact phone number.').optional(),
+  department: departmentSchema.optional(),
   logoPath: trimmedString.max(512).optional(),
   recruitment: z.object({
     opportunityId: trimmedString.min(2).max(160).regex(/^[A-Za-z0-9_-]+$/).optional(),
@@ -86,11 +133,3 @@ export const emailChangeSchema = z.object({
 export const createOfficerGrantSchema = z.object({
   uid: uidSchema
 });
-
-export function normalizeDepartment(value: string): string {
-  return value.trim().replace(/\s+/g, ' ');
-}
-
-export function normalizeDepartmentKey(value: string): string {
-  return normalizeDepartment(value).toLocaleLowerCase();
-}

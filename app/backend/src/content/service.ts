@@ -3,6 +3,7 @@ import type { DocumentData, Query } from 'firebase-admin/firestore';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { COLLECTIONS, organizationLogoStoragePath, announcementImageStoragePath, organizationPath, officerGrantPath } from '../contracts/paths';
 import type { OrganizationDocument } from '../contracts/schema';
+import { canonicalDepartment, normalizeDepartmentKey } from '../contracts/validation';
 import { AppError } from '../errors';
 import { db } from '../firebase';
 import { loadAccount, requireActiveAccess } from '../identity/access';
@@ -108,6 +109,8 @@ function summaryFromOrganization(data: DocumentData) {
     description: data.description ?? '',
     contactEmail: data.contactEmail ?? '',
     contactPhone: data.contactPhone ?? '',
+    department: data.department ?? '',
+    departmentKey: data.departmentKey ?? '',
     logoPath: data.logoPath ?? '',
     recruitmentTitle: data.recruitment?.title ?? '',
     updatedAt: iso(data.updatedAt)
@@ -270,6 +273,10 @@ export async function updateOrganizationProfile(user: DecodedIdToken, orgIdParam
   if (input.description !== undefined) update.description = input.description;
   if (input.contactEmail !== undefined) update.contactEmail = input.contactEmail;
   if (input.contactPhone !== undefined) update.contactPhone = input.contactPhone;
+  if (input.department !== undefined) {
+    update.department = input.department;
+    update.departmentKey = input.department ? normalizeDepartmentKey(input.department) : '';
+  }
   const logoPath = input.logo?.storagePath ?? input.logoPath;
   if (logoPath !== undefined) {
     if (logoPath) validateLogoPath(orgId, logoPath);
@@ -288,6 +295,36 @@ export async function updateOrganizationProfile(user: DecodedIdToken, orgIdParam
 
   await db.doc(organizationPath(orgId)).update(update);
   return getOrganizationProfile(user, orgId);
+}
+
+export async function getStudentDepartmentCounts(user: DecodedIdToken, orgIdParam: string) {
+  const orgId = routeOrgId(orgIdParam);
+  const organization = await assertCanManageOrganization(user, orgId);
+  const savedDepartment = typeof organization.department === 'string' ? canonicalDepartment(organization.department) : undefined;
+  const rawDepartmentKey = typeof organization.departmentKey === 'string' && organization.departmentKey.trim()
+    ? normalizeDepartmentKey(organization.departmentKey)
+    : '';
+  const department = savedDepartment ?? (rawDepartmentKey ? canonicalDepartment(rawDepartmentKey) : undefined);
+  const departmentKey = department ? normalizeDepartmentKey(department) : '';
+
+  if (!department || !departmentKey) {
+    throw new AppError('organization_department_missing', 'This organization is not linked to a supported department yet.', 409);
+  }
+
+  const snap = await db.collection(COLLECTIONS.accounts)
+    .where('role', '==', 'student')
+    .where('departmentKey', '==', departmentKey)
+    .get();
+
+  return {
+    organizationId: orgId,
+    department,
+    departmentKey,
+    registeredStudentCount: snap.size,
+    scope: 'registered_students_in_organization_department',
+    description: 'Registered student accounts whose saved department matches this organization department; not organization members or applicants.',
+    generatedAt: new Date().toISOString()
+  };
 }
 
 export async function createLogoImageTarget(user: DecodedIdToken, orgIdParam: string, rawBody: unknown) {

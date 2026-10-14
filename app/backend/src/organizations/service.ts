@@ -1,7 +1,7 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { accountPath, organizationPath, officerGrantPath } from '../contracts/paths';
-import { createOfficerGrantSchema, createOrganizationSchema } from '../contracts/validation';
+import { createOfficerGrantSchema, createOrganizationSchema, normalizeDepartmentKey } from '../contracts/validation';
 import { normalizedName } from '../content/validation';
 import { AppError } from '../errors';
 import { db } from '../firebase';
@@ -52,6 +52,8 @@ export async function assignInitialOrganizationOwner(rawInput: unknown, actorUid
       description: input.description ?? '',
       contactEmail: input.contactEmail ?? '',
       contactPhone: input.contactPhone ?? '',
+      department: input.department ?? '',
+      departmentKey: input.department ? normalizeDepartmentKey(input.department) : '',
       logoPath: input.logoPath ?? '',
       recruitment: input.recruitment ?? {},
       createdAt: now,

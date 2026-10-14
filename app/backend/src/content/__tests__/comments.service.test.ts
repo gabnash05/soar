@@ -107,8 +107,10 @@ function seedComments() {
   const now = Timestamp.fromDate(new Date('2026-10-11T00:00:00.000Z'));
   fakeDb.docs.set('organizations/org1', {
     orgId: 'org1',
-    name: 'Robotics Club',
+    name: 'Computer Engineering Department',
     ownerUid: 'owner',
+    department: 'Computer Engineering Department',
+    departmentKey: 'computer engineering department',
     createdAt: now,
     updatedAt: now
   });
@@ -118,9 +120,10 @@ function seedComments() {
     createdAt: now,
     updatedAt: now
   });
-  fakeDb.docs.set('accounts/student1', { uid: 'student1', role: 'student', displayName: 'Student One', department: 'Computer   Science', departmentKey: 'computer science' });
-  fakeDb.docs.set('accounts/student2', { uid: 'student2', role: 'student', displayName: 'Student Two', department: 'Computer Science', departmentKey: 'computer science' });
-  fakeDb.docs.set('accounts/student3', { uid: 'student3', role: 'student', displayName: 'Student Three' });
+  fakeDb.docs.set('accounts/student1', { uid: 'student1', role: 'student', displayName: 'Student One', department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
+  fakeDb.docs.set('accounts/student2', { uid: 'student2', role: 'student', displayName: 'Student Two', department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
+  fakeDb.docs.set('accounts/student3', { uid: 'student3', role: 'student', displayName: 'Student Three', department: 'Civil Engineering Department', departmentKey: 'civil engineering department' });
+  fakeDb.docs.set('accounts/student4', { uid: 'student4', role: 'student', displayName: 'Legacy Student' });
   fakeDb.docs.set('accounts/sponsor1', { uid: 'sponsor1', role: 'sponsor', displayName: 'Sponsor', companyName: 'Sponsor Co' });
   fakeDb.docs.set('announcements/post1', {
     announcementId: 'post1',
@@ -170,6 +173,24 @@ describe('announcement comment ownership service behavior', () => {
     await expect(updateAnnouncementComment(user('other'), 'post1', 'comment1', { body: 'Nope' })).rejects.toMatchObject({ code: 'comment_owner_required' });
     await expect(deleteAnnouncementComment(user('other'), 'post1', 'comment1')).rejects.toMatchObject({ code: 'comment_owner_required' });
     expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(2);
+  });
+
+  it('returns only the authorized organization department registered-student count', async () => {
+    const { getStudentDepartmentCounts } = await import('../service');
+
+    await expect(getStudentDepartmentCounts(user('officer'), 'org1')).resolves.toMatchObject({
+      organizationId: 'org1',
+      department: 'Computer Engineering Department',
+      departmentKey: 'computer engineering department',
+      registeredStudentCount: 2,
+      scope: 'registered_students_in_organization_department'
+    });
+    await expect(getStudentDepartmentCounts(user('student1'), 'org1')).rejects.toMatchObject({ code: 'organization_management_required' });
+    fakeDb.docs.set('organizations/org2', { orgId: 'org2', name: 'Legacy Org', ownerUid: 'officer', createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
+    await expect(getStudentDepartmentCounts(user('officer'), 'org2')).rejects.toMatchObject({ code: 'organization_department_missing' });
+    fakeDb.docs.set('organizations/org3', { orgId: 'org3', name: 'Civil Engineering Department', ownerUid: 'owner', department: 'Civil Engineering Department', departmentKey: 'civil engineering department', createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
+    fakeDb.docs.set('organizations/org3/officerGrants/officer', { uid: 'officer', status: 'revoked', createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
+    await expect(getStudentDepartmentCounts(user('officer'), 'org3')).rejects.toMatchObject({ code: 'organization_management_required' });
   });
 
   it('deletes own comments once and keeps the stored count aligned with actual comments', async () => {

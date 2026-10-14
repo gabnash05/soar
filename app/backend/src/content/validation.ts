@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { orgIdSchema } from '../contracts/validation';
+import { departmentSchema, orgIdSchema } from '../contracts/validation';
 
 export const ALLOWED_IMAGE_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
 export const ALLOWED_VIDEO_CONTENT_TYPES = ['video/mp4', 'video/webm'] as const;
@@ -13,6 +13,8 @@ export const MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES = 30 * 1024 * 1024;
 const trimmedString = z.string().trim();
 const optionalText = (max: number) => trimmedString.max(max).optional();
 const blankableText = (max: number) => z.string().trim().max(max).optional();
+const organizationDepartmentUpdateSchema = z.union([departmentSchema, z.literal('')]);
+
 const httpUrl = trimmedString.url().max(2048).refine((value) => {
   try {
     const url = new URL(value);
@@ -37,6 +39,7 @@ export const organizationProfileUpdateSchema = z.object({
   description: blankableText(4000),
   contactEmail: z.union([trimmedString.email().max(254), z.literal('')]).optional(),
   contactPhone: z.string().trim().max(40).regex(/^$|^\+?[0-9][0-9\s().-]{5,30}(?:\s?(?:x|ext\.?|extension)\s?\d{1,6})?$/i, 'Use a valid contact phone number.').optional(),
+  department: organizationDepartmentUpdateSchema.optional(),
   logoPath: z.string().trim().max(512).optional(),
   logo: z.object({
     storagePath: z.string().trim().max(512),

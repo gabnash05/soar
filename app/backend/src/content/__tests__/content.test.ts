@@ -22,11 +22,14 @@ describe('content validation', () => {
     expect(normalizedName('  Robotics   Guild  ')).toBe('robotics guild');
   });
 
-  it('accepts only http and https recruitment application links and bounded contact phone numbers', () => {
+  it('accepts only http and https recruitment application links, bounded contact phone numbers, and canonical departments', () => {
     expect(organizationProfileUpdateSchema.parse({ recruitment: { applicationLink: 'https://forms.gle/example' } }).recruitment?.applicationLink).toBe('https://forms.gle/example');
     expect(organizationProfileUpdateSchema.parse({ contactPhone: '+63 917 555 0101' }).contactPhone).toBe('+63 917 555 0101');
+    expect(organizationProfileUpdateSchema.parse({ department: 'Computer Engineering Department' }).department).toBe('Computer Engineering Department');
+    expect(organizationProfileUpdateSchema.parse({ department: '' }).department).toBe('');
     expectParseFailure(() => organizationProfileUpdateSchema.parse({ recruitment: { applicationLink: 'javascript:alert(1)' } }));
     expectParseFailure(() => organizationProfileUpdateSchema.parse({ contactPhone: '<script>alert(1)</script>' }));
+    expectParseFailure(() => organizationProfileUpdateSchema.parse({ department: 'Computer Science' }));
   });
 
   it('rejects empty announcements and comments through schemas', () => {

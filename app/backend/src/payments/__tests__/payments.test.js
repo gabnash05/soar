@@ -40,7 +40,7 @@ async function startRegistration(harness, input = {}) {
     fullName: 'Ada Lovelace',
     email: 'ada@example.edu',
     studentId: '2026-0001',
-    department: 'Computer   Science',
+    department: 'Computer   Engineering   Department',
     ...input,
   }, { ip: '203.0.113.10' });
 }
@@ -83,8 +83,8 @@ test('registration stays locked until a valid signed PayMongo paid webhook confi
   assert.equal(Object.keys(snapshot.accounts).length, 1);
   assert.equal(Object.keys(snapshot.entitlements).length, 1);
   assert.equal(Object.values(snapshot.accounts)[0].email, 'ada@example.edu');
-  assert.equal(Object.values(snapshot.accounts)[0].department, 'Computer Science');
-  assert.equal(Object.values(snapshot.accounts)[0].departmentKey, 'computer science');
+  assert.equal(Object.values(snapshot.accounts)[0].department, 'Computer Engineering Department');
+  assert.equal(Object.values(snapshot.accounts)[0].departmentKey, 'computer engineering department');
   assert.equal(Object.values(snapshot.entitlements)[0].status, 'active');
   assert.equal(Object.values(snapshot.payments)[0].amountMinor, ACCESS_PRICE_MINOR);
   assert.equal(Object.values(snapshot.payments)[0].currency, ACCESS_CURRENCY);
@@ -99,7 +99,7 @@ test('registration department is student-only bounded profile data', async () =>
     fullName: 'Sponsor User',
     email: 'sponsor@example.edu',
     companyName: 'Sponsor Co',
-    department: 'Business'
+    department: 'Architecture Department'
   }), 'department_not_allowed');
   await assertRejectsCode(harness.service.createRegistrationCheckout({
     role: 'student',
@@ -108,6 +108,12 @@ test('registration department is student-only bounded profile data', async () =>
     studentId: '2026-0002',
     department: '<script>alert(1)</script>'
   }), 'invalid_department');
+  await assertRejectsCode(harness.service.createRegistrationCheckout({
+    role: 'student',
+    fullName: 'No Department',
+    email: 'missing-department@example.edu',
+    studentId: '2026-0003'
+  }), 'missing_department');
 });
 
 test('invalid webhook signatures are rejected before state changes', async () => {
@@ -346,7 +352,7 @@ test('HTTP handler contract uses an HttpOnly registration binding cookie and nev
 
   const started = await handlers.startRegistrationPayment({
     ip: '203.0.113.10',
-    body: { role: 'student', email: 'ada@example.edu', displayName: 'Ada Lovelace', studentId: '2026-0001', department: 'Computer Science' },
+    body: { role: 'student', email: 'ada@example.edu', displayName: 'Ada Lovelace', studentId: '2026-0001', department: 'Computer Engineering Department' },
   });
   assert.equal(started.status, 200);
   assert.equal(started.body.amountPhp, 10);
