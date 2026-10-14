@@ -33,16 +33,15 @@ SOAR is successful when the delivered hosted website:
 
 | Role | Agreed purpose | Registration details | Core access |
 | --- | --- | --- | --- |
-| Student | Discover organizations, read announcements, follow application instructions, confirm external-form submission, track application stages, request meetings/interviews, and manage allowed personal settings. | Name, email, password, student ID number, optional department, email verification, and confirmed six-month payment before account creation. | Announcements, organization directory/profiles, application tracker, meeting tracker, personal account settings, payment/access status. |
-| Organization officer | Manage an approved organization and its operational workflows. Officers are also students for account-identification purposes. | Name, email, password, student ID number, optional department, email verification, confirmed six-month payment before account creation, and officer access approved through the organization-owner process. | Officer dashboard, organization settings, recruitment settings, announcements, applicants, calendar/date entries, meeting requests, personal account settings, payment/access status. |
+| Student | Discover organizations, read announcements, follow application instructions, confirm external-form submission, track application stages, request meetings/interviews, and manage allowed personal settings. | Name, email, password, student ID number, selected department, email verification, and confirmed six-month payment before account creation. | Announcements, organization directory/profiles, application tracker, meeting tracker, personal account settings, payment/access status. |
+| Organization officer | Manage an approved organization and its operational workflows. Officers are also students for account-identification purposes. | Name, email, password, student ID number, selected department, email verification, confirmed six-month payment before account creation, and officer access approved through the organization-owner process. | Officer dashboard, organization settings, recruitment settings, announcements, applicants, calendar/date entries, meeting requests, personal account settings, payment/access status. |
 | Sponsor | Outside-user role with no special sponsor-only tools. Sponsors can view organization information and request meetings through an account. | Name, email, password, email verification, optional company/organization name, and confirmed six-month payment before account creation. No TIN or government ID is required by the confirmed scope. | Role-appropriate browsing, organization profiles, announcements, meeting requests/tracking, personal account settings, payment/access status. |
-| Provisioned stats admin | Read-only aggregate statistics for project oversight. This is not public signup and not a general superuser role. | Trusted operator provisions Firebase claim plus backend account fields outside the public app. No paid student access is required for the admin statistics dashboard only. | Aggregate student totals/per-department counts and organization count. No identities, private documents, org editing, payment overrides, or user-management powers. |
 
 ### Organization ownership and officer access
 
 - A project administrator assigns each organization's initial owner.
 - The initial owner approves officer access for that organization.
-- This is a controlled setup/approval workflow only. The only approved admin surface is the narrow read-only aggregate statistics dashboard; it is not a general admin dashboard, membership-management system, or sponsor tooling.
+- This is a controlled setup/approval workflow only. It is not a general admin dashboard, membership-management system, or sponsor tooling.
 - There is no initial proof-of-election/proof-upload requirement in the confirmed scope.
 
 ### Personal-account vs organization settings
@@ -64,7 +63,7 @@ SOAR is successful when the delivered hosted website:
 
 - Keep student, organization-officer, and sponsor accounts.
 - Registration collects only the confirmed details for each role:
-  - students and officers: name, email, password, student ID number, optional free-text department
+  - students and officers: name, email, password, student ID number, and department selected from the approved list
   - sponsors: name, email, password, optional company/organization name
 - Users can sign in, sign out, and recover passwords through email.
 - Email verification is required as part of account creation.
@@ -122,7 +121,7 @@ SOAR is successful when the delivered hosted website:
   - applicants
   - calendar/date entries
   - meeting requests
-- Student department statistics are no longer shown in organization management. They are visible only in the provisioned admin aggregate dashboard.
+- Organization management shows only an aggregate count of registered saved student accounts whose selected department matches that organization. It never lists student identities, emails, applicants, members, meetings, or payment data.
 - Use readable status labels, clear save messages, and confirmation before deleting a post or calendar entry.
 - Officers manage only organizations for which they have approved access.
 
@@ -199,7 +198,7 @@ The classmate site should be used later as a minimum quality comparison for poli
 | Included pages are readable on phones and computers; navigation, forms, images, and tables fit; loading/empty/error messages are clear. | Layout and design; UI/UX baseline. |
 | Registration, sign-in, sign-out, email verification, and email password recovery work; role-specific registration details match the confirmed scope. | Accounts, roles, and settings. |
 | Name changes follow the 30-day limit, and email changes take effect after verification of the new address. | Personal-account settings. |
-| Organization owner/officer access is limited to approved organization management, while the provisioned admin dashboard remains aggregate-read-only and not a membership system. | Organization ownership and officer access; officer dashboard; admin aggregate statistics. |
+| Organization owner/officer access is limited to approved organization management, and department counts remain aggregate-only inside the scoped organization view. | Organization ownership and officer access; officer dashboard; department student counts. |
 | Name search finds organizations; profile changes, posts, images, likes, and comments appear correctly in directory, feed, and profile pages. | Organizations/profiles; announcements; image uploads. |
 | Application links open; only explicit confirmed external submissions enter checking; officer stage changes appear in the student tracker without duplicate entries per recruitment opportunity/position. | Applications. |
 | Officers can add, change, and remove calendar entries; permitted images save and display after refresh and sign-in. | Calendar/date entries; image uploads; saved data. |
@@ -225,7 +224,7 @@ The following are outside the agreed scope unless separately approved:
 - post/application/meeting alerts by email, text, or push notification
 - a native phone app
 - automatic recurring charges
-- a general admin dashboard or full membership-management system beyond the approved read-only aggregate statistics page
+- a general admin dashboard or full membership-management system
 
 Do not treat unanswered product questions or implementation convenience as permission to add any of these.
 
