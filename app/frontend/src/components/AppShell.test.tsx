@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { AuthProvider } from '../context/AuthContext';
@@ -59,7 +60,7 @@ describe('AppShell navigation', () => {
     expect(screen.getByText('Applications')).toBeInTheDocument();
   });
 
-  it('scopes hover treatment to each link and keeps the desktop sidebar viewport-sized', async () => {
+  it('scopes hover treatment to each link and keeps desktop sidebar sizing separate from mobile drawer sizing', async () => {
     renderShell();
 
     await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
@@ -68,12 +69,41 @@ describe('AppShell navigation', () => {
     const currentLink = screen.getByRole('link', { name: 'Announcements' });
     const otherLink = screen.getByRole('link', { name: 'Organizations' });
 
-    expect(sidebar).toHaveClass('sticky', 'top-[72px]', 'h-[calc(100dvh-72px)]', 'min-h-0', 'overflow-y-auto');
+    expect(sidebar).toHaveClass('lg:sticky', 'lg:top-[72px]', 'lg:min-h-[calc(100vh-72px)]', 'flex', 'min-h-0');
+    expect(sidebar).toHaveClass('max-lg:fixed', 'max-lg:inset-0', 'max-lg:h-dvh', 'max-lg:overflow-y-auto', 'max-lg:overscroll-contain');
+    expect(sidebar.className).not.toMatch(/100dvh-72px/);
     expect(nav.className).not.toContain('hover:');
     expect(currentLink.className).toContain('hover:bg-white/10');
     expect(otherLink.className).toContain('hover:bg-white/10');
     expect(currentLink).toHaveAttribute('aria-current', 'page');
     expect(currentLink.className).toContain('border-[var(--color-gold)]');
+  });
+
+  it('opens the full-height mobile navigation, traps focus, and closes with Escape or the backdrop', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await screen.findByText('Shell child');
+    const menu = screen.getByRole('button', { name: 'Menu' });
+
+    await user.click(menu);
+    const dialog = screen.getByRole('dialog', { name: 'SOAR navigation' });
+    const firstLink = within(dialog).getByRole('link', { name: 'Announcements' });
+    const lastControl = within(dialog).getByRole('button', { name: 'Sign out' });
+    expect(menu).toHaveAttribute('aria-expanded', 'true');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveClass('max-lg:inset-0', 'max-lg:h-dvh', 'max-lg:overflow-y-auto');
+    await waitFor(() => expect(firstLink).toHaveFocus());
+
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(lastControl).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'SOAR navigation' })).not.toBeInTheDocument();
+    expect(menu).toHaveAttribute('aria-expanded', 'false');
+    expect(menu).toHaveFocus();
+
+    await user.click(menu);
+    await user.click(screen.getByRole('button', { name: 'Close navigation' }));
+    expect(menu).toHaveFocus();
   });
 
   it('uses Student rather than Officer when an officer grant is not active', async () => {

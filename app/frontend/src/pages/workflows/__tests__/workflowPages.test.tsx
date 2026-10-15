@@ -91,6 +91,8 @@ describe('SOAR workflow pages', () => {
     const user = userEvent.setup();
     renderInRouter(<DirectoryView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
+    const results = screen.getByRole('region', { name: 'Organization directory results' });
+    expect(results.className).toBe('grid min-w-0 grid-cols-1 gap-[18px] md:grid-cols-2 xl:grid-cols-3');
     expect(await screen.findByText('Computer Engineering Department')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Computer Engineering Department' })).toHaveAttribute('href', '/app/organizations/robotics');
     expect(screen.getByRole('link', { name: /Open Computer Engineering Department profile/i })).toHaveAttribute('href', '/app/organizations/robotics');
