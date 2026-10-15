@@ -2,6 +2,16 @@
 
 This backend is the Firebase Functions/Express foundation for identity, paid access, organization/content APIs, applications, and meetings.
 
+## Trusted Admin provisioning
+
+The API derives the provisioning-only Admin session type from the server-verified Firebase Auth `soarAdmin: true` custom claim.
+Public registration continues to accept only student and sponsor roles, and no account is promoted automatically.
+An initial Admin identity requires explicit trusted Firebase Admin setup; never set the claim from a browser or client-supplied request.
+Admin-only routes are `GET /admin/organizations`, `GET /admin/students`, `POST /admin/organizations`, and `POST /admin/organizations/:orgId/officer-grants`.
+Student lookup searches saved student account names and the existing `studentId` field in bounded pages and returns only the account UID, name, and an honestly optional student ID.
+Organization creation uses the existing organization schema and requires a saved student as the initial owner/officer, while later grants remain scoped to a single organization and are idempotent.
+Admin sessions have no paid entitlement and do not bypass the existing student/sponsor access rules.
+
 ## Local emulator boundary
 
 Use the demo emulator project `demo-soar-local` for local inspection. This keeps local data separate from the existing production Firebase project (`soar-a711e`) and avoids live Firebase, billing, payment-provider, or production data operations.

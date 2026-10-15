@@ -7,6 +7,13 @@ setGlobalOptions({ region: process.env.SOAR_FUNCTION_REGION ?? 'asia-southeast1'
 export const api = onRequest({ cors: false }, createApiApp());
 
 export { createPaidAccountFromConfirmedRegistration } from './identity/registration';
-export { assignInitialOrganizationOwner, approveOfficerGrant, revokeOfficerGrant } from './organizations/service';
+export {
+  assignAdminOfficerGrant,
+  assignInitialOrganizationOwner,
+  approveOfficerGrant,
+  listAdminOrganizations,
+  revokeOfficerGrant,
+  searchAdminStudents
+} from './organizations/service';
 export * from './contracts/schema';
 export * from './contracts/paths';

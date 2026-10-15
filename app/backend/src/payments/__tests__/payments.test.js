@@ -350,6 +350,13 @@ test('HTTP handler contract uses an HttpOnly registration binding cookie and nev
   const harness = createHarness();
   const handlers = createPaymentsHttpHandlers(harness.service, { secureCookies: false });
 
+  const adminRoleAttempt = await handlers.startRegistrationPayment({
+    ip: '203.0.113.10',
+    body: { role: 'admin', email: 'admin@example.edu', displayName: 'Admin Account' },
+  });
+  assert.equal(adminRoleAttempt.status, 400);
+  assert.equal(adminRoleAttempt.body.code, 'invalid_role');
+
   const started = await handlers.startRegistrationPayment({
     ip: '203.0.113.10',
     body: { role: 'student', email: 'ada@example.edu', displayName: 'Ada Lovelace', studentId: '2026-0001', department: 'Computer Engineering Department' },
