@@ -31,19 +31,19 @@ export const LoginPage = () => {
   };
 
   return (
-    <main className="auth-page">
-      <Card className="auth-card">
-        <div className="auth-logo"><SoarLogo /><span>SOAR</span></div>
-        <p className="eyebrow">Welcome back</p>
+    <main className="grid min-h-screen place-items-center p-[clamp(18px,4vw,48px)] max-sm:px-3.5">
+      <Card className="w-[min(520px,100%)]">
+        <div className="mb-5 inline-flex items-center gap-2 font-[var(--font-display)] text-xl font-extrabold leading-none text-[var(--color-navy)]"><SoarLogo /><span>SOAR</span></div>
+        <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">Welcome back</p>
         <h1>Sign in to your account</h1>
-        <p className="card-note">Entry, renewal, recovery, and settings remain available even when annual access expires.</p>
+        <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">Entry, renewal, recovery, and settings remain available even when six-month access expires.</p>
         {gateway.mode === 'fixture' ? (
-          <div className="notice compact">
+          <div className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm">
 Demo accounts: student@example.edu, officer@example.edu, sponsor@example.com, expired@example.edu, unverified@example.edu.
           </div>
         ) : null}
-        {error ? <div className="form-error" role="alert">{error}</div> : null}
-        <form onSubmit={handleSubmit} className="form-grid">
+        {error ? <div className="rounded-[var(--radius-md)] border border-[var(--color-orange-deep)] bg-[var(--color-danger-soft)] px-3.5 py-3 text-[var(--color-navy)]" role="alert">{error}</div> : null}
+        <form onSubmit={handleSubmit} className="grid content-start gap-3.5">
           <Field id="email" label="Email address">
             <TextInput id="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
           </Field>
@@ -52,7 +52,7 @@ Demo accounts: student@example.edu, officer@example.edu, sponsor@example.com, ex
           </Field>
           <Button type="submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</Button>
         </form>
-        <div className="auth-links">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 font-bold text-[var(--color-blue-deep)] max-sm:flex-col max-sm:items-stretch">
           <Link to="/recovery">Forgot password?</Link>
           <ButtonLink to="/register" variant="quiet">Create a new account</ButtonLink>
         </div>

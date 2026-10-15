@@ -44,7 +44,7 @@ const GuardLayout = ({
   const { session, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) return <main className="route-loading"><LoadingBlock label="Loading session" /></main>;
+  if (loading) return <main className="grid min-h-screen place-items-center p-6"><LoadingBlock label="Loading session" /></main>;
 
   if (requireSession && !session) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
@@ -64,7 +64,7 @@ const GuardLayout = ({
 
   if (session && requireStudent && !isStudentAccount(session)) {
     return (
-      <main className="page-narrow">
+      <main className="mx-auto grid min-h-screen w-[min(760px,100%)] place-items-center p-6">
         <StateBlock symbol="0" title="Student-only area">
           Sponsors can browse organizations and manage meeting requests, but application tools are for student accounts.
         </StateBlock>
@@ -74,7 +74,7 @@ const GuardLayout = ({
 
   if (session && requireOfficerGrant && !hasApprovedOfficerGrant(session)) {
     return (
-      <main className="page-narrow">
+      <main className="mx-auto grid min-h-screen w-[min(760px,100%)] place-items-center p-6">
         <StateBlock symbol="!" title="Officer access not active">
 Organization management controls appear only where your account has access.
         </StateBlock>
@@ -87,7 +87,7 @@ Organization management controls appear only where your account has access.
 
 const PublicOnly = ({ children }: { children: ReactNode }) => {
   const { session, loading } = useAuth();
-  if (loading) return <main className="route-loading"><LoadingBlock label="Loading session" /></main>;
+  if (loading) return <main className="grid min-h-screen place-items-center p-6"><LoadingBlock label="Loading session" /></main>;
   if (session?.emailVerified && hasActiveAccess(session)) return <Navigate to="/app" replace />;
   if (session && !session.emailVerified) return <Navigate to="/access/verify-email" replace />;
   if (session && !hasActiveAccess(session)) return <Navigate to="/settings/access" replace />;
@@ -95,7 +95,7 @@ const PublicOnly = ({ children }: { children: ReactNode }) => {
 };
 
 const NotFoundPage = () => (
-  <main className="page-narrow">
+  <main className="mx-auto grid min-h-screen w-[min(760px,100%)] place-items-center p-6">
     <StateBlock
       symbol="?"
       title="Page not found"

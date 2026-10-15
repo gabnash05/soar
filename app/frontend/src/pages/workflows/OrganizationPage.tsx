@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Button, ButtonLink, ExternalButtonLink, LoadingBlock, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
+import { Button, ButtonLink, ExternalButtonLink, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { OrganizationProfile, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
@@ -19,23 +19,13 @@ import {
 } from './pageParts';
 import { getApprovedOfficerGrants, getSafeHttpUrl, isSponsor, splitDateEntries } from './workflowUtils';
 
+const phoneHref = (phone: string) => `tel:${phone.replace(/[^+0-9]/g, '')}`;
+
 function RecruitmentActions({ organization, session, client }: { organization: OrganizationProfile; session: UserSession; client: WorkflowDataClient }) {
   const safeUrl = getSafeHttpUrl(organization.recruitment.externalFormUrl);
   const [externalFormOpened, setExternalFormOpened] = useState(false);
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
-
-  if (isSponsor(session)) {
-    return (
-      <section className="surface-section compact-section">
-        <header className="section-heading">
-          <h2>Applications hidden for sponsors</h2>
-          <p>Sponsors can browse organization information and request meetings without student application tools.</p>
-        </header>
-        <ButtonLink to="/app/meetings" variant="primary">Request a meeting</ButtonLink>
-      </section>
-    );
-  }
 
   const confirmSubmission = async () => {
     setBusy(true);
@@ -53,12 +43,12 @@ function RecruitmentActions({ organization, session, client }: { organization: O
   };
 
   return (
-    <section className="surface-section compact-section" id="application-confirmation">
-      <header className="section-heading">
+    <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0 grid gap-3" id="application-confirmation">
+      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
         <h2>External application confirmation</h2>
         <p>Opening the external form is not a SOAR submission. Confirm only after you personally submitted the external form.</p>
       </header>
-      <div className="component-row">
+      <div className="flex flex-wrap items-center gap-2">
         {safeUrl ? (
           <ExternalButtonLink
             href={safeUrl}
@@ -83,7 +73,7 @@ function RecruitmentActions({ organization, session, client }: { organization: O
           2. I submitted the external form
         </Button>
       </div>
-      <p className="help">Confirmation stays locked until you open the external link from SOAR.</p>
+      <p className="text-xs text-[var(--muted-foreground)]">Confirmation stays locked until you open the external link from SOAR.</p>
       <ResultMessage result={result} />
     </section>
   );
@@ -94,21 +84,16 @@ export function OrganizationView({ organizationId, session, client }: { organiza
   const grants = getApprovedOfficerGrants(session);
   const canManage = organization ? grants.some((grant) => grant.organizationId === organization.id) : false;
   const split = organization ? splitDateEntries(organization.dateEntries) : { events: [], availability: [] };
-  const actionTabId = isSponsor(session) ? 'meetings' : 'apply';
+  const canApply = !isSponsor(session);
   const tabItems = [
     { id: 'feed', label: 'Feed', count: organization?.posts.length },
     { id: 'about', label: 'About' },
     { id: 'dates', label: 'Dates & availability', count: organization?.dateEntries.length },
-    { id: actionTabId, label: isSponsor(session) ? 'Meetings' : 'Apply' },
+    ...(canApply ? [{ id: 'apply', label: 'Apply' }] : []),
   ];
   const { activeId, getTabTo } = useQueryTab(tabItems.map((item) => item.id), 'feed');
 
-  const headerActions = (
-    <>
-      <ButtonLink to="/app/meetings" variant="primary">Request meeting</ButtonLink>
-      <ButtonLink to="/app/directory" variant="secondary">Back to directory</ButtonLink>
-    </>
-  );
+  const headerActions = <ButtonLink to="/app/directory" variant="secondary">Back to directory</ButtonLink>;
 
   return (
     <WorkflowPageFrame
@@ -128,27 +113,30 @@ export function OrganizationView({ organizationId, session, client }: { organiza
       ) : null}
       {organization ? (
         <>
-          <section className="organization-profile-hero">
-            <OrganizationIdentityArt name={organization.name} logoUrl={organization.logoUrl} className="profile-identity-art" />
-            <div className="profile-hero-copy">
-              <div className="org-head">
+          <section className="grid items-stretch gap-[clamp(18px,4vw,34px)] rounded-[20px] bg-[var(--color-white)] p-[clamp(16px,3vw,24px)] shadow-[var(--shadow-soft)] md:grid-cols-[minmax(220px,0.42fr)_minmax(0,1fr)] max-[820px]:grid-cols-1">
+            <OrganizationIdentityArt name={organization.name} logoUrl={organization.logoUrl} className="profile-identity-art min-h-[260px] rounded-[18px] max-[820px]:min-h-[210px]" />
+            <div className="grid content-center gap-3.5 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.5rem,3vw,2.35rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.08] [&_h2]:tracking-[-0.03em] [&_h2]:text-[var(--color-navy)]">
+              <div className="flex min-w-0 items-center gap-3 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[1.05rem] [&_h2]:font-bold [&_h2]:leading-tight [&_h2]:text-[var(--color-navy)] [&_h3]:m-0 [&_h3]:font-[var(--font-display)] [&_h3]:text-[1.05rem] [&_h3]:font-bold [&_h3]:leading-tight [&_h3]:text-[var(--color-navy)]">
                 <OrganizationAvatar name={organization.name} logoUrl={organization.logoUrl} />
                 <div>
                   <h2>{organization.name}</h2>
-                  <p className="section-note">{organization.shortDescription}</p>
+                  <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">{organization.shortDescription}</p>
                 </div>
               </div>
               <p>{organization.description}</p>
-              <p><strong>Contact:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
+              <div className="grid gap-1 [&_p]:m-0">
+                <p><strong>Email:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
+                {organization.contactPhone ? <p><strong>Phone:</strong> <a href={phoneHref(organization.contactPhone)}>{organization.contactPhone}</a></p> : null}
+              </div>
               <p>
-                {canManage ? <StatusChip tone="approved">You manage this organization</StatusChip> : <StatusChip tone="info">Public profile</StatusChip>}
+                {canManage ? <RoleBadge kind="officer">You manage this organization</RoleBadge> : <StatusChip tone="info">Public profile</StatusChip>}
               </p>
             </div>
           </section>
 
           <SubtabNav label={`${organization.name} profile sections`} baseId="organization-profile" items={tabItems} activeId={activeId} getTabTo={getTabTo} />
 
-          <SubtabPanel baseId="organization-profile" tabId="feed" activeId={activeId} className="content-stack feed-column">
+          <SubtabPanel baseId="organization-profile" tabId="feed" activeId={activeId} className="grid gap-4 mx-auto w-[min(720px,100%)]">
             {organization.posts.length ? (
               organization.posts.map((post) => (
                 <AnnouncementCard key={post.id} announcement={post} session={session} client={client} onChanged={reload} />
@@ -159,13 +147,16 @@ export function OrganizationView({ organizationId, session, client }: { organiza
           </SubtabPanel>
 
           <SubtabPanel baseId="organization-profile" tabId="about" activeId={activeId}>
-            <section className="surface-section compact-section" id="recruitment">
-              <header className="section-heading">
+            <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0 grid gap-3" id="recruitment">
+              <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
                 <h2>About and recruitment details</h2>
                 <p>Read the public description and current recruitment opportunity before taking action.</p>
               </header>
               <p>{organization.description}</p>
-              <p><strong>Contact:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
+              <div className="grid gap-1 [&_p]:m-0">
+                <p><strong>Email:</strong> <a href={`mailto:${organization.contactEmail}`}>{organization.contactEmail}</a></p>
+                {organization.contactPhone ? <p><strong>Phone:</strong> <a href={phoneHref(organization.contactPhone)}>{organization.contactPhone}</a></p> : null}
+              </div>
               <p><strong>Recruitment:</strong> {organization.recruitment.title}</p>
               <p><strong>Requirements:</strong> {organization.recruitment.requirements}</p>
               <p><strong>Instructions:</strong> {organization.recruitment.instructions}</p>
@@ -173,15 +164,22 @@ export function OrganizationView({ organizationId, session, client }: { organiza
           </SubtabPanel>
 
           <SubtabPanel baseId="organization-profile" tabId="dates" activeId={activeId}>
-            <section className="grid grid-2 profile-date-grid">
-              <DateEntryList title="Dated public events" entries={split.events} emptyCopy="No public event dates are posted for this organization yet." />
-              <DateEntryList title="Meeting/interview availability" entries={split.availability} emptyCopy="No requestable meeting or interview availability is posted yet." />
+            <section className="grid gap-4">
+              <div className="grid md:grid-cols-2 profile-date-grid">
+                <DateEntryList title="Dated public events" entries={split.events} emptyCopy="No public event dates are posted for this organization yet." />
+                <DateEntryList title="Meeting/interview availability" entries={split.availability} emptyCopy="No requestable meeting or interview availability is posted yet." />
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full">
+                <ButtonLink to={`/app/meetings?organizationId=${encodeURIComponent(organization.id)}&tab=availability`} variant="primary">Request meeting</ButtonLink>
+              </div>
             </section>
           </SubtabPanel>
 
-          <SubtabPanel baseId="organization-profile" tabId={actionTabId} activeId={activeId}>
-            <RecruitmentActions organization={organization} session={session} client={client} />
-          </SubtabPanel>
+          {canApply ? (
+            <SubtabPanel baseId="organization-profile" tabId="apply" activeId={activeId}>
+              <RecruitmentActions organization={organization} session={session} client={client} />
+            </SubtabPanel>
+          ) : null}
         </>
       ) : null}
     </WorkflowPageFrame>
