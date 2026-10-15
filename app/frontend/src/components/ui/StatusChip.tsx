@@ -12,6 +12,6 @@ const toneClasses: Record<ChipTone, string> = {
   danger: 'bg-[var(--color-danger-soft)] text-[var(--color-orange-deep)]',
 };
 
-export const StatusChip = ({ tone = 'neutral', children }: { tone?: ChipTone; children: ReactNode }) => (
-  <span className={cn('chip inline-flex min-h-7 items-center rounded-md px-2.5 text-xs font-bold capitalize', toneClasses[tone])}>{children}</span>
+export const StatusChip = ({ tone = 'neutral', children, className }: { tone?: ChipTone; children: ReactNode; className?: string }) => (
+  <span className={cn('chip inline-flex min-h-7 items-center rounded-md px-2.5 text-xs font-bold capitalize', toneClasses[tone], className)}>{children}</span>
 );

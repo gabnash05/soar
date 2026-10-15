@@ -205,17 +205,16 @@ export function DateEntryList({ title, entries, emptyCopy, action }: { title: st
     <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)]">
       <TabSectionHeader title={title} action={action} />
       {entries.length ? (
-        <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
+        <ul className="m-0 grid list-none gap-0 p-0">
           {entries.map((entry) => (
-            <li key={entry.id}>
-              <div className="grid size-[50px] shrink-0 place-items-center rounded-xl bg-[var(--color-gold-soft)] text-center font-[var(--font-display)] text-[0.72rem] font-extrabold uppercase leading-[1.15] text-[var(--color-navy)]" aria-hidden="true">
-                {entry.kind === 'event' ? 'EVT' : 'REQ'}
-              </div>
+            <li key={entry.id} className="flex min-w-0 items-center gap-2.5 border-b border-[var(--color-border)] py-3 max-[820px]:items-start">
               <div className="min-w-0 flex-1 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:mt-0.5 [&_span]:block [&_span]:[overflow-wrap:anywhere] [&_span]:text-[0.88rem] [&_span]:text-[var(--muted-foreground)]">
                 <strong>{entry.title}</strong>
                 <span>{formatDateEntry(entry)} · {entry.details}</span>
               </div>
-              <StatusChip tone={entry.kind === 'event' ? 'neutral' : 'info'}>{entry.kind === 'event' ? 'Dated event' : 'Meeting/interview availability'}</StatusChip>
+              <StatusChip className="min-h-6 shrink-0 whitespace-nowrap px-2 text-[0.7rem]" tone={entry.kind === 'event' ? 'neutral' : 'info'}>
+                {entry.kind === 'event' ? 'Event' : 'Availability'}
+              </StatusChip>
             </li>
           ))}
         </ul>
@@ -442,7 +441,7 @@ export function AnnouncementCard({
                   <li key={item.id}>
                     {editingCommentId === item.id ? (
                       <form className="grid w-full gap-2" onSubmit={saveComment}>
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><strong className="text-[var(--color-navy)]">{item.authorName}</strong><RoleBadge kind={role.kind}>{role.label ?? undefined}</RoleBadge></div>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><strong className="text-[var(--color-navy)]">{item.authorName}</strong><RoleBadge className="gap-3" kind={role.kind}>{role.label ?? undefined}</RoleBadge></div>
                         <label className="sr-only" htmlFor={`edit-comment-${item.id}`}>Edit comment by {item.authorName}</label>
                         <textarea id={`edit-comment-${item.id}`} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={editingBody} onChange={(event) => setEditingBody(event.target.value)} />
                         <div className="flex flex-wrap items-center gap-2">
@@ -455,7 +454,7 @@ export function AnnouncementCard({
                         <div className="min-w-0 [&_strong]:text-[var(--color-navy)] [&_p]:mt-0.5 [&_p]:mb-0 [&_p]:[overflow-wrap:anywhere] [&_p]:text-[var(--color-ink)] [&_span]:mt-1 [&_span]:inline-block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <strong className="[overflow-wrap:anywhere]">{item.authorName}</strong>
-                            <RoleBadge kind={role.kind}>{role.label ?? undefined}</RoleBadge>
+                            <RoleBadge className="gap-3" kind={role.kind}>{role.label ?? undefined}</RoleBadge>
                           </div>
                           <p>{item.body}</p>{item.updatedAt ? <span>Edited</span> : null}
                         </div>

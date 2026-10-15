@@ -157,6 +157,15 @@ describe('SOAR workflow pages', () => {
     expect(dateGrid).toHaveClass('grid', 'gap-x-6', 'gap-y-8', 'md:grid-cols-2');
     expect(within(availabilityHeading.closest('header') as HTMLElement).getByRole('link', { name: 'Request meeting' })).toHaveAttribute('href', '/app/meetings?organizationId=health&tab=availability');
     expect(within(datesPanel).getAllByRole('link', { name: 'Request meeting' })).toHaveLength(1);
+
+    const availabilityEntry = within(datesPanel).getByText('Civil Engineering partner meeting slot').closest('li');
+    expect(availabilityEntry).toHaveClass('flex', 'min-w-0', 'gap-2.5', 'max-[820px]:items-start');
+    expect(availabilityEntry?.firstElementChild).toHaveClass('min-w-0', 'flex-1');
+    expect(within(availabilityEntry as HTMLElement).getByText(/2026-11-14 · 09:00-11:00 · Sponsors and students can request this department discussion slot\./)).toBeInTheDocument();
+    expect(within(availabilityEntry as HTMLElement).getByText('Availability').closest('.chip')).toHaveClass('min-h-6', 'shrink-0', 'whitespace-nowrap');
+
+    const eventEntry = within(datesPanel).getByText('Civil Engineering field briefing').closest('li');
+    expect(within(eventEntry as HTMLElement).getByText('Event').closest('.chip')).toHaveClass('min-h-6', 'shrink-0', 'whitespace-nowrap');
   });
 
   it('keeps one meeting request CTA in the active Availability tab and distinguishes pending requests', async () => {
@@ -509,6 +518,7 @@ describe('SOAR workflow pages', () => {
     await screen.findByText(/Computer Engineering project night/i);
     await user.click(screen.getAllByRole('button', { name: /Open comments \(1\)/i })[0]);
     expect(screen.getByText('Mara Santos').parentElement).toHaveTextContent('Student');
+    expect(screen.getByText('Student').parentElement).toHaveClass('gap-3');
     await user.click(screen.getByRole('button', { name: /^Edit$/i }));
     await user.clear(screen.getByLabelText(/Edit comment by Mara Santos/i));
     await user.type(screen.getByLabelText(/Edit comment by Mara Santos/i), 'Updated question for officers.');
