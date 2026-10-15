@@ -27,6 +27,8 @@ Local service addresses:
 - Firestore WebChannel port: `127.0.0.1:18081`
 - Storage emulator: `127.0.0.1:19199`
 
+Set the backend's `SOAR_APP_BASE_URL` to the exact frontend origin. The API permits credentialed browser requests only from that origin; for the local API-backed static preview used here, that is `http://127.0.0.1:45656`.
+
 The emulator command does not require Firebase CLI login for local demo resources. It is not evidence that production Firebase credentials are configured.
 
 With the local emulators already running, seed deterministic demo accounts and workflow records in another terminal:

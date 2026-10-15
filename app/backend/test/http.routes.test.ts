@@ -140,6 +140,41 @@ describe('SOAR HTTP route contracts', () => {
     });
   });
 
+  it('allows credentialed browser requests only from the configured app origin', async () => {
+    const previousAppUrl = process.env.SOAR_APP_BASE_URL;
+    process.env.SOAR_APP_BASE_URL = 'http://127.0.0.1:45656';
+    try {
+      await withApiServer(async (baseUrl) => {
+        const allowed = await fetch(`${baseUrl}/session`, {
+          method: 'OPTIONS',
+          headers: {
+            origin: 'http://127.0.0.1:45656',
+            'access-control-request-method': 'GET',
+            'access-control-request-headers': 'authorization',
+          },
+        });
+        expect(allowed.status).toBe(204);
+        expect(allowed.headers.get('access-control-allow-origin')).toBe('http://127.0.0.1:45656');
+        expect(allowed.headers.get('access-control-allow-credentials')).toBe('true');
+
+        const untrusted = await fetch(`${baseUrl}/session`, {
+          method: 'OPTIONS',
+          headers: {
+            origin: 'https://untrusted.example',
+            'access-control-request-method': 'GET',
+            'access-control-request-headers': 'authorization',
+          },
+        });
+        expect(untrusted.status).toBe(404);
+        expect(untrusted.headers.get('access-control-allow-origin')).toBeNull();
+        expect(untrusted.headers.get('access-control-allow-credentials')).toBeNull();
+      });
+    } finally {
+      if (previousAppUrl === undefined) delete process.env.SOAR_APP_BASE_URL;
+      else process.env.SOAR_APP_BASE_URL = previousAppUrl;
+    }
+  });
+
   it('returns authenticated session payloads through the /api prefix', async () => {
     mocks.getUserSession.mockResolvedValue({ uid: 'user1', email: 'user@example.test', access: { status: 'active' } });
 

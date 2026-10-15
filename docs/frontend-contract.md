@@ -55,7 +55,7 @@ Shared backend coordination read: `/home/gab/agent-workspace/firstmate/data/soar
 
 Production mode requires `VITE_SOAR_API_BASE_URL` and public Firebase config. Missing backend/Firebase configuration surfaces as an unavailable state rather than a false successful login/payment.
 
-Current HTTP paths used by the production identity/payment gateway match the merged backend Express app's bare route mounts. The backend also mounts `/api`-prefixed equivalents; set `VITE_SOAR_API_BASE_URL` accordingly instead of changing client method names.
+Current HTTP paths used by the production identity/payment gateway match the merged backend Express app's bare route mounts. The backend also mounts `/api`-prefixed equivalents; set `VITE_SOAR_API_BASE_URL` accordingly instead of changing client method names. Set backend `SOAR_APP_BASE_URL` to the exact frontend origin; credentialed browser API requests are restricted to that configured origin.
 
 | Method | Path | Frontend expectation |
 | --- | --- | --- |

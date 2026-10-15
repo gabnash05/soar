@@ -73,7 +73,11 @@ async function requireAdmin(req: Request) {
 
 export function createApiApp() {
   const app = express();
-  app.use(cors({ origin: true }));
+  const trustedAppOrigin = new URL(process.env.SOAR_APP_BASE_URL || 'http://localhost:5173').origin;
+  app.use(cors({
+    origin: (origin, callback) => callback(null, origin === trustedAppOrigin ? origin : false),
+    credentials: true
+  }));
 
   app.post(['/webhooks/paymongo', '/api/webhooks/paymongo'], express.raw({ type: '*/*', limit: '256kb' }), asyncRoute(async (req, res) => {
     (req as Request & { rawBody?: Buffer }).rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body ?? ''), 'utf8');
