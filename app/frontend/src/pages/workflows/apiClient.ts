@@ -313,7 +313,7 @@ interface AnnouncementMediaTargetResponse {
   maxAggregateSizeBytes?: number;
 }
 
-async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ announcementId?: string; image?: { storagePath: string; contentType: string; sizeBytes: number; alt?: string }; media?: { storagePath: string; contentType: string; sizeBytes: number; alt?: string }[] }> {
+async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ announcementId?: string; media?: { storagePath: string; contentType: string; sizeBytes: number; alt?: string }[] }> {
   const media = input.media?.length ? input.media : input.image ? [input.image] : [];
   if (!media.length) return {};
 
@@ -322,7 +322,7 @@ async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ ann
     const existing = media
       .filter((item) => item.storagePath && item.contentType && item.sizeBytes)
       .map((item) => ({ storagePath: item.storagePath as string, contentType: item.contentType as string, sizeBytes: item.sizeBytes as number, alt: item.alt }));
-    return existing.length ? { media: existing, image: existing[0] } : {};
+    return existing.length ? { media: existing } : {};
   }
 
   validateAnnouncementMediaFiles(files);
@@ -338,7 +338,6 @@ async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ ann
   return {
     announcementId: response.announcementId,
     media: uploadedMedia,
-    image: uploadedMedia[0],
   };
 }
 

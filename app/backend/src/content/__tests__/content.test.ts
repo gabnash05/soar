@@ -37,6 +37,16 @@ describe('content validation', () => {
     expectParseFailure(() => announcementCreateSchema.parse({ body: '   ' }));
   });
 
+  it('accepts media-only announcement payloads and rejects the legacy-image plus media combination', () => {
+    const image = { storagePath: 'announcement-images/org1/post1/photo.png', contentType: 'image/png', sizeBytes: 64, alt: 'photo.png' } as const;
+    expect(announcementCreateSchema.parse({ body: 'Photo update', media: [image] }).media).toHaveLength(1);
+    const invalid = announcementCreateSchema.safeParse({ body: 'Photo update', image, media: [image] });
+    expect(invalid.success).toBe(false);
+    if (!invalid.success) {
+      expect(invalid.error.issues).toContainEqual(expect.objectContaining({ path: ['media'], message: 'Use either legacy image or media, not both.' }));
+    }
+  });
+
   it('validates image metadata before Storage writes are referenced', () => {
     expect(imageTargetRequestSchema.parse({ fileName: 'logo.png', contentType: 'image/png', sizeBytes: 1024 }).contentType).toBe('image/png');
     expect(mediaTargetRequestSchema.parse({ files: [{ fileName: 'a.png', contentType: 'image/png', sizeBytes: 1024 }, { fileName: 'b.mp4', contentType: 'video/mp4', sizeBytes: 2048 }] }).files).toHaveLength(2);

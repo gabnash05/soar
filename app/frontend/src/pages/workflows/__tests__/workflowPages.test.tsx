@@ -582,6 +582,9 @@ describe('SOAR workflow pages', () => {
 
     await user.click(await screen.findByRole('button', { name: /Post announcement/i }));
     await user.type(screen.getByLabelText(/Post text/i), 'Two image update for the build team.');
+    const permissiveUser = userEvent.setup({ applyAccept: false });
+    await permissiveUser.upload(screen.getByLabelText(/Optional media/i), new File(['not an image'], 'notes.txt', { type: 'text/plain' }));
+    expect(await screen.findByText(/Use a PNG, JPEG, GIF, WebP, MP4, or WebM file/i)).toBeInTheDocument();
     await user.upload(screen.getByLabelText(/Optional media/i), [
       new File(['a'], 'robot-a.png', { type: 'image/png' }),
       new File(['video'], 'robot-demo.mp4', { type: 'video/mp4' }),
