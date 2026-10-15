@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Button, LoadingBlock, ModalDialog, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import { MEETING_DOCUMENT_MAX_BYTES, formatBytes, openPrivateMeetingDocument, validateMeetingDocumentFile } from '../../lib/storageUploads';
+import { safeErrorMessage } from '../../lib/safeErrors';
 import type { DateEntry, MeetingRequest, MeetingRequestInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import { OfficerMeetingReview } from './OfficerPage';
 import { EmptyState, ErrorState, MeetingStatusChip, ResultMessage, RouteUnavailableState, SourceNotice, TabSectionHeader, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
@@ -112,7 +113,13 @@ export function MeetingsView({ session, client }: { session: UserSession; client
         await requestsQuery.reload();
       }
     } catch (error) {
-      setResult({ ok: false, persisted: false, source: client.mode, reason: 'error', message: error instanceof Error ? error.message : 'Meeting request failed.' });
+      setResult({
+        ok: false,
+        persisted: false,
+        source: client.mode,
+        reason: 'error',
+        message: safeErrorMessage(error, 'We could not send your meeting request. It was not confirmed. Please try again; if the problem continues, contact support.'),
+      });
     } finally {
       setBusy(false);
     }

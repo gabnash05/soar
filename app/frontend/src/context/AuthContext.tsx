@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createBackendGateway, type BackendGateway } from '../lib/backendGateway';
+import { safeErrorMessage } from '../lib/safeErrors';
 import type {
   EmailChangeInput,
   NameChangeInput,
@@ -31,7 +32,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const getMessage = (error: unknown) => (error instanceof Error ? error.message : 'Something went wrong.');
+const getMessage = (error: unknown) => safeErrorMessage(error, 'We could not complete that action. Please try again.');
 
 export const AuthProvider = ({ children, gateway: providedGateway }: { children: ReactNode; gateway?: BackendGateway }) => {
   const gateway = useMemo(() => providedGateway ?? createBackendGateway(), [providedGateway]);

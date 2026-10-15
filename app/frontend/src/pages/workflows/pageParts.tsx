@@ -8,6 +8,7 @@ import { getWorkflowDataClientForGatewayMode, unavailableWorkflowDataClient } fr
 import type { Announcement, DateEntry, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from './contracts';
 import { formatDateEntry, getMeetingTone, getStageTone, getUnavailableCopy } from './workflowUtils';
 import { cn } from '../../lib/utils';
+import { safeErrorMessage } from '../../lib/safeErrors';
 
 export function useWorkflowDataClient(): WorkflowDataClient {
   const gateway = useBackendGateway();
@@ -215,7 +216,7 @@ export function DateEntryList({ title, entries, emptyCopy }: { title: string; en
                 <strong>{entry.title}</strong>
                 <span>{formatDateEntry(entry)} · {entry.details}</span>
               </div>
-              <StatusChip tone={entry.kind === 'event' ? 'neutral' : 'info'}>{entry.kind === 'event' ? 'Dated event' : 'Meeting/interview availability'}</StatusChip>
+              <StatusChip tone={entry.kind === 'event' ? 'neutral' : 'info'}>{entry.kind === 'event' ? 'Dated event' : <span aria-label="Meeting/interview availability">Availability</span>}</StatusChip>
             </li>
           ))}
         </ul>
@@ -283,6 +284,9 @@ export function AnnouncementCard({
   onChanged?: () => void;
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [comments, setComments] = useState(announcement.comments);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
   const [comment, setComment] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState('');
@@ -292,6 +296,19 @@ export function AnnouncementCard({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const media = announcement.media?.length ? announcement.media : announcement.image ? [announcement.image] : [];
   const commentCount = announcement.commentCount ?? announcement.comments.length;
+
+  const loadComments = async () => {
+    setCommentsLoading(true);
+    setCommentsError(null);
+    try {
+      const result = await client.listAnnouncementComments(announcement.id, session);
+      setComments(result.data);
+    } catch (error) {
+      setCommentsError(safeErrorMessage(error, 'Comments could not be loaded. Please try again.'));
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
 
   const toggleLike = async () => {
     setBusy(true);
@@ -321,6 +338,7 @@ export function AnnouncementCard({
     setBusy(false);
     if (next.ok) {
       setComment('');
+      await loadComments();
       onChanged?.();
     }
   };
@@ -341,6 +359,7 @@ export function AnnouncementCard({
     if (next.ok) {
       setEditingCommentId(null);
       setEditingBody('');
+      await loadComments();
       onChanged?.();
     }
   };
@@ -354,6 +373,7 @@ export function AnnouncementCard({
     setBusy(false);
     if (next.ok) {
       setDeleteCommentId(null);
+      await loadComments();
       onChanged?.();
     } else {
       setDeleteError(next.message);
@@ -405,7 +425,11 @@ export function AnnouncementCard({
           <span className="sr-only">{announcement.viewerHasLiked ? 'Liked' : 'Like'}</span>
           <span className="like-count min-w-[1.2em] tabular-nums" aria-hidden="true">{announcement.likeCount}</span>
         </Button>
-        <Button type="button" variant="quiet" onClick={() => setCommentsOpen((open) => !open)}>
+        <Button type="button" variant="quiet" onClick={() => {
+          const opening = !commentsOpen;
+          setCommentsOpen(opening);
+          if (opening) void loadComments();
+        }}>
           <MessageCircle aria-hidden="true" className="size-4" />
           {commentsOpen ? 'Hide comments' : 'Open comments'} ({commentCount})
         </Button>
@@ -421,9 +445,11 @@ export function AnnouncementCard({
             <textarea id={`comment-${announcement.id}`} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Keep comments respectful and specific." />
             <Button type="submit" variant="secondary" disabled={busy}>Add comment</Button>
           </form>
-          {announcement.comments.length ? (
+          {commentsLoading ? <p role="status">Loading comments…</p> : null}
+          {commentsError ? <div className="grid gap-2" role="alert"><p>{commentsError}</p><Button type="button" variant="secondary" onClick={() => void loadComments()}>Try again</Button></div> : null}
+          {!commentsLoading && !commentsError && comments.length ? (
             <ul className="m-0 grid list-none gap-2.5 p-0 text-[var(--muted-foreground)] [&_li]:flex [&_li]:items-start [&_li]:justify-between [&_li]:gap-3 [&_li]:border-t [&_li]:border-[color-mix(in_oklch,var(--color-border)_72%,transparent)] [&_li]:py-2.5 [&_li:first-child]:border-t-0 max-sm:[&_li]:flex-col">
-              {announcement.comments.map((item) => {
+              {comments.map((item) => {
                 const canEdit = item.viewerCanEdit || item.authorUid === session.uid;
                 const canDelete = item.viewerCanDelete || item.authorUid === session.uid;
                 return (
@@ -452,7 +478,7 @@ export function AnnouncementCard({
                 );
               })}
             </ul>
-          ) : <p className="text-xs text-[var(--muted-foreground)]">No comments yet.</p>}
+          ) : !commentsLoading && !commentsError ? <p className="text-xs text-[var(--muted-foreground)]">No comments yet.</p> : null}
         </section>
       ) : null}
       <ResultMessage result={result} />

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
+import type { WorkflowDataClient } from '../contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
 import { DirectoryView } from '../DirectoryPage';
@@ -152,6 +153,26 @@ describe('SOAR workflow pages', () => {
     const datedEventsHeading = within(datesPanel).getByRole('heading', { name: 'Dated public events' });
     const availabilityHeading = within(datesPanel).getByRole('heading', { name: 'Meeting/interview availability' });
     expect(datedEventsHeading.closest('section')?.className).toBe(availabilityHeading.closest('section')?.className);
+    expect(within(datesPanel).getByText('Availability')).toHaveAttribute('aria-label', 'Meeting/interview availability');
+  });
+
+  it('shows a safe recovery message when the meeting service returns an internal failure', async () => {
+    const user = userEvent.setup();
+    const fixtureClient = createFixtureWorkflowDataClient();
+    const client: WorkflowDataClient = {
+      ...fixtureClient,
+      requestMeeting: async () => {
+        throw Object.assign(new Error('Internal Functions details'), { code: 'internal' });
+      },
+    };
+
+    renderInRouter(<MeetingsView session={studentSession} client={client} />);
+    await screen.findAllByText(/Computer Engineering consultation window/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
+
+    expect(await screen.findByText(/We could not send your meeting request\. It was not confirmed\./i)).toBeInTheDocument();
+    expect(screen.queryByText(/Internal Functions details/i)).not.toBeInTheDocument();
   });
 
   it('keeps one meeting request CTA in the active Availability tab and distinguishes pending requests', async () => {
@@ -396,6 +417,41 @@ describe('SOAR workflow pages', () => {
     const unlike = screen.getByRole('button', { name: /Unlike announcement from Computer Engineering Department; 13 likes/i });
     expect(unlike).toHaveAttribute('aria-pressed', 'true');
     expect(unlike.querySelector('.like-count')).toHaveTextContent('13');
+  });
+
+  it('loads persisted comments each time the comments panel is opened', async () => {
+    const user = userEvent.setup();
+    const fixtureClient = createFixtureWorkflowDataClient();
+    const client: WorkflowDataClient = {
+      ...fixtureClient,
+      listAnnouncements: async () => ({
+        data: [{
+          id: 'persisted-comment-post',
+          organizationId: 'robotics',
+          organizationName: 'Computer Engineering Department',
+          createdAt: '2026-10-10T00:00:00.000Z',
+          body: 'A post with a persisted comment.',
+          likeCount: 0,
+          viewerHasLiked: false,
+          commentCount: 1,
+          comments: [],
+        }],
+        source: 'production',
+      }),
+      listAnnouncementComments: vi.fn(async () => ({
+        data: [{ id: 'persisted-comment', authorName: 'Mara Santos', body: 'Persisted after reopening.', createdAt: '2026-10-10T00:01:00.000Z' }],
+        source: 'production' as const,
+      })),
+    };
+
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+    await screen.findByText('A post with a persisted comment.');
+    await user.click(screen.getByRole('button', { name: 'Open comments (1)' }));
+    expect(await screen.findByText('Persisted after reopening.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Hide comments/i }));
+    await user.click(screen.getByRole('button', { name: 'Open comments (1)' }));
+    await waitFor(() => expect(client.listAnnouncementComments).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Persisted after reopening.')).toBeInTheDocument();
   });
 
   it('lets commenters edit and delete only their own comments while keeping counts refreshed', async () => {

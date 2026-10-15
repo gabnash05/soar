@@ -58,6 +58,7 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   mode: 'unavailable',
   label: 'Workflow services unavailable',
   listAnnouncements: () => unavailableQuery<Announcement[]>([]),
+  listAnnouncementComments: () => unavailableQuery<AnnouncementComment[]>([]),
   toggleAnnouncementLike: () => unavailableMutation<Announcement>(),
   addAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
   updateAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
@@ -547,6 +548,15 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
     async listAnnouncements(session) {
       return {
         data: announcements.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((announcement) => hydrateAnnouncement(announcement, session)),
+        source: 'fixture',
+        message: 'Demo mode: sample workflow changes are simulated locally.',
+      };
+    },
+
+    async listAnnouncementComments(announcementId) {
+      const announcement = announcements.find((item) => item.id === announcementId);
+      return {
+        data: announcement ? clone(announcement.comments) : [],
         source: 'fixture',
         message: 'Demo mode: sample workflow changes are simulated locally.',
       };

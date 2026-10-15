@@ -397,6 +397,11 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return queryResult(await Promise.all(listItems(response).map(mapAnnouncement)));
     },
 
+    async listAnnouncementComments(announcementId) {
+      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>(`/announcements/${encodeURIComponent(announcementId)}/comments?limit=50`, await activeHeaders());
+      return queryResult(listItems(response).map(mapComment));
+    },
+
     async toggleAnnouncementLike(announcementId, liked) {
       const response = await apiFetch<unknown>(`/announcements/${encodeURIComponent(announcementId)}/like`, await bodyInit(undefined, liked ? 'POST' : 'DELETE'));
       return mutationResult(liked ? 'Announcement liked.' : 'Announcement like removed.', await mapAnnouncement(response));
