@@ -5,7 +5,7 @@
 - App root: `app/frontend`.
 - Framework: React + TypeScript + Vite. This repo had no existing frontend framework, so the lightweight Vite client is the foundation path.
 - Routing: `react-router-dom` browser routes with explicit guards.
-- Styling: project CSS tokens in `src/styles/tokens.css` and component/page styles in `src/styles/app.css`; no CSS framework dependency.
+- Styling: Tailwind CSS v4 plus official shadcn/ui source components. SOAR brand tokens remain in `src/styles/tokens.css`; `src/styles/app.css` is the Tailwind/shadcn entry plus the remaining transition bridge for existing semantic class names while the app finishes utility conversion.
 - Runtime services: environment-driven Firebase client initialization plus typed backend gateway interfaces. The browser never stores provider secrets and never calls payment-provider secret APIs.
 - Fixture mode: `VITE_SOAR_USE_FIXTURES=true` enables named development fixtures. Fixture mode is opt-in and should not be used as production readiness evidence.
 
@@ -20,7 +20,7 @@ Frontend owns public/access/settings routes, the app shell, and workflow route c
 | `/app/organizations/:organizationId` | `src/pages/workflows/OrganizationPage.tsx` | `default function OrganizationPage()` | active access | organization profile, recruitment, events, meeting/application entry points |
 | `/app/applications` | `src/pages/workflows/ApplicationsPage.tsx` | `default function ApplicationsPage()` | active student access | student application tracker |
 | `/app/meetings` | `src/pages/workflows/MeetingsPage.tsx` | `default function MeetingsPage()` | active access | requester meeting tracker |
-| `/app/officer` | `src/pages/workflows/OfficerPage.tsx` | `default function OfficerPage()` | active access + approved organization grant | officer tools for approved organizations only |
+| `/settings/organization` | `src/pages/settings/OrganizationSettingsPage.tsx` | `default function OrganizationSettingsPage()` | active access + approved organization grant | organization management for approved grants only, including department registered-student aggregate |
 
 Workflow pages now render complete fixture-mode screens and production API loading/error states. Fixture mode is opt-in local sample data; production mode calls configured backend services and does not fall back to fixture success.
 
@@ -28,11 +28,11 @@ Workflow pages now render complete fixture-mode screens and production API loadi
 
 Use the shared domain types from `src/lib/contracts.ts`:
 
-- `AccountKind = 'student' | 'sponsor'` (officer is an organization grant on a student account, not an account kind).
+- `AccountKind = 'student' | 'sponsor'` (officer is an organization grant on a student account, not an account kind; the temporary aggregate-statistics admin product role has been removed).
 - `AccessStatus = 'active' | 'pending' | 'failed' | 'cancelled' | 'expired' | 'revoked' | 'missing'`. Backend entitlement documents use `active | expired | revoked`; checkout-intent responses may additionally use pending/failed/cancelled/missing before an entitlement exists.
 - `ApplicationStage = 'Pending' | 'Under review' | 'Accepted' | 'Declined'`.
 - `MeetingStatus = 'Pending' | 'Approved' | 'Declined'`.
-- `UserSession` includes trusted `access`, optional student `department`, and `officerGrants` from backend/auth claims, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI. Access copy should use `periodMonths: 6` / `periodLabel: "6 months"`; `annualFeePhp` remains only a legacy PHP10 alias.
+- `UserSession` includes trusted `access`, optional student `department` / `departmentKey`, and `officerGrants` from backend/auth claims/account docs, not UI toggles. Backend grant status `active` is presented as an approved officer grant in the UI. Access copy uses `periodMonths: 6` / `periodLabel: "6 months"`; any `annualFeePhp` field is only a legacy PHP10 alias.
 
 Workflow pages should consume foundation hooks/components instead of creating a parallel adapter:
 
@@ -43,7 +43,7 @@ Workflow pages should consume foundation hooks/components instead of creating a 
 
 ## Backend gateway contract
 
-Shared backend coordination read: `/home/gab/agent-workspace/firstmate/data/soar-identity-foundation/payment-coordination.md`. Frontend expects backend responses to map identity-owned Firestore records into the `UserSession` shape above: `accounts/{uid}` -> profile fields, `entitlements/{uid}` -> `access`, and `organizations/{orgId}/officerGrants/{uid}` -> `officerGrants`. Backend `officerGrants.status: "active"` is rendered as approved officer access.
+Shared backend coordination read: `/home/gab/agent-workspace/firstmate/data/soar-identity-foundation/payment-coordination.md` and current revisions contract `/home/gab/agent-workspace/firstmate/data/soar-revisions-api/coordination.md`. Frontend expects backend responses to map identity-owned Firestore records into the `UserSession` shape above: `accounts/{uid}` -> profile fields (including optional student `department`), `entitlements/{uid}` -> `access`, and `organizations/{orgId}/officerGrants/{uid}` -> `officerGrants`. Backend `officerGrants.status: "active"` is rendered as approved officer access.
 
 `src/lib/backendGateway.ts` defines these frontend-facing methods:
 
@@ -64,18 +64,18 @@ Current HTTP paths used by the production identity/payment gateway match the mer
 | `GET` | `/payments/registration/status?intentId=:intentId` | Returns `CheckoutStatus`; only `status: active` with `canCreateAccount: true` unlocks account creation, and the backend validates its registration-binding cookie. |
 | `POST` | `/payments/registration/complete` | Server creates the paid Firebase account from a confirmed registration intent. The merged paid-access handler returns completion metadata (`uid`, `completed`, `accessExpiresAt`); the frontend then signs in and reloads `/session` for trusted profile/access/grant details. |
 | `POST` | `/payments/renewals/start` | Creates manual renewal checkout for the signed-in account. |
-| `GET` | `/payments/access/status` | Returns signed-in account entitlement/access details. |
+| `GET` | `/payments/access/status` | Returns signed-in account entitlement/access details. New entitlements use six calendar months; existing stored expiry timestamps are displayed as returned. |
 | `POST` | `/account/display-name` | Applies the 30-day display-name cooldown and returns updated `UserSession`. |
 | `POST` | `/account/email-change` | Records verified-email-change intent after client reauthentication and verification email dispatch. |
 
 ## Workflow backend contract
 
 The production workflow client reads and writes through `VITE_SOAR_API_BASE_URL` using Firebase bearer auth.
-It consumes the content lane's organization, announcement, comment, like and dated-entry paths (`/organizations`, `/announcements`, and `/date-entries`) and the request lane's application and meeting paths under `/requests` (`/requests/applications/confirm`, `/requests/applications/mine`, `/requests/meetings`, `/requests/meetings/document-targets`, `/requests/meetings/:meetingRequestId/document`, `/requests/meetings/mine`, and `/requests/organizations/:orgId/...` officer subroutes).
+It consumes the content lane's organization, announcement, comment, like, media-target and dated-entry paths (`/organizations`, `/announcements`, and `/date-entries`) and the request lane's application and meeting paths under `/requests` (`/requests/applications/confirm`, `/requests/applications/mine`, `/requests/meetings`, `/requests/meetings/document-targets`, `/requests/meetings/:meetingRequestId/document`, `/requests/meetings/mine`, and `/requests/organizations/:orgId/...` officer subroutes).
 List responses may be arrays or `{ items, nextPageToken? }`; the UI currently renders the first page with clear loading, empty, error and save-result states.
 Application stages preserve the request-service labels `Pending | Under review | Accepted | Declined` and still tolerate older snake/lowercase response values when reading.
-Meeting statuses preserve the request-service labels `Pending | Approved | Declined` and still tolerate older lowercase response values when reading. Optional meeting documents are PDF-only metadata in meeting DTOs; download/preview must use the authenticated backend document route, never a Storage `getDownloadURL` bearer link.
-Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired accounts are locked by the shared route guard. Organization profiles include optional public `contactPhone`, `department`, and `departmentKey`; approved managers can call `/organizations/:orgId/student-department-counts` for the saved organization department's registered-student count only. That count is derived from saved student account departments, not memberships/applications, and returns no student identities. Announcement DTOs include `deepLinkPath`, `media[]` plus legacy `image`; media-targets support up to four image/video items with one MP4/WebM video maximum. Comment DTOs include `viewerCanEdit`/`viewerCanDelete`; own-comment edit/delete use `PATCH`/`DELETE /announcements/:announcementId/comments/:commentId`.
+Meeting statuses preserve the request-service labels `Pending | Approved | Declined` and still tolerate older lowercase response values when reading. Optional meeting documents are PDF-only metadata in meeting DTOs; download/preview uses the authenticated backend document route, never a Storage `getDownloadURL` bearer link.
+Sponsors are excluded from application actions; officer actions are visible only to students with trusted organization grants; expired accounts are locked by the shared route guard. Organization profiles include optional public `contactPhone`, `department`, and `departmentKey`; approved managers can call `/organizations/:orgId/student-department-counts` for the saved organization's registered-student count only. That count is derived from saved student account departments and returns no identities. Announcement DTOs include `deepLinkPath`, `media[]` plus legacy `image`; the media targets support up to four bounded media items, including images and at most one MP4/WebM video, with a 30 MB aggregate limit. Comment DTOs include `viewerCanEdit`/`viewerCanDelete`; own-comment edit/delete use `PATCH`/`DELETE /announcements/:announcementId/comments/:commentId`. Meeting documents are uploaded with authenticated Storage targets and downloaded by authenticated backend streaming; no public bearer URL or direct SDK read is used. Department counts stay aggregate-only within the current manager-only boundary.
 
 ## Design-system precedence
 

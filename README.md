@@ -33,15 +33,15 @@ SOAR is successful when the delivered hosted website:
 
 | Role | Agreed purpose | Registration details | Core access |
 | --- | --- | --- | --- |
-| Student | Discover organizations, read announcements, follow application instructions, confirm external-form submission, track application stages, request meetings/interviews, and manage allowed personal settings. | Name, email, password, student ID number, selected supported department, email verification, and confirmed six-month payment before account creation. | Announcements, organization directory/profiles, application tracker, meeting tracker, personal account settings, payment/access status. |
-| Organization officer | Manage an approved organization and its operational workflows. Officers are also students for account-identification purposes. | Name, email, password, student ID number, selected supported department, email verification, confirmed six-month payment before account creation, and officer access approved through the organization-owner process. | Officer dashboard, organization settings, recruitment settings, announcements, applicants, calendar/date entries, meeting requests, personal account settings, payment/access status. |
+| Student | Discover organizations, read announcements, follow application instructions, confirm external-form submission, track application stages, request meetings/interviews, and manage allowed personal settings. | Name, email, password, student ID number, and one supported department selected from the canonical list, plus email verification and confirmed six-month payment before account creation. | Announcements, organization directory/profiles, application tracker, meeting tracker, personal account settings, payment/access status. |
+| Organization officer | Manage an approved organization and its operational workflows. Officers are also students for account-identification purposes. | Name, email, password, student ID number, and one supported department selected from the canonical list, plus email verification, confirmed six-month payment before account creation, and officer access approved through the organization-owner process. | Officer dashboard, organization settings, recruitment settings, announcements, applicants, calendar/date entries, meeting requests, personal account settings, payment/access status. |
 | Sponsor | Outside-user role with no special sponsor-only tools. Sponsors can view organization information and request meetings through an account. | Name, email, password, email verification, optional company/organization name, and confirmed six-month payment before account creation. No TIN or government ID is required by the confirmed scope. | Role-appropriate browsing, organization profiles, announcements, meeting requests/tracking, personal account settings, payment/access status. |
 
 ### Organization ownership and officer access
 
 - A project administrator assigns each organization's initial owner.
 - The initial owner approves officer access for that organization.
-- This is a controlled setup/approval workflow only. It should not be expanded into a general admin dashboard, membership-management system, or sponsor tooling unless a later scope change approves that work.
+- This is a controlled setup/approval workflow only. It is not a general admin dashboard, membership-management system, or sponsor tooling.
 - There is no initial proof-of-election/proof-upload requirement in the confirmed scope.
 
 ### Personal-account vs organization settings
@@ -63,7 +63,7 @@ SOAR is successful when the delivered hosted website:
 
 - Keep student, organization-officer, and sponsor accounts.
 - Registration collects only the confirmed details for each role:
-  - students and officers: name, email, password, student ID number, selected supported department
+  - students and officers: name, email, password, student ID number, and one canonical department selected from the supported list
   - sponsors: name, email, password, optional company/organization name
 - Users can sign in, sign out, and recover passwords through email.
 - Email verification is required as part of account creation.
@@ -76,15 +76,15 @@ SOAR is successful when the delivered hosted website:
 
 - Show a directory with each organization name, logo, short description, and profile link.
 - Keep name search with a clear no-results message.
-- Each organization profile shows description, contact details including optional phone, recruitment information, posts, and available dates.
+- Each organization profile shows description, contact details including an optional phone number when supplied, recruitment information, posts, and available dates.
 - Approved officers can update only their own organization's name, logo, description, contact email/phone, recruitment title, requirements, and application link.
 
 ### 4. Announcements
 
-- Officers can publish text announcements with bounded optional media (images and one native MP4/WebM video) and can delete their own posts.
+- Officers can publish text announcements with bounded optional media (up to four images or a supported MP4/WebM video within the existing limits) and can delete their own posts.
 - Posts show newest first with organization name, logo, and posting date.
 - Posts appear consistently in the main feed and on the organization profile.
-- Users can like/unlike a post, open comments, add a comment, and edit/delete their own comments.
+- Users can like/unlike a post, use Share to copy a direct post link, open comments, add a comment, and edit/delete their own comments.
 - Like counts and saved comment counts remain consistent across pages.
 - Empty posts/comments and failed saves produce clear messages.
 
@@ -108,7 +108,7 @@ SOAR is successful when the delivered hosted website:
 ### 7. Meeting requests
 
 - Students, sponsors, and officers can request meetings where the workflow is available to their role.
-- Keep the existing request flow: choose an organization posted meeting/interview entry, optionally attach a formal PDF request document, enter a date and time, and send a request.
+- Keep the existing request flow: choose an organization posted meeting/interview entry, enter a date and time, optionally attach one formal PDF request document, and send a request.
 - Users see organization, meeting title, requested date/time, and status: **Pending**, **Approved**, or **Declined**.
 - Officers see requests for their own organization and can approve or decline them.
 - Required details are validated, repeated identical requests are prevented or handled clearly, and pending requests are not shown as confirmed bookings.
@@ -121,6 +121,7 @@ SOAR is successful when the delivered hosted website:
   - applicants
   - calendar/date entries
   - meeting requests
+- Organization management shows only an aggregate count of registered saved student accounts whose selected department matches that organization. It never lists student identities, emails, applicants, members, meetings, or payment data.
 - Use readable status labels, clear save messages, and confirmation before deleting a post or calendar entry.
 - Officers manage only organizations for which they have approved access.
 
@@ -132,10 +133,11 @@ SOAR is successful when the delivered hosted website:
 - Store images in the project file storage so they display after refresh and sign-in.
 - Display images without stretching or overflowing the page.
 - Only an approved officer for the organization can replace its logo or upload images to its posts.
+- Announcement media supports up to four bounded media items, including images and at most one small MP4/WebM video. It does not add transcoding, generated thumbnails, adaptive streaming, moderation, or public-CDN video infrastructure.
 
 ### 10. Six-month paid access
 
-- Access costs **PHP10 per account for six calendar months** from confirmed payment. This is a confirmed amendment to the PDF's PHP2/annual amount.
+- Access costs **PHP10 per account for six calendar months** from confirmed payment. This is a confirmed amendment to the PDF's PHP2 amount and earlier annual references.
 - Payment must go through one payment provider that supports GCash and automatic provider-side confirmation.
 - **PayMongo** is the intended provider, subject to merchant approval and a successful live PHP10 test. This is not a promise that PayMongo is free or the cheapest provider.
 - New users must complete verified payment before creating an account and accessing main pages.
@@ -196,7 +198,7 @@ The classmate site should be used later as a minimum quality comparison for poli
 | Included pages are readable on phones and computers; navigation, forms, images, and tables fit; loading/empty/error messages are clear. | Layout and design; UI/UX baseline. |
 | Registration, sign-in, sign-out, email verification, and email password recovery work; role-specific registration details match the confirmed scope. | Accounts, roles, and settings. |
 | Name changes follow the 30-day limit, and email changes take effect after verification of the new address. | Personal-account settings. |
-| Organization owner/officer access is limited to approved organization management; department registered-student counts stay under the current owner/officer management boundary. | Organization ownership and officer access; officer dashboard; department statistics. |
+| Organization owner/officer access is limited to approved organization management; department registered-student counts remain aggregate-only and under the current manager-only boundary. | Organization ownership and officer access; officer dashboard; department student counts. |
 | Name search finds organizations; profile changes, posts, images, likes, and comments appear correctly in directory, feed, and profile pages. | Organizations/profiles; announcements; image uploads. |
 | Application links open; only explicit confirmed external submissions enter checking; officer stage changes appear in the student tracker without duplicate entries per recruitment opportunity/position. | Applications. |
 | Officers can add, change, and remove calendar entries; permitted images save and display after refresh and sign-in. | Calendar/date entries; image uploads; saved data. |

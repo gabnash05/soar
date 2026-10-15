@@ -55,6 +55,9 @@ const normalizeAccess = (access: RawAccess): AccessEntitlement => {
   return {
     status: normalizedStatus,
     annualFeePhp: 10,
+    feePhp: access.feePhp ?? 10,
+    periodMonths: access.periodMonths ?? 6,
+    periodLabel: access.periodLabel ?? '6 months',
     startsAt: access.startsAt,
     expiresAt: access.expiresAt ?? access.accessExpiresAt,
     lastPaymentReference: access.lastPaymentReference ?? access.latestPaymentId ?? undefined,
@@ -62,8 +65,14 @@ const normalizeAccess = (access: RawAccess): AccessEntitlement => {
   };
 };
 
-const mapSession = (session: UserSession): UserSession => ({
+type RawUserSession = Omit<UserSession, 'accountKind'> & { accountKind?: string };
+
+const normalizeAccountKind = (accountKind: string | undefined): UserSession['accountKind'] =>
+  accountKind === 'sponsor' ? 'sponsor' : 'student';
+
+const mapSession = (session: RawUserSession): UserSession => ({
   ...session,
+  accountKind: normalizeAccountKind(session.accountKind),
   access: normalizeAccess(session.access),
   officerGrants: session.officerGrants ?? [],
 });
@@ -81,14 +90,14 @@ const createProductionGateway = (): BackendGateway => ({
     const { auth } = getFirebaseRuntime();
     if (!auth.currentUser) return null;
     await reload(auth.currentUser);
-    const session = await apiFetch<UserSession>('/session', { headers: await authHeaders() });
+    const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
     return mapSession({ ...session, emailVerified: auth.currentUser.emailVerified });
   },
 
   async signIn(input) {
     const { auth } = getFirebaseRuntime();
     const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
-    const session = await apiFetch<UserSession>('/session', { headers: await authHeaders() });
+    const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
     return mapSession({ ...session, emailVerified: credential.user.emailVerified });
   },
 
@@ -129,7 +138,7 @@ const createProductionGateway = (): BackendGateway => ({
     const { auth } = getFirebaseRuntime();
     const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
     await sendEmailVerification(credential.user);
-    const session = await apiFetch<UserSession>('/session', { headers: await authHeaders() });
+    const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
 
     return mapSession({ ...session, emailVerified: credential.user.emailVerified });
   },
@@ -158,7 +167,7 @@ const createProductionGateway = (): BackendGateway => ({
     if (auth.currentUser) {
       await updateProfile(auth.currentUser, { displayName: input.displayName });
     }
-    const session = await apiFetch<UserSession>('/account/display-name', {
+    const session = await apiFetch<RawUserSession>('/account/display-name', {
       method: 'POST',
       headers: await authHeaders(),
       body: JSON.stringify(input),

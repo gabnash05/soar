@@ -18,7 +18,11 @@ export interface OrganizationGrant {
 
 export interface AccessEntitlement {
   status: AccessStatus;
+  /** @deprecated Kept for backend compatibility while UI copy uses feePhp/periodLabel. */
   annualFeePhp: 10;
+  feePhp?: 10;
+  periodMonths?: 6;
+  periodLabel?: string;
   startsAt?: string;
   expiresAt?: string;
   lastPaymentReference?: string;
@@ -31,7 +35,9 @@ export interface UserSession {
   displayName: string;
   accountKind: AccountKind;
   studentId?: string;
+  department?: string;
   companyName?: string;
+  departmentKey?: string;
   emailVerified: boolean;
   access: AccessEntitlement;
   officerGrants: OrganizationGrant[];
@@ -44,6 +50,7 @@ export interface RegistrationPaymentInput {
   email: string;
   displayName: string;
   studentId?: string;
+  department?: string;
   companyName?: string;
   returnUrl: string;
 }
@@ -75,6 +82,7 @@ export interface RegisterAccountInput {
   displayName: string;
   role: RegistrationRoleIntent;
   studentId?: string;
+  department?: string;
   companyName?: string;
 }
 
