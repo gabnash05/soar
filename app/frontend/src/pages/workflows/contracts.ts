@@ -10,7 +10,7 @@ export interface WorkflowQueryResult<T> {
 
 export interface WorkflowMutationResult<T = undefined> {
   ok: boolean;
-  persisted: boolean;
+  persisted: boolean | 'unconfirmed';
   source: WorkflowDataMode;
   message: string;
   data?: T;
@@ -184,6 +184,7 @@ export interface AnnouncementInput {
 
 export interface DateEntryInput {
   id?: string;
+  idempotencyKey?: string;
   organizationId: string;
   kind: DateEntryKind;
   title: string;
@@ -237,7 +238,7 @@ export interface WorkflowDataClient {
   deleteAnnouncement(announcementId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
   getOrganizationDepartmentStudentCount(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OrganizationDepartmentStudentCount | undefined>>;
   updateApplicationStage(applicationId: string, stage: ApplicationStage, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<ApplicationRecord>>;
-  saveDateEntry(input: DateEntryInput, session: UserSession): Promise<WorkflowMutationResult<DateEntry>>;
+  saveDateEntry(input: DateEntryInput, session: UserSession, signal?: AbortSignal): Promise<WorkflowMutationResult<DateEntry>>;
   deleteDateEntry(dateEntryId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
   decideMeetingRequest(meetingRequestId: string, status: Exclude<MeetingStatus, 'Pending'>, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<MeetingRequest>>;
 }

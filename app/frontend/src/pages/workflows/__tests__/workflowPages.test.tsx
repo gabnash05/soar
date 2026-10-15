@@ -1,10 +1,10 @@
 import type { ReactElement } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
-import type { WorkflowDataClient } from '../contracts';
+import type { DateEntry, DateEntryInput, OfficerDashboard, WorkflowDataClient, WorkflowMutationResult } from '../contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
 import { DirectoryView } from '../DirectoryPage';
@@ -12,7 +12,7 @@ import { FeedView } from '../FeedPage';
 import { MeetingsView } from '../MeetingsPage';
 import { EntryPage } from '../../access/EntryPage';
 import { OrganizationSettingsView } from '../../settings/OrganizationSettingsPage';
-import { OfficerView } from '../OfficerPage';
+import { DATE_ENTRY_SAVE_TIMEOUT_MS, DateEntriesSection, OfficerView } from '../OfficerPage';
 import { OrganizationView } from '../OrganizationPage';
 
 const activeAccess: UserSession['access'] = {
@@ -59,6 +59,38 @@ beforeAll(() => {
 });
 
 const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => render(<MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>);
+
+function saveDateEntryResult(input: DateEntryInput, source: WorkflowDataClient['mode']): WorkflowMutationResult<DateEntry> {
+  return {
+    ok: true,
+    persisted: true,
+    source,
+    message: 'Dated entry saved.',
+    data: {
+      id: input.id ?? input.idempotencyKey ?? 'saved-date-entry',
+      organizationId: input.organizationId,
+      organizationName: 'Computer Engineering Department',
+      kind: input.kind,
+      title: input.title.trim(),
+      date: input.date,
+      startTime: input.startTime,
+      endTime: input.endTime,
+      details: input.details.trim(),
+    },
+  };
+}
+
+function enterDatedEntry(user: ReturnType<typeof userEvent.setup>, title = 'Portfolio orientation') {
+  return (async () => {
+    await user.type(screen.getByLabelText(/^Title$/i), title);
+    fireEvent.change(screen.getByLabelText(/^Date$/i), { target: { value: '2026-12-20' } });
+    await user.type(screen.getByLabelText(/Short details/i), 'Meet at the engineering hall.');
+  })();
+}
+
+function renderDatedEntrySection(dashboard: OfficerDashboard, client: WorkflowDataClient, onChanged: () => void) {
+  renderInRouter(<DateEntriesSection dashboard={dashboard} session={officerSession} client={client} onChanged={onChanged} />);
+}
 
 describe('SOAR workflow pages', () => {
   it('keeps landing capability cards equivalent instead of one broken oversized lower card', () => {
@@ -393,6 +425,175 @@ describe('SOAR workflow pages', () => {
 
     await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
     expect(screen.getByRole('dialog', { name: /Add dated entry/i })).toBeInTheDocument();
+  });
+
+  it('keeps the draft pending until persistence confirms, then refreshes once', async () => {
+    const client = createFixtureWorkflowDataClient();
+    const dashboard = (await client.getOfficerDashboard('robotics', officerSession)).data;
+    expect(dashboard).toBeDefined();
+    let resolveSave!: (result: WorkflowMutationResult<DateEntry>) => void;
+    const pendingSave = new Promise<WorkflowMutationResult<DateEntry>>((resolve) => { resolveSave = resolve; });
+    const saveDateEntry = vi.fn<WorkflowDataClient['saveDateEntry']>(() => pendingSave);
+    client.saveDateEntry = saveDateEntry;
+    const onChanged = vi.fn();
+    renderDatedEntrySection(dashboard!, client, onChanged);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
+    await enterDatedEntry(user);
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    expect(screen.getByLabelText(/^Title$/i)).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /Close Add dated entry/i }));
+    expect(screen.getByRole('dialog', { name: /Add dated entry/i })).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog', { name: /Discard unsaved changes/i })).not.toBeInTheDocument();
+    const submitted = saveDateEntry.mock.calls[0]![0];
+    resolveSave(saveDateEntryResult(submitted, client.mode));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Add dated entry/i })).not.toBeInTheDocument());
+    expect(saveDateEntry).toHaveBeenCalledTimes(1);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Dated entry saved.');
+  });
+
+  it('keeps typed values after validation failure and safely retries the corrected draft', async () => {
+    const client = createFixtureWorkflowDataClient();
+    const dashboard = (await client.getOfficerDashboard('robotics', officerSession)).data;
+    expect(dashboard).toBeDefined();
+    const validationError = Object.assign(new Error('The date entry was invalid.'), { code: 'validation_problem' });
+    const saveDateEntry = vi.fn<WorkflowDataClient['saveDateEntry']>();
+    saveDateEntry.mockRejectedValueOnce(validationError);
+    saveDateEntry.mockImplementationOnce(async (input) => saveDateEntryResult(input, client.mode));
+    client.saveDateEntry = saveDateEntry;
+    const onChanged = vi.fn();
+    renderDatedEntrySection(dashboard!, client, onChanged);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
+    await enterDatedEntry(user);
+    fireEvent.change(screen.getByLabelText(/Start time/i), { target: { value: '16:00' } });
+    fireEvent.change(screen.getByLabelText(/End time/i), { target: { value: '14:00' } });
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/Check the title, date, times, and details/i);
+    expect(screen.getByLabelText(/^Title$/i)).toHaveValue('Portfolio orientation');
+    expect(screen.getByLabelText(/^Date$/i)).toHaveValue('2026-12-20');
+    expect(screen.getByLabelText(/Short details/i)).toHaveValue('Meet at the engineering hall.');
+    expect(screen.getByLabelText(/Start time/i)).toHaveValue('16:00');
+    expect(screen.getByLabelText(/End time/i)).toHaveValue('14:00');
+    expect(screen.getByRole('button', { name: 'Save dated entry' })).toBeEnabled();
+
+    const firstKey = saveDateEntry.mock.calls[0]![0].idempotencyKey;
+    fireEvent.change(screen.getByLabelText(/End time/i), { target: { value: '17:00' } });
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Add dated entry/i })).not.toBeInTheDocument());
+    expect(saveDateEntry).toHaveBeenCalledTimes(2);
+    expect(saveDateEntry.mock.calls[1]![0].idempotencyKey).toBe(firstKey);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks saved state after a provider error and retries with the same idempotency key', async () => {
+    const client = createFixtureWorkflowDataClient();
+    const dashboard = (await client.getOfficerDashboard('robotics', officerSession)).data;
+    expect(dashboard).toBeDefined();
+    const error = Object.assign(new Error('private internal detail'), { code: 'internal', status: 500 });
+    const saveDateEntry = vi.fn<WorkflowDataClient['saveDateEntry']>();
+    saveDateEntry.mockRejectedValueOnce(error);
+    saveDateEntry.mockImplementationOnce(async (input) => saveDateEntryResult(input, client.mode));
+    client.saveDateEntry = saveDateEntry;
+    const checkSavedState = vi.fn(async () => ({ data: { ...dashboard!, dateEntries: [] }, source: client.mode }));
+    client.getOfficerDashboard = checkSavedState;
+    const onChanged = vi.fn();
+    renderDatedEntrySection(dashboard!, client, onChanged);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
+    await enterDatedEntry(user);
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/save status is unconfirmed/i);
+    expect(screen.getByRole('status')).not.toHaveTextContent('private internal detail');
+    expect(screen.getByLabelText(/^Title$/i)).toHaveValue('Portfolio orientation');
+    expect(checkSavedState).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Save dated entry' })).toBeEnabled();
+
+    const firstKey = saveDateEntry.mock.calls[0]![0].idempotencyKey;
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Add dated entry/i })).not.toBeInTheDocument());
+    expect(saveDateEntry).toHaveBeenCalledTimes(2);
+    expect(saveDateEntry.mock.calls[1]![0].idempotencyKey).toBe(firstKey);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms a persisted entry after a lost response without submitting it twice', async () => {
+    const client = createFixtureWorkflowDataClient();
+    const dashboard = (await client.getOfficerDashboard('robotics', officerSession)).data;
+    expect(dashboard).toBeDefined();
+    const saveDateEntry = vi.fn<WorkflowDataClient['saveDateEntry']>();
+    saveDateEntry.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    client.saveDateEntry = saveDateEntry;
+    const checkSavedState = vi.fn(async () => {
+      const submitted = saveDateEntry.mock.calls[0]![0];
+      const saved = saveDateEntryResult(submitted, client.mode).data!;
+      return { data: { ...dashboard!, dateEntries: [...dashboard!.dateEntries, saved] }, source: client.mode };
+    });
+    client.getOfficerDashboard = checkSavedState;
+    const onChanged = vi.fn();
+    renderDatedEntrySection(dashboard!, client, onChanged);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
+    await enterDatedEntry(user);
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Add dated entry/i })).not.toBeInTheDocument());
+    expect(await screen.findByRole('status')).toHaveTextContent(/saved and confirmed/i);
+    expect(checkSavedState).toHaveBeenCalledTimes(1);
+    expect(saveDateEntry).toHaveBeenCalledTimes(1);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds a stalled save, aborts the request and preserves a safe retry key', async () => {
+    const client = createFixtureWorkflowDataClient();
+    const dashboard = (await client.getOfficerDashboard('robotics', officerSession)).data;
+    expect(dashboard).toBeDefined();
+    const neverSettles = new Promise<WorkflowMutationResult<DateEntry>>(() => undefined);
+    const saveDateEntry = vi.fn<WorkflowDataClient['saveDateEntry']>();
+    saveDateEntry.mockImplementationOnce(() => neverSettles);
+    saveDateEntry.mockImplementationOnce(async (input) => saveDateEntryResult(input, client.mode));
+    client.saveDateEntry = saveDateEntry;
+    const checkSavedState = vi.fn(async () => ({ data: { ...dashboard!, dateEntries: [] }, source: client.mode }));
+    client.getOfficerDashboard = checkSavedState;
+    const onChanged = vi.fn();
+    renderDatedEntrySection(dashboard!, client, onChanged);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
+    await enterDatedEntry(user);
+    vi.useFakeTimers();
+    try {
+      fireEvent.submit(screen.getByLabelText(/^Title$/i).closest('form')!);
+      expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(DATE_ENTRY_SAVE_TIMEOUT_MS); });
+      vi.useRealTimers();
+
+      expect(saveDateEntry.mock.calls[0]![2]?.aborted).toBe(true);
+      expect(checkSavedState).toHaveBeenCalledTimes(1);
+      expect(await screen.findByRole('status')).toHaveTextContent(/save status is unconfirmed/i);
+      expect(screen.getByLabelText(/^Title$/i)).toHaveValue('Portfolio orientation');
+      expect(screen.getByLabelText(/Short details/i)).toHaveValue('Meet at the engineering hall.');
+      expect(screen.getByRole('button', { name: 'Save dated entry' })).toBeEnabled();
+
+      const firstKey = saveDateEntry.mock.calls[0]![0].idempotencyKey;
+      await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: /Add dated entry/i })).not.toBeInTheDocument());
+      expect(saveDateEntry).toHaveBeenCalledTimes(2);
+      expect(saveDateEntry.mock.calls[1]![0].idempotencyKey).toBe(firstKey);
+      expect(onChanged).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps one profile save action and confirms before persisting organization profile edits', async () => {

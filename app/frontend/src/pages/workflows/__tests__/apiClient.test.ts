@@ -174,3 +174,46 @@ describe('production announcement media payloads', () => {
     expect(mocks.uploadToStorageTarget).not.toHaveBeenCalled();
   });
 });
+
+describe('production dated-entry saves', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.authHeaders.mockResolvedValue({ Authorization: 'Bearer synthetic-test-token' });
+  });
+
+  it('sends the stable create id with POST and forwards cancellation, but keeps edits on PATCH', async () => {
+    const client = createProductionWorkflowDataClient();
+    const controller = new AbortController();
+    const saved = {
+      id: 'entry-save-key-123', organizationId: 'org-test', organizationName: 'Test Organization',
+      kind: 'event', title: 'Design night', date: '2026-12-20', details: 'Synthetic test entry.',
+    };
+    mocks.apiFetch.mockResolvedValue(saved);
+
+    const created = await client.saveDateEntry({
+      organizationId: 'org-test', idempotencyKey: 'entry-save-key-123', kind: 'event',
+      title: 'Design night', date: '2026-12-20', details: 'Synthetic test entry.',
+    }, session, controller.signal);
+    expect(created.ok).toBe(true);
+    const createCall = mocks.apiFetch.mock.calls[0];
+    expect(createCall?.[0]).toBe('/organizations/org-test/date-entries');
+    expect(createCall?.[1]?.method).toBe('POST');
+    expect(createCall?.[1]?.signal).toBe(controller.signal);
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+      entryId: 'entry-save-key-123', kind: 'event', title: 'Design night',
+      date: '2026-12-20', details: 'Synthetic test entry.',
+    });
+
+    mocks.apiFetch.mockClear();
+    const updated = await client.saveDateEntry({
+      organizationId: 'org-test', id: 'entry-save-key-123', idempotencyKey: 'unused-for-edits', kind: 'event',
+      title: 'Design night updated', date: '2026-12-20', details: 'Synthetic edited entry.',
+    }, session, controller.signal);
+    expect(updated.ok).toBe(true);
+    const updateCall = mocks.apiFetch.mock.calls[0];
+    expect(updateCall?.[0]).toBe('/organizations/org-test/date-entries/entry-save-key-123');
+    expect(updateCall?.[1]?.method).toBe('PATCH');
+    expect(updateCall?.[1]?.signal).toBe(controller.signal);
+    expect(JSON.parse(String(updateCall?.[1]?.body))).not.toHaveProperty('entryId');
+  });
+});

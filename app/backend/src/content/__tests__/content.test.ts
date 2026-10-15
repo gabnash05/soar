@@ -6,6 +6,7 @@ import {
   announcementCreateSchema,
   announcementImagePathMatch,
   assertLogoPathForOrganization,
+  dateEntryCreateSchema,
   dateEntryUpsertSchema,
   imageTargetRequestSchema,
   mediaTargetRequestSchema,
@@ -71,5 +72,12 @@ describe('content validation', () => {
     expect(dateEntryUpsertSchema.parse({ kind: 'availability', title: 'Interview window', date: '2026-11-12', startTime: '14:00', endTime: '16:00', details: 'Request a slot.' }).kind).toBe('availability');
     expectParseFailure(() => dateEntryUpsertSchema.parse({ kind: 'availability', title: 'Bad', date: '2026-13-12', details: 'Invalid.' }));
     expectParseFailure(() => dateEntryUpsertSchema.parse({ kind: 'availability', title: 'Bad', date: '2026-11-12', startTime: '16:00', endTime: '14:00', details: 'Invalid.' }));
+  });
+
+  it('accepts a stable entry id only for create requests', () => {
+    const input = { entryId: 'save-key-123', kind: 'event', title: 'Build Night', date: '2026-11-09', details: 'Open lab.' } as const;
+    expect(dateEntryCreateSchema.parse(input).entryId).toBe('save-key-123');
+    expectParseFailure(() => dateEntryCreateSchema.parse({ ...input, entryId: '../invalid' }));
+    expectParseFailure(() => dateEntryUpsertSchema.parse(input));
   });
 });

@@ -377,6 +377,7 @@ async function profileInputToBackend(input: OrganizationProfileInput) {
 
 function dateInputToBackend(input: DateEntryInput) {
   return {
+    ...(input.id || !input.idempotencyKey ? {} : { entryId: input.idempotencyKey }),
     kind: input.kind,
     title: input.title,
     date: input.date,
@@ -521,11 +522,12 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return mutationResult(`Application moved to ${stage}.`, mapApplication(response));
     },
 
-    async saveDateEntry(input: DateEntryInput) {
+    async saveDateEntry(input: DateEntryInput, _session: UserSession, signal?: AbortSignal) {
       const path = input.id
         ? `/organizations/${encodeURIComponent(input.organizationId)}/date-entries/${encodeURIComponent(input.id)}`
         : `/organizations/${encodeURIComponent(input.organizationId)}/date-entries`;
-      const response = await apiFetch<unknown>(path, await bodyInit(dateInputToBackend(input), input.id ? 'PATCH' : 'POST'));
+      const request = await bodyInit(dateInputToBackend(input), input.id ? 'PATCH' : 'POST');
+      const response = await apiFetch<unknown>(path, signal ? { ...request, signal } : request);
       return mutationResult(`${input.kind === 'event' ? 'Event' : 'Meeting availability'} saved.`, mapDateEntry(response));
     },
 

@@ -154,6 +154,9 @@ export const dateEntryUpsertSchema = z.object({
   }
 });
 
+const dateEntryIdSchema = z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/);
+export const dateEntryCreateSchema = dateEntryUpsertSchema.safeExtend({ entryId: dateEntryIdSchema.optional() });
+
 export function normalizedName(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 }
