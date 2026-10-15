@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SoarLogo } from './SoarLogo';
 import { Button, StatusChip } from './ui';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +14,8 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
   const { session, signOut, gateway } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const wasMobileOpen = useRef(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -32,6 +34,39 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
       }),
     [activeAccess, allowLockedMain, officer, student],
   );
+
+  useEffect(() => {
+    const menuButton = document.querySelector<HTMLButtonElement>('[aria-controls="app-sidebar"]');
+    if (!mobileOpen) {
+      if (wasMobileOpen.current) menuButton?.focus();
+      wasMobileOpen.current = false;
+      return;
+    }
+
+    sidebarRef.current?.querySelector<HTMLElement>('nav a[href]')?.focus();
+    wasMobileOpen.current = true;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMobileOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !sidebarRef.current) return;
+
+      const focusable = Array.from(sidebarRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled])'));
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileOpen]);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -86,11 +121,16 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
       <div className="mx-auto grid w-[min(1480px,100%)] grid-cols-[248px_minmax(0,1fr)] max-lg:grid-cols-1">
         <aside
           className={cn(
-            'sticky top-[72px] flex h-[calc(100dvh-72px)] min-h-0 flex-col gap-4 self-start overflow-y-auto overscroll-contain bg-[var(--color-navy)] bg-[image:var(--gradient-brand-quiet)] px-3.5 py-5.5 text-white',
-            'max-lg:fixed max-lg:inset-[72px_auto_0_0] max-lg:z-[35] max-lg:h-auto max-lg:min-h-0 max-lg:w-[min(300px,86vw)] max-lg:overflow-y-auto max-lg:-translate-x-[105%] max-lg:shadow-[var(--shadow-floating)] max-lg:transition-transform max-lg:duration-200 max-lg:ease-out max-sm:inset-[64px_auto_0_0]',
+            'flex min-h-0 flex-col gap-4 bg-[var(--color-navy)] bg-[image:var(--gradient-brand-quiet)] px-3.5 py-5.5 text-white',
+            'lg:sticky lg:top-[72px] lg:min-h-[calc(100vh-72px)] lg:self-start',
+            'max-lg:fixed max-lg:inset-0 max-lg:z-[35] max-lg:h-dvh max-lg:w-[min(300px,86vw)] max-lg:overflow-y-auto max-lg:overscroll-contain max-lg:pl-[max(0.875rem,env(safe-area-inset-left))] max-lg:pr-[max(0.875rem,env(safe-area-inset-right))] max-lg:pt-[max(1.25rem,env(safe-area-inset-top))] max-lg:pb-[max(1.25rem,env(safe-area-inset-bottom))] max-lg:-translate-x-[105%] max-lg:shadow-[var(--shadow-floating)] max-lg:transition-transform max-lg:duration-200 max-lg:ease-out',
             mobileOpen && 'max-lg:translate-x-0',
           )}
           id="app-sidebar"
+          ref={sidebarRef}
+          role={mobileOpen ? 'dialog' : undefined}
+          aria-modal={mobileOpen ? true : undefined}
+          aria-label={mobileOpen ? 'SOAR navigation' : undefined}
         >
           <div className="flex items-center gap-2.5 px-2 pb-2 [&_.soar-logo]:size-[34px] [&_strong]:block [&_strong]:font-[var(--font-display)] [&_span]:mt-0.5 [&_span]:block [&_span]:text-xs [&_span]:text-white/70">
             <SoarLogo />
@@ -140,7 +180,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
           </Button>
         </aside>
 
-        {mobileOpen ? <button className="fixed inset-[72px_0_0] z-[34] border-0 bg-black/25 max-sm:inset-[64px_0_0]" aria-label="Close navigation" onClick={() => setMobileOpen(false)} /> : null}
+        {mobileOpen ? <button className="fixed inset-0 z-[34] border-0 bg-black/25" aria-label="Close navigation" onClick={() => setMobileOpen(false)} /> : null}
 
         <main className="min-w-0 w-full p-[clamp(18px,3vw,40px)] max-sm:px-3.5" key={location.pathname}>
           <Outlet />
