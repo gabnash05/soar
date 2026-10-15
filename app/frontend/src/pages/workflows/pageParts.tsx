@@ -235,7 +235,7 @@ export function WorkflowTable({
   rows: ReactNode[];
 }) {
   return (
-    <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)]" role="region" aria-label={caption} tabIndex={0}>
+    <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)]" role="region" aria-label={caption} tabIndex={0}>
       <table className="w-full min-w-[640px] border-collapse [&_caption]:px-3 [&_caption]:py-2.5 [&_caption]:text-left [&_caption]:text-[0.85rem] [&_caption]:font-bold [&_caption]:text-[var(--muted-foreground)] [&_th]:border-b [&_th]:border-[var(--color-border)] [&_th]:bg-[var(--color-off-white)] [&_th]:p-3 [&_th]:text-left [&_th]:align-top [&_th]:text-[0.82rem] [&_th]:uppercase [&_th]:tracking-[0.04em] [&_th]:text-[var(--color-navy)] [&_td]:border-b [&_td]:border-[var(--color-border)] [&_td]:p-3 [&_td]:text-left [&_td]:align-top">
         <caption>{caption}</caption>
         <thead>

@@ -188,9 +188,44 @@ describe('SOAR workflow pages', () => {
     await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
 
     expect(await screen.findByText(/Meeting request created as Pending/i)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Request a meeting\/interview/i })).not.toBeInTheDocument();
+    expect(document.body.style.overflow).not.toBe('hidden');
     await user.click(screen.getByRole('tab', { name: /My requests/i }));
+    const panel = screen.getByRole('tabpanel', { name: 'My requests' });
+    expect(panel).toHaveClass('min-w-0', 'max-w-full');
     const table = await screen.findByRole('region', { name: /My meeting request statuses/i });
+    expect(table).toHaveClass('w-full', 'min-w-0', 'max-w-full', 'overflow-x-auto');
+    expect(table).toHaveAttribute('tabindex', '0');
+    expect(table.querySelector('table')).toHaveClass('min-w-[640px]');
     expect(within(table).getAllByText(/Not a confirmed booking/i).length).toBeGreaterThan(0);
+  });
+
+  it('contains the requests table on direct mobile-tab entry without modal state', async () => {
+    renderInRouter(<MeetingsView session={studentSession} client={createFixtureWorkflowDataClient()} />, ['/app/meetings?tab=mine']);
+
+    const panel = await screen.findByRole('tabpanel', { name: 'My requests' });
+    const table = await screen.findByRole('region', { name: 'My meeting request statuses' });
+    expect(panel).toHaveClass('min-w-0', 'max-w-full');
+    expect(table).toHaveClass('w-full', 'min-w-0', 'max-w-full', 'overflow-x-auto');
+    expect(table.querySelector('table')).toHaveClass('min-w-[640px]');
+    expect(within(table).getByText(/formal-request\.pdf/)).toBeInTheDocument();
+  });
+
+  it('contains other table-backed review tabs without removing actions or rows', async () => {
+    const { unmount } = renderInRouter(<MeetingsView session={officerSession} client={createFixtureWorkflowDataClient()} />);
+    const reviewPanel = await screen.findByRole('tabpanel', { name: 'Review requests' });
+    const meetingTable = await screen.findByRole('region', { name: 'Meeting requests for this organization' });
+    expect(reviewPanel).toHaveClass('min-w-0', 'max-w-full');
+    expect(meetingTable).toHaveClass('w-full', 'min-w-0', 'max-w-full', 'overflow-x-auto');
+    expect(within(meetingTable).getAllByRole('button', { name: 'Approve' }).length).toBeGreaterThan(0);
+    unmount();
+
+    renderInRouter(<ApplicationsView session={officerSession} client={createFixtureWorkflowDataClient()} />);
+    const applicantsPanel = await screen.findByRole('tabpanel', { name: 'Review applicants' });
+    const applicantsTable = await screen.findByRole('region', { name: 'Applicants for this organization' });
+    expect(applicantsPanel).toHaveClass('min-w-0', 'max-w-full');
+    expect(applicantsTable).toHaveClass('w-full', 'min-w-0', 'max-w-full', 'overflow-x-auto');
+    expect(within(applicantsTable).getByLabelText(/Stage for Mara Santos/i)).toBeInTheDocument();
   });
 
   it('honors an organization context link when opening a meeting request', async () => {
