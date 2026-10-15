@@ -18,6 +18,8 @@ export function safeErrorMessage(error: unknown, fallback = 'We could not comple
   const codedError = error as CodedError;
   const code = typeof codedError.code === 'string' ? codedError.code : '';
   if (firebaseMessages[code]) return firebaseMessages[code];
+  if (code.startsWith('auth/')) return 'We could not complete that account request. Check your details and try again.';
+  if (code.startsWith('storage/')) return 'We could not complete the file operation. Please try again.';
   if (code === 'internal' || codedError.name === 'TypeError') return fallback;
 
   return codedError.message || fallback;

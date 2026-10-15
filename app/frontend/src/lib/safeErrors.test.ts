@@ -7,6 +7,11 @@ describe('safeErrorMessage', () => {
     expect(safeErrorMessage(error)).toBe('The email or password did not match. Check both and try again.');
   });
 
+  it('sanitizes unknown Firebase Auth codes instead of returning SDK text', () => {
+    const error = Object.assign(new Error('Firebase internal account details'), { code: 'auth/email-already-in-use' });
+    expect(safeErrorMessage(error)).toBe('We could not complete that account request. Check your details and try again.');
+  });
+
   it('maps Firebase storage failures without displaying SDK messages', () => {
     const error = Object.assign(new Error('Firebase Storage: private path details'), { code: 'storage/unauthorized' });
     expect(safeErrorMessage(error)).toBe('You do not have permission to upload this file.');
