@@ -211,10 +211,15 @@ export interface OrganizationDepartmentStudentCount {
   generatedAt: string;
 }
 
+export interface AnnouncementPage {
+  items: Announcement[];
+  nextPageToken?: string;
+}
+
 export interface WorkflowDataClient {
   readonly mode: WorkflowDataMode;
   readonly label: string;
-  listAnnouncements(session: UserSession): Promise<WorkflowQueryResult<Announcement[]>>;
+  listAnnouncements(session: UserSession, page?: { limit: number; pageToken?: string }): Promise<WorkflowQueryResult<AnnouncementPage>>;
   toggleAnnouncementLike(announcementId: string, liked: boolean, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   addAnnouncementComment(announcementId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<AnnouncementComment>>;
   updateAnnouncementComment(announcementId: string, commentId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<AnnouncementComment>>;

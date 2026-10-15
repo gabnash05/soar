@@ -210,6 +210,49 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByText(/Open organization profile/i)).not.toBeInTheDocument();
   });
 
+  it('loads announcement pages on demand with the server cursor and de-duplicates appended posts', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+    const first = Array.from({ length: 15 }, (_, index) => post(`post-${index}`, `Post body ${index}`));
+    const second = [post('post-14', 'Duplicate'), post('post-15', 'Post body 15')];
+    const listAnnouncements = vi.fn()
+      .mockResolvedValueOnce({ data: { items: first, nextPageToken: 'cursor-15' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: second }, source: 'fixture' });
+    const client = { ...base, listAnnouncements };
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+
+    expect(await screen.findByText('Post body 14')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(1);
+    expect(listAnnouncements).toHaveBeenNthCalledWith(1, studentSession, { limit: 15 });
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Post body 15')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenNthCalledWith(2, studentSession, { limit: 15, pageToken: 'cursor-15' });
+    expect(screen.getAllByText('Duplicate')).toHaveLength(0);
+    expect(screen.getByText('You’re all caught up.')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves loaded announcements when a next-page request fails and retries that cursor', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+    const original = { data: { items: [post('kept-post', 'Keep this loaded announcement')], nextPageToken: 'cursor-next' }, source: 'fixture' as const };
+    const listAnnouncements = vi.fn()
+      .mockResolvedValueOnce(original)
+      .mockRejectedValueOnce(new Error('Temporary network issue'))
+      .mockResolvedValueOnce({ data: { items: [], nextPageToken: undefined }, source: 'fixture' });
+    const client = { ...base, listAnnouncements };
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+    expect(await screen.findByText('Keep this loaded announcement')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Temporary network issue/i);
+    expect(screen.getByText('Keep this loaded announcement')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry loading announcements' }));
+    await waitFor(() => expect(screen.getByText('You’re all caught up.')).toBeInTheDocument());
+    expect(listAnnouncements).toHaveBeenNthCalledWith(2, studentSession, { limit: 15, pageToken: 'cursor-next' });
+    expect(listAnnouncements).toHaveBeenNthCalledWith(3, studentSession, { limit: 15, pageToken: 'cursor-next' });
+  });
+
   it('keeps public organization profiles public-facing even for managers', async () => {
     renderInRouter(<OrganizationView organizationId="robotics" session={officerSession} client={createFixtureWorkflowDataClient()} />);
 

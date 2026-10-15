@@ -11,6 +11,7 @@ import {
 import type {
   Announcement,
   AnnouncementComment,
+  AnnouncementPage,
   AnnouncementInput,
   ApplicationConfirmationInput,
   ApplicationRecord,
@@ -392,9 +393,13 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     mode: 'production',
     label: 'Configured workflow services',
 
-    async listAnnouncements() {
-      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/announcements', await activeHeaders());
-      return queryResult(await Promise.all(listItems(response).map(mapAnnouncement)));
+    async listAnnouncements(_session, page = { limit: 15 }) {
+      const params = new URLSearchParams({ limit: String(page.limit) });
+      if (page.pageToken) params.set('pageToken', page.pageToken);
+      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>(`/announcements?${params.toString()}`, await activeHeaders());
+      const envelope = Array.isArray(response) ? undefined : response;
+      const items = await Promise.all(listItems(response).map(mapAnnouncement));
+      return queryResult<AnnouncementPage>({ items, nextPageToken: envelope?.nextPageToken });
     },
 
     async toggleAnnouncementLike(announcementId, liked) {

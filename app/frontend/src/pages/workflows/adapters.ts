@@ -5,6 +5,7 @@ import { validateAnnouncementMediaFiles, validateMeetingDocumentFile } from '../
 import type {
   Announcement,
   AnnouncementComment,
+  AnnouncementPage,
   AnnouncementInput,
   ApplicationConfirmationInput,
   ApplicationRecord,
@@ -57,7 +58,7 @@ function unavailableMutation<T = undefined>(): Promise<WorkflowMutationResult<T>
 export const unavailableWorkflowDataClient: WorkflowDataClient = {
   mode: 'unavailable',
   label: 'Workflow services unavailable',
-  listAnnouncements: () => unavailableQuery<Announcement[]>([]),
+  listAnnouncements: () => unavailableQuery<AnnouncementPage>({ items: [] }),
   toggleAnnouncementLike: () => unavailableMutation<Announcement>(),
   addAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
   updateAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
@@ -544,9 +545,15 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
     mode: 'fixture',
     label: 'Workflow fixture data',
 
-    async listAnnouncements(session) {
+    async listAnnouncements(session, page = { limit: 15 }) {
+      const sorted = announcements.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const offset = Number(page.pageToken ?? 0);
+      const selected = sorted.slice(offset, offset + page.limit);
       return {
-        data: announcements.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((announcement) => hydrateAnnouncement(announcement, session)),
+        data: {
+          items: selected.map((announcement) => hydrateAnnouncement(announcement, session)),
+          nextPageToken: offset + selected.length < sorted.length ? String(offset + selected.length) : undefined,
+        },
         source: 'fixture',
         message: 'Demo mode: sample workflow changes are simulated locally.',
       };
