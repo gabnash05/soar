@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageCircle, Share2 } from 'lucide-react';
-import { Button, ButtonLink, ConfirmDialog, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
+import { Button, ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip } from '../../components/ui';
 import { useAuth, useBackendGateway } from '../../context/AuthContext';
 import type { ApplicationStage, MeetingStatus, UserSession } from '../../lib/contracts';
 import { getWorkflowDataClientForGatewayMode, unavailableWorkflowDataClient } from './adapters';
-import type { Announcement, DateEntry, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from './contracts';
-import { formatDateEntry, getMeetingTone, getStageTone, getUnavailableCopy } from './workflowUtils';
+import type { Announcement, AnnouncementComment, DateEntry, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from './contracts';
+import { formatDateEntry, getApprovedOfficerGrants, getMeetingTone, getStageTone, getUnavailableCopy } from './workflowUtils';
 import { cn } from '../../lib/utils';
 
 export function useWorkflowDataClient(): WorkflowDataClient {
@@ -200,10 +200,10 @@ export function ResultMessage({ result }: { result: WorkflowMutationResult<unkno
   );
 }
 
-export function DateEntryList({ title, entries, emptyCopy }: { title: string; entries: DateEntry[]; emptyCopy: string }) {
+export function DateEntryList({ title, entries, emptyCopy, action }: { title: string; entries: DateEntry[]; emptyCopy: string; action?: ReactNode }) {
   return (
     <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)]">
-      <TabSectionHeader title={title} />
+      <TabSectionHeader title={title} action={action} />
       {entries.length ? (
         <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
           {entries.map((entry) => (
@@ -292,6 +292,17 @@ export function AnnouncementCard({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const media = announcement.media?.length ? announcement.media : announcement.image ? [announcement.image] : [];
   const commentCount = announcement.commentCount ?? announcement.comments.length;
+
+  const commentRole = (item: AnnouncementComment) => {
+    const isAuthor = item.authorUid === session.uid;
+    const hasOrganizationGrant = isAuthor && getApprovedOfficerGrants(session).some((grant) => grant.organizationId === announcement.organizationId);
+    if (item.authorOrganizationRole === 'approved_officer' || hasOrganizationGrant) {
+      return { kind: 'officer' as const, label: `Approved officer · ${announcement.organizationName}` };
+    }
+    const accountKind = item.authorAccountKind ?? (isAuthor ? session.accountKind : undefined);
+    if (accountKind === 'student' || accountKind === 'sponsor') return { kind: accountKind, label: undefined };
+    return { kind: 'unknown' as const, label: undefined };
+  };
 
   const toggleLike = async () => {
     setBusy(true);
@@ -426,10 +437,12 @@ export function AnnouncementCard({
               {announcement.comments.map((item) => {
                 const canEdit = item.viewerCanEdit || item.authorUid === session.uid;
                 const canDelete = item.viewerCanDelete || item.authorUid === session.uid;
+                const role = commentRole(item);
                 return (
                   <li key={item.id}>
                     {editingCommentId === item.id ? (
                       <form className="grid w-full gap-2" onSubmit={saveComment}>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><strong className="text-[var(--color-navy)]">{item.authorName}</strong><RoleBadge kind={role.kind}>{role.label ?? undefined}</RoleBadge></div>
                         <label className="sr-only" htmlFor={`edit-comment-${item.id}`}>Edit comment by {item.authorName}</label>
                         <textarea id={`edit-comment-${item.id}`} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={editingBody} onChange={(event) => setEditingBody(event.target.value)} />
                         <div className="flex flex-wrap items-center gap-2">
@@ -439,7 +452,13 @@ export function AnnouncementCard({
                       </form>
                     ) : (
                       <>
-                        <div className="min-w-0 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_p]:mt-0.5 [&_p]:mb-0 [&_p]:[overflow-wrap:anywhere] [&_p]:text-[var(--color-ink)] [&_span]:mt-1 [&_span]:inline-block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]"><strong>{item.authorName}</strong><p>{item.body}</p>{item.updatedAt ? <span>Edited</span> : null}</div>
+                        <div className="min-w-0 [&_strong]:text-[var(--color-navy)] [&_p]:mt-0.5 [&_p]:mb-0 [&_p]:[overflow-wrap:anywhere] [&_p]:text-[var(--color-ink)] [&_span]:mt-1 [&_span]:inline-block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <strong className="[overflow-wrap:anywhere]">{item.authorName}</strong>
+                            <RoleBadge kind={role.kind}>{role.label ?? undefined}</RoleBadge>
+                          </div>
+                          <p>{item.body}</p>{item.updatedAt ? <span>Edited</span> : null}
+                        </div>
                         {(canEdit || canDelete) ? (
                           <div className="flex flex-wrap items-center gap-2 shrink-0">
                             {canEdit ? <Button type="button" variant="quiet" onClick={() => startEditing(item.id, item.body)}>Edit</Button> : null}

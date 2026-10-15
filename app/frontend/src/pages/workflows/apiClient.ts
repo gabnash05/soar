@@ -151,6 +151,8 @@ function mapComment(raw: unknown): AnnouncementComment {
   return {
     id: pickString(item.id || item.commentId),
     authorUid: pickString(item.authorUid || item.uid) || undefined,
+    authorAccountKind: item.authorAccountKind === 'student' || item.authorAccountKind === 'sponsor' ? item.authorAccountKind : undefined,
+    authorOrganizationRole: item.authorOrganizationRole === 'approved_officer' ? 'approved_officer' : undefined,
     authorName: pickString(item.authorName || item.displayName, 'SOAR user'),
     body: pickString(item.body || item.text),
     createdAt: pickString(item.createdAt, new Date().toISOString()),

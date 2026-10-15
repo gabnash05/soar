@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
@@ -57,7 +57,10 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => render(<MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>);
+const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => {
+  const router = createMemoryRouter([{ path: '*', element: ui }], { initialEntries });
+  return render(<RouterProvider router={router} />);
+};
 
 describe('SOAR workflow pages', () => {
   it('keeps landing capability cards equivalent instead of one broken oversized lower card', () => {
@@ -150,6 +153,10 @@ describe('SOAR workflow pages', () => {
     const datedEventsHeading = within(datesPanel).getByRole('heading', { name: 'Dated public events' });
     const availabilityHeading = within(datesPanel).getByRole('heading', { name: 'Meeting/interview availability' });
     expect(datedEventsHeading.closest('section')?.className).toBe(availabilityHeading.closest('section')?.className);
+    const dateGrid = datesPanel.querySelector('.profile-date-grid');
+    expect(dateGrid).toHaveClass('grid', 'gap-x-6', 'gap-y-8', 'md:grid-cols-2');
+    expect(within(availabilityHeading.closest('header') as HTMLElement).getByRole('link', { name: 'Request meeting' })).toHaveAttribute('href', '/app/meetings?organizationId=health&tab=availability');
+    expect(within(datesPanel).getAllByRole('link', { name: 'Request meeting' })).toHaveLength(1);
   });
 
   it('keeps one meeting request CTA in the active Availability tab and distinguishes pending requests', async () => {
@@ -323,12 +330,14 @@ describe('SOAR workflow pages', () => {
     expect(screen.getByRole('dialog', { name: /Add dated entry/i })).toBeInTheDocument();
   });
 
-  it('keeps one profile save action and confirms before persisting organization profile edits', async () => {
+  it('requires transient password approval before a single organization profile save', async () => {
     const user = userEvent.setup();
     const client = createFixtureWorkflowDataClient();
     const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    let completeReauthentication: (() => void) | undefined;
+    const reauthenticate = vi.fn((_password: string) => new Promise<void>((resolve) => { completeReauthentication = resolve; }));
     client.saveOrganizationProfile = saveProfile;
-    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} />, ['/settings/organization?organizationId=robotics']);
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
 
     const nameInput = await screen.findByLabelText(/^Organization name$/i);
     const saveButton = screen.getByRole('button', { name: /^Save profile$/i });
@@ -343,12 +352,81 @@ describe('SOAR workflow pages', () => {
     await user.type(nameInput, ' Updated');
     await user.click(saveButton);
 
-    const dialog = screen.getByRole('alertdialog', { name: /Save profile changes/i });
-    expect(dialog).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
+    expect(saveProfile).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/^Password$/i)).toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText(/^Password$/i)).toHaveAttribute('autocomplete', 'current-password');
+
+    await user.type(screen.getByLabelText(/^Password$/i), 'correct-demo-password');
+    await user.click(within(dialog).getByRole('button', { name: /^Approve and save changes$/i }));
+    const pendingButton = within(dialog).getByRole('button', { name: /Verifying/i });
+    expect(pendingButton).toBeDisabled();
+    expect(screen.getByLabelText(/^Password$/i)).toHaveValue('');
+    expect(saveProfile).not.toHaveBeenCalled();
+    await user.click(pendingButton);
+    expect(reauthenticate).toHaveBeenCalledOnce();
+    completeReauthentication?.();
+    await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+    expect(reauthenticate).toHaveBeenCalledWith('correct-demo-password', officerSession.uid);
+    expect(reauthenticate.mock.invocationCallOrder[0]).toBeLessThan(saveProfile.mock.invocationCallOrder[0]);
+    expect(saveProfile.mock.calls[0]?.[0]).not.toHaveProperty('password');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Approve organization changes/i })).not.toBeInTheDocument());
+    expect(screen.queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
+  });
+
+  it('preserves profile drafts on rejected password, clears the input, and lets the user cancel', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    const wrongPassword = Object.assign(new Error('invalid credential'), { code: 'auth/invalid-credential' });
+    const reauthenticate = vi.fn().mockRejectedValueOnce(wrongPassword);
+    client.saveOrganizationProfile = saveProfile;
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
+
+    const nameInput = await screen.findByLabelText(/^Organization name$/i);
+    await user.type(nameInput, ' Draft');
+    await user.upload(screen.getByLabelText(/Logo image/i), new File(['logo'], 'draft-logo.png', { type: 'image/png' }));
+    await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+    const passwordInput = screen.getByLabelText(/^Password$/i);
+    await user.type(passwordInput, 'wrong-password');
+    await user.click(screen.getByRole('button', { name: /^Approve and save changes$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/password could not be verified/i);
+    expect(nameInput).toHaveValue('Computer Engineering Department Draft');
+    expect(screen.getByLabelText(/^Password$/i)).toHaveValue('');
     expect(saveProfile).not.toHaveBeenCalled();
 
-    await user.click(within(dialog).getByRole('button', { name: /^Save profile$/i }));
-    await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+    await user.type(screen.getByLabelText(/^Password$/i), 'cancel-me');
+    await user.click(screen.getByRole('button', { name: /^Cancel$/i }));
+    expect(screen.queryByRole('dialog', { name: /Approve organization changes/i })).not.toBeInTheDocument();
+    expect(nameInput).toHaveValue('Computer Engineering Department Draft');
+
+    await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+    expect(screen.getByLabelText(/^Password$/i)).toHaveValue('');
+    expect(nameInput).toHaveValue('Computer Engineering Department Draft');
+  });
+
+  it('protects dirty profile edits before route or tab navigation', async () => {
+    const user = userEvent.setup();
+    const router = createMemoryRouter([
+      { path: '/settings/organization', element: <OrganizationSettingsView session={officerSession} client={createFixtureWorkflowDataClient()} /> },
+      { path: '/app/organizations/robotics', element: <h1>Destination profile</h1> },
+    ], { initialEntries: ['/settings/organization?organizationId=robotics'] });
+    render(<RouterProvider router={router} />);
+
+    const nameInput = await screen.findByLabelText(/^Organization name$/i);
+    await user.type(nameInput, ' Draft');
+    await user.click(screen.getByRole('tab', { name: 'Announcements' }));
+    expect(screen.getByRole('alertdialog', { name: /Leave with unsaved profile edits/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Stay here/i }));
+    expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
+    expect(nameInput).toHaveValue('Computer Engineering Department Draft');
+
+    await user.click(screen.getByRole('link', { name: /View public profile/i }));
+    expect(screen.getByRole('alertdialog', { name: /Leave with unsaved profile edits/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Destination profile' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Discard and leave/i }));
+    expect(await screen.findByRole('heading', { name: 'Destination profile' })).toBeInTheDocument();
   });
 
   it('protects dirty profile edits before switching managed organizations', async () => {
@@ -402,6 +480,7 @@ describe('SOAR workflow pages', () => {
 
     await screen.findByText(/Computer Engineering project night/i);
     await user.click(screen.getAllByRole('button', { name: /Open comments \(1\)/i })[0]);
+    expect(screen.getByText('Mara Santos').parentElement).toHaveTextContent('Student');
     await user.click(screen.getByRole('button', { name: /^Edit$/i }));
     await user.clear(screen.getByLabelText(/Edit comment by Mara Santos/i));
     await user.type(screen.getByLabelText(/Edit comment by Mara Santos/i), 'Updated question for officers.');
@@ -414,6 +493,59 @@ describe('SOAR workflow pages', () => {
     await user.click(screen.getByRole('button', { name: /Delete comment/i }));
     expect(await screen.findByText(/Comment deleted in demo mode/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByRole('button', { name: /comments/i }).some((button) => button.textContent?.includes('0'))).toBe(true));
+  });
+
+  it('renders supported author roles from trusted metadata with scoped officer context', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const listAnnouncements = client.listAnnouncements.bind(client);
+    client.listAnnouncements = async (session) => {
+      const result = await listAnnouncements(session);
+      return {
+        ...result,
+        data: result.data.map((announcement) => announcement.id !== 'post-robotics-tryouts' ? announcement : ({
+          ...announcement,
+          comments: [
+            ...announcement.comments,
+            { id: 'comment-officer-role', authorUid: 'officer-other', authorAccountKind: 'student' as const, authorOrganizationRole: 'approved_officer' as const, authorName: 'Lia Cruz', body: 'Officer reply.', createdAt: '2026-10-07T10:00:00.000Z' },
+            { id: 'comment-sponsor-role', authorUid: 'sponsor-other', authorAccountKind: 'sponsor' as const, authorName: 'Ari Reyes', body: 'Sponsor reply.', createdAt: '2026-10-07T10:05:00.000Z' },
+          ],
+        })),
+      };
+    };
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+
+    await screen.findByText(/Computer Engineering project night/i);
+    await user.click(screen.getByRole('button', { name: /Open comments \(1\)/i }));
+    expect(screen.getByText('Approved officer · Computer Engineering Department')).toBeInTheDocument();
+    expect(screen.getByText('Sponsor')).toBeInTheDocument();
+  });
+
+  it('does not infer an unknown commenter role from the viewer account', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const listAnnouncements = client.listAnnouncements.bind(client);
+    client.listAnnouncements = async (session) => {
+      const result = await listAnnouncements(session);
+      return {
+        ...result,
+        data: result.data.map((announcement) => ({
+          ...announcement,
+          comments: announcement.comments.map((comment) => ({
+            ...comment,
+            authorUid: 'different-account',
+            authorAccountKind: undefined,
+            authorOrganizationRole: undefined,
+          })),
+        })),
+      };
+    };
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+
+    await screen.findByText(/Computer Engineering project night/i);
+    await user.click(screen.getAllByRole('button', { name: /Open comments \(1\)/i })[0]);
+    expect(screen.getByText('Role unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Student')).not.toBeInTheDocument();
   });
 
   it('shows optional organization phone only when present on public profiles', async () => {

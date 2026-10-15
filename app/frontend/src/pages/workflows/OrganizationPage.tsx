@@ -165,12 +165,14 @@ export function OrganizationView({ organizationId, session, client }: { organiza
 
           <SubtabPanel baseId="organization-profile" tabId="dates" activeId={activeId}>
             <section className="grid gap-4">
-              <div className="grid md:grid-cols-2 profile-date-grid">
+              <div className="grid gap-x-6 gap-y-8 md:grid-cols-2 profile-date-grid">
                 <DateEntryList title="Dated public events" entries={split.events} emptyCopy="No public event dates are posted for this organization yet." />
-                <DateEntryList title="Meeting/interview availability" entries={split.availability} emptyCopy="No requestable meeting or interview availability is posted yet." />
-              </div>
-              <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full">
-                <ButtonLink to={`/app/meetings?organizationId=${encodeURIComponent(organization.id)}&tab=availability`} variant="primary">Request meeting</ButtonLink>
+                <DateEntryList
+                  title="Meeting/interview availability"
+                  entries={split.availability}
+                  emptyCopy="No requestable meeting or interview availability is posted yet."
+                  action={<ButtonLink to={`/app/meetings?organizationId=${encodeURIComponent(organization.id)}&tab=availability`} variant="primary">Request meeting</ButtonLink>}
+                />
               </div>
             </section>
           </SubtabPanel>
