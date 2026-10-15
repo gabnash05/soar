@@ -95,6 +95,11 @@ export interface NameChangeInput {
   displayName: string;
 }
 
+export interface NameChangeResult {
+  displayName: string;
+  nextChangeAllowedAt: string;
+}
+
 export interface EmailChangeInput {
   newEmail: string;
   currentPassword: string;
@@ -117,6 +122,7 @@ export interface ApiProblem {
   code: string;
   message: string;
   action?: string;
+  nextChangeAllowedAt?: string;
 }
 
 export class ServiceUnavailableError extends Error {

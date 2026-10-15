@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({
   authHeaders: vi.fn(),
   getFirebaseConfigStatus: vi.fn(),
   getFirebaseRuntime: vi.fn(),
-  reload: vi.fn()
+  reload: vi.fn(),
+  updateProfile: vi.fn()
 }));
 
 vi.mock('@firebase/auth', () => ({
@@ -14,7 +15,7 @@ vi.mock('@firebase/auth', () => ({
   sendPasswordResetEmail: vi.fn(),
   signInWithEmailAndPassword: vi.fn(),
   signOut: vi.fn(),
-  updateProfile: vi.fn()
+  updateProfile: mocks.updateProfile
 }));
 vi.mock('./apiClient', () => ({
   apiBaseUrl: () => 'https://api.example.test',
@@ -57,5 +58,28 @@ describe('backend session normalization', () => {
       officerGrants: []
     });
     expect(mocks.apiFetch).toHaveBeenCalledWith('/session', { headers: { Authorization: 'Bearer trusted-token' } });
+  });
+
+  it('preserves the name-save DTO and waits for the server before changing local session state', async () => {
+    const result = { displayName: 'New Name', nextChangeAllowedAt: '2030-01-01T00:00:00.000Z' };
+    mocks.apiFetch.mockResolvedValueOnce(result);
+
+    await expect(createBackendGateway().updateDisplayName({ displayName: 'New Name' })).resolves.toEqual(result);
+    expect(mocks.apiFetch).toHaveBeenCalledTimes(1);
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/account/display-name', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer trusted-token' },
+      body: JSON.stringify({ displayName: 'New Name' }),
+    });
+    expect(mocks.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('does not mutate Firebase Auth when the server rejects the name save', async () => {
+    const failure = Object.assign(new Error('Backend path /accounts/private returned diagnostic JSON'), { code: 'name_change_cooldown' });
+    mocks.apiFetch.mockRejectedValueOnce(failure);
+
+    await expect(createBackendGateway().updateDisplayName({ displayName: 'New Name' })).rejects.toBe(failure);
+    expect(mocks.apiFetch).toHaveBeenCalledTimes(1);
+    expect(mocks.updateProfile).not.toHaveBeenCalled();
   });
 });

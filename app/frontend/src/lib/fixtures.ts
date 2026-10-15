@@ -1,4 +1,5 @@
 import { type AccessEntitlement } from './contracts';
+import { UserFacingError } from './safeErrors';
 import { isCanonicalDepartment, normalizeDepartmentKey } from './departments';
 import type { BackendGateway } from './backendGateway';
 import {
@@ -246,7 +247,7 @@ export const createFixtureGateway = (): BackendGateway => ({
     validateRegistration(input);
     const checkout = getPaymentStatus(input.intentId);
     if (!checkout.canCreateAccount) {
-      throw new Error('Payment is still pending. Use the demo confirmation link before creating an account.');
+      throw new UserFacingError('Payment is still pending. Use the demo confirmation link before creating an account.');
     }
     const session = makeFixtureSession(input.email, {
       displayName: input.displayName,
@@ -271,12 +272,12 @@ export const createFixtureGateway = (): BackendGateway => ({
 
   async resendEmailVerification() {
     const session = readSession();
-    if (!session) throw new Error('Sign in before requesting verification.');
+    if (!session) throw new UserFacingError('Sign in before requesting verification.');
   },
 
   async requestManualRenewal(): Promise<RenewalRequest> {
     const session = readSession();
-    if (!session) throw new Error('Sign in before renewing access.');
+    if (!session) throw new UserFacingError('Sign in before renewing access.');
     const renewalId = `fixture-renewal-${Date.now().toString(36)}`;
     sessionStorage.setItem(`${PAYMENT_PREFIX}${renewalId}`, 'pending');
     return {
@@ -291,26 +292,26 @@ export const createFixtureGateway = (): BackendGateway => ({
 
   async getAccessStatus() {
     const session = readSession();
-    if (!session) throw new Error('Sign in before checking access.');
+    if (!session) throw new UserFacingError('Sign in before checking access.');
     return session.access;
   },
 
   async updateDisplayName(input) {
     const session = readSession();
-    if (!session) throw new Error('Sign in before changing your name.');
+    if (!session) throw new UserFacingError('Sign in before changing your name.');
     const changedAt = localStorage.getItem(`${NAME_CHANGE_PREFIX}${session.uid}`);
     if (changedAt && Date.now() - Number(changedAt) < 30 * 24 * 60 * 60 * 1000) {
-      throw new Error('Name changes are limited to once every 30 days.');
+      throw new UserFacingError('Name changes are limited to once every 30 days.');
     }
     const next = { ...session, displayName: input.displayName.trim() };
     localStorage.setItem(`${NAME_CHANGE_PREFIX}${session.uid}`, String(Date.now()));
     writeSession(next);
-    return next;
+    return { displayName: next.displayName, nextChangeAllowedAt: futureIso(30) };
   },
 
   async requestEmailChange(input) {
     const session = readSession();
-    if (!session) throw new Error('Sign in before changing email.');
+    if (!session) throw new UserFacingError('Sign in before changing email.');
     if (!input.newEmail.includes('@')) {
       throw new ValidationProblemError('Enter a valid new email address.', { newEmail: 'Email is invalid.' });
     }

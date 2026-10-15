@@ -31,8 +31,11 @@ export const AccountSettingsPage = () => {
     setMessage(null);
     setSavingName(true);
     try {
-      await updateDisplayName({ displayName });
+      const updatedSession = await updateDisplayName({ displayName });
+      setDisplayName(updatedSession.displayName);
       setMessage('Name saved. You may need to wait up to 30 days before changing it again.');
+    } catch {
+      // AuthContext exposes the safe error message; leave the entered name ready to retry.
     } finally {
       setSavingName(false);
     }
