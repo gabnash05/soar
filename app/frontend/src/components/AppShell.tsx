@@ -85,7 +85,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
       <div className="mx-auto grid w-[min(1480px,100%)] grid-cols-[248px_minmax(0,1fr)] max-lg:grid-cols-1">
         <aside
           className={cn(
-            'sticky top-[72px] flex min-h-[calc(100vh-72px)] flex-col gap-4 self-start bg-[var(--gradient-brand-quiet)] px-3.5 py-5.5 text-white',
+            'sticky top-[72px] flex min-h-[calc(100vh-72px)] flex-col gap-4 self-start bg-[var(--color-navy)] bg-[image:var(--gradient-brand-quiet)] px-3.5 py-5.5 text-white',
             'max-lg:fixed max-lg:inset-[72px_auto_0_0] max-lg:z-[35] max-lg:w-[min(300px,86vw)] max-lg:-translate-x-[105%] max-lg:shadow-[var(--shadow-floating)] max-lg:transition-transform max-lg:duration-200 max-lg:ease-out max-sm:inset-[64px_auto_0_0]',
             mobileOpen && 'max-lg:translate-x-0',
           )}
