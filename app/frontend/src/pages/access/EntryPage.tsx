@@ -5,7 +5,7 @@ import { ButtonLink, Card, RoleBadge } from '../../components/ui';
 export const EntryPage = () => (
   <main className="relative isolate mx-auto w-[min(1200px,100%)] p-[clamp(18px,4vw,56px)] max-sm:px-3.5">
     <section className="grid items-stretch gap-[clamp(20px,4vw,56px)] max-lg:grid-cols-1">
-      <div className="relative flex min-h-[min(560px,calc(100vh-112px))] flex-col justify-center overflow-hidden rounded-[22px] bg-[var(--gradient-brand)] p-[clamp(28px,5vw,64px)] text-white shadow-[var(--shadow-floating)] [&>*]:relative [&>*]:z-[1] max-lg:min-h-0 max-lg:pt-[86px] max-sm:rounded-[18px] max-sm:px-6 [&_h1]:mb-3.5 [&_h1]:max-w-[12ch] [&_h1]:font-[var(--font-display)] [&_h1]:text-[clamp(3rem,7vw,5.6rem)] [&_h1]:font-semibold [&_h1]:leading-[1.02] [&_h1]:tracking-[-0.04em] [&_h1]:text-white max-sm:[&_h1]:text-[2.65rem] [&_p:not(.eyebrow)]:max-w-[60ch] [&_p:not(.eyebrow)]:text-lg [&_p:not(.eyebrow)]:text-white/80">
+      <div className="relative flex min-h-[min(560px,calc(100vh-112px))] flex-col justify-center overflow-hidden rounded-[22px] bg-[var(--color-navy)] bg-[image:var(--gradient-brand)] p-[clamp(28px,5vw,64px)] text-white shadow-[var(--shadow-floating)] [&>*]:relative [&>*]:z-[1] max-lg:min-h-0 max-lg:pt-[86px] max-sm:rounded-[18px] max-sm:px-6 [&_h1]:mb-3.5 [&_h1]:max-w-[12ch] [&_h1]:font-[var(--font-display)] [&_h1]:text-[clamp(3rem,7vw,5.6rem)] [&_h1]:font-semibold [&_h1]:leading-[1.02] [&_h1]:tracking-[-0.04em] [&_h1]:text-white max-sm:[&_h1]:text-[2.65rem] [&_p:not(.eyebrow)]:max-w-[60ch] [&_p:not(.eyebrow)]:text-lg [&_p:not(.eyebrow)]:text-white/80">
         <svg className="pointer-events-none absolute -right-8 -top-[72px] z-0 h-[300px] w-[min(420px,52vw)] opacity-[0.18]" viewBox="0 0 420 300" fill="none" aria-hidden="true" focusable="false">
           <path d="M28 220c58 52 160 68 230 30 62-34 58-87 0-106-47-15-112 8-152-22-50-37-21-111 52-125 65-13 134 17 178 73" stroke="white" strokeWidth="14" strokeLinecap="round" opacity=".62" />
           <path d="M302 25h68v68M366 31l-88 88" stroke="var(--color-gold)" strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" opacity=".78" />
@@ -14,7 +14,7 @@ export const EntryPage = () => (
           <SoarLogo />
           <span>SOAR</span>
         </div>
-        <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">Student Organizations and Allied Resources</p>
+        <p className="eyebrow mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-gold)]">Student Organizations and Allied Resources</p>
         <h1>Find your place. Keep things moving.</h1>
         <p>
           Discover campus organizations, follow announcements, manage application and meeting progress, and keep six-month access current from one role-aware workspace.

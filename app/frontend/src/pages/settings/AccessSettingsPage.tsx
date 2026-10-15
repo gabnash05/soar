@@ -51,8 +51,8 @@ export const AccessSettingsPage = () => {
 
   return (
     <div className="mx-auto grid w-[min(1120px,100%)] gap-[18px]">
-      <header className="relative min-w-0 overflow-hidden rounded-[18px] border border-white/15 bg-[var(--gradient-brand)] p-[clamp(16px,3vw,24px)] text-white [&_.eyebrow]:text-[var(--color-gold)] [&_h1]:mb-1.5 [&_h1]:font-[var(--font-display)] [&_h1]:text-[clamp(1.9rem,4vw,3rem)] [&_h1]:leading-[1.05] [&_h1]:tracking-[-0.035em] [&_h1]:text-white [&_p:not(.eyebrow)]:m-0 [&_p:not(.eyebrow)]:max-w-[72ch] [&_p:not(.eyebrow)]:text-white/80 max-sm:[&_h1]:text-[2.15rem]">
-        <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">Payment & access</p>
+      <header className="relative min-w-0 overflow-hidden rounded-[18px] border border-white/15 bg-[var(--color-navy)] bg-[image:var(--gradient-brand)] p-[clamp(16px,3vw,24px)] text-white [&_.eyebrow]:text-[var(--color-gold)] [&_h1]:mb-1.5 [&_h1]:font-[var(--font-display)] [&_h1]:text-[clamp(1.9rem,4vw,3rem)] [&_h1]:leading-[1.05] [&_h1]:tracking-[-0.035em] [&_h1]:text-white [&_p:not(.eyebrow)]:m-0 [&_p:not(.eyebrow)]:max-w-[72ch] [&_p:not(.eyebrow)]:text-white/80 max-sm:[&_h1]:text-[2.15rem]">
+        <p className="eyebrow mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-gold)]">Payment & access</p>
         <h1>Six-month access status</h1>
         <p>SOAR access costs PHP10 per account for six months. Users renew manually; there is no automatic recurring charge.</p>
       </header>

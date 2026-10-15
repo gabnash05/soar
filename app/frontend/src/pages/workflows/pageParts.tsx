@@ -89,9 +89,9 @@ export function WorkflowPageFrame({
 }) {
   return (
     <main className="mx-auto w-[min(1120px,100%)] min-w-0 mx-auto grid w-[min(1120px,100%)] gap-[18px]" data-testid="workflow-page">
-      <section className="relative flex min-h-0 items-end justify-between gap-4 overflow-hidden rounded-[18px] border border-white/15 bg-[var(--gradient-brand)] p-[clamp(16px,3vw,24px)] text-white [&_.eyebrow]:text-[var(--color-gold)] [&_h1]:mb-1.5 [&_h1]:font-[var(--font-display)] [&_h1]:text-[clamp(1.85rem,4vw,3rem)] [&_h1]:font-bold [&_h1]:leading-[1.05] [&_h1]:tracking-[-0.035em] [&_h1]:text-white [&_p:not(.eyebrow)]:m-0 [&_p:not(.eyebrow)]:max-w-[72ch] [&_p:not(.eyebrow)]:text-white/80 max-[820px]:flex-col max-[820px]:items-start max-[820px]:[&_h1]:max-w-none max-[820px]:[&_h1]:text-[2.15rem]">
+      <section className="relative flex min-h-0 items-end justify-between gap-4 overflow-hidden rounded-[18px] border border-white/15 bg-[var(--color-navy)] bg-[image:var(--gradient-brand)] p-[clamp(16px,3vw,24px)] text-white [&_.eyebrow]:text-[var(--color-gold)] [&_h1]:mb-1.5 [&_h1]:font-[var(--font-display)] [&_h1]:text-[clamp(1.85rem,4vw,3rem)] [&_h1]:font-bold [&_h1]:leading-[1.05] [&_h1]:tracking-[-0.035em] [&_h1]:text-white [&_p:not(.eyebrow)]:m-0 [&_p:not(.eyebrow)]:max-w-[72ch] [&_p:not(.eyebrow)]:text-white/80 max-[820px]:flex-col max-[820px]:items-start max-[820px]:[&_h1]:max-w-none max-[820px]:[&_h1]:text-[2.15rem]">
         <div>
-          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">{eyebrow}</p>
+          <p className="eyebrow mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-gold)]">{eyebrow}</p>
           <h1>{title}</h1>
           <p>{description}</p>
         </div>
