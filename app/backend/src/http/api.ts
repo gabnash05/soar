@@ -47,7 +47,12 @@ function sendError(res: Response, error: unknown): void {
   }
 
   const appError = assertAppError(error);
-  res.status(appError.status).json({ code: appError.code, message: appError.message, action: appError.action });
+  res.status(appError.status).json({
+    code: appError.code,
+    message: appError.message,
+    action: appError.action,
+    ...(appError.nextChangeAllowedAt ? { nextChangeAllowedAt: appError.nextChangeAllowedAt } : {})
+  });
 }
 
 function getParam(req: Request, name: string): string {

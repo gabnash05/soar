@@ -59,6 +59,6 @@ export const createMockGateway = (session: UserSession | null = makeSession()): 
     fixture: true,
   })),
   getAccessStatus: vi.fn(async () => (session ?? makeSession()).access),
-  updateDisplayName: vi.fn(async () => session ?? makeSession()),
+  updateDisplayName: vi.fn(async (input: { displayName: string }) => ({ displayName: input.displayName.trim(), nextChangeAllowedAt: '2026-02-01T00:00:00.000Z' })),
   requestEmailChange: vi.fn(async () => undefined),
 });

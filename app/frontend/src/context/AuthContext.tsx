@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createBackendGateway, type BackendGateway } from '../lib/backendGateway';
-import { safeErrorMessage } from '../lib/safeErrors';
+import { safeErrorMessage, UserFacingError } from '../lib/safeErrors';
 import type {
   EmailChangeInput,
   NameChangeInput,
@@ -107,7 +107,9 @@ export const AuthProvider = ({ children, gateway: providedGateway }: { children:
     requestManualRenewal: () => run(() => gateway.requestManualRenewal({ returnUrl: window.location.href })),
     updateDisplayName: (input) =>
       run(async () => {
-        const next = await gateway.updateDisplayName(input);
+        if (!session) throw new UserFacingError('Sign in before changing your name.');
+        const result = await gateway.updateDisplayName(input);
+        const next = { ...session, displayName: result.displayName };
         setSession(next);
         return next;
       }),

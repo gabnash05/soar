@@ -194,6 +194,51 @@ describe('SOAR HTTP route contracts', () => {
     expect(mocks.getUserSession).toHaveBeenCalledWith({ uid: 'user1', email_verified: true });
   });
 
+  it('preserves the name-save response DTO without claiming it is a complete session', async () => {
+    const user = { uid: 'user1', email_verified: true };
+    const result = { displayName: 'New Name', nextChangeAllowedAt: '2030-01-01T00:00:00.000Z' };
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.updateDisplayName.mockResolvedValue(result);
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/account/display-name`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ displayName: 'New Name' }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual(result);
+    });
+
+    expect(mocks.updateDisplayName).toHaveBeenCalledWith(user, { displayName: 'New Name' });
+    expect(mocks.getUserSession).not.toHaveBeenCalled();
+  });
+
+  it('returns cooldown retry timing as structured data with a safe plain-language message', async () => {
+    const nextChangeAllowedAt = '2030-01-02T03:04:05.000Z';
+    mocks.updateDisplayName.mockRejectedValue(new AppError(
+      'name_change_cooldown',
+      'Name changes are limited to once every 30 days. Please try again later.',
+      409,
+      undefined,
+      nextChangeAllowedAt,
+    ));
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/account/display-name`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ displayName: 'New Name' }),
+      });
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        code: 'name_change_cooldown',
+        message: 'Name changes are limited to once every 30 days. Please try again later.',
+        nextChangeAllowedAt,
+      });
+    });
+  });
+
   it('keeps content mutations behind the established organization route contract', async () => {
     mocks.createDateEntry.mockResolvedValue({ id: 'date1', organizationId: 'robotics', kind: 'availability' });
 
