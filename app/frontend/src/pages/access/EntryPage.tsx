@@ -4,6 +4,12 @@ import { ButtonLink, Card, RoleBadge } from '../../components/ui';
 
 export const EntryPage = () => (
   <main className="relative isolate mx-auto w-[min(1200px,100%)] p-[clamp(18px,4vw,56px)] max-sm:px-3.5">
+    {import.meta.env.VITE_SOAR_USE_FIXTURES === 'true' ? (
+      <aside className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-y border-[var(--color-border)] py-2 text-sm text-[var(--muted-foreground)]" role="note" aria-label="Simulated preview">
+        <strong className="font-bold text-[var(--color-navy)]">Simulated preview</strong>
+        <span>Sample accounts and local workflow data only; no live payments or backend records.</span>
+      </aside>
+    ) : null}
     <section className="grid items-stretch gap-[clamp(20px,4vw,56px)] max-lg:grid-cols-1">
       <div className="relative flex min-h-[min(560px,calc(100vh-112px))] flex-col justify-center overflow-hidden rounded-[22px] bg-[var(--color-navy)] bg-[image:var(--gradient-brand)] p-[clamp(28px,5vw,64px)] text-white shadow-[var(--shadow-floating)] [&>*]:relative [&>*]:z-[1] max-lg:min-h-0 max-lg:pt-[86px] max-sm:rounded-[18px] max-sm:px-6 [&_h1]:mb-3.5 [&_h1]:max-w-[12ch] [&_h1]:font-[var(--font-display)] [&_h1]:text-[clamp(3rem,7vw,5.6rem)] [&_h1]:font-semibold [&_h1]:leading-[1.02] [&_h1]:tracking-[-0.04em] [&_h1]:text-white max-sm:[&_h1]:text-[2.65rem] [&_p:not(.eyebrow)]:max-w-[60ch] [&_p:not(.eyebrow)]:text-lg [&_p:not(.eyebrow)]:text-white/80">
         <svg className="pointer-events-none absolute -right-8 -top-[72px] z-0 h-[300px] w-[min(420px,52vw)] opacity-[0.18]" viewBox="0 0 420 300" fill="none" aria-hidden="true" focusable="false">

@@ -72,6 +72,21 @@ describe('SOAR workflow pages', () => {
     expect(capabilities.querySelector('.entry-card-primary')).not.toBeInTheDocument();
   });
 
+  it('labels the landing page only when the fixture build is simulated', () => {
+    try {
+      vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'true');
+      const { unmount } = renderInRouter(<EntryPage />);
+      expect(screen.getByRole('note', { name: 'Simulated preview' })).toHaveTextContent(/Sample accounts and local workflow data only/i);
+      unmount();
+
+      vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'false');
+      renderInRouter(<EntryPage />);
+      expect(screen.queryByRole('note', { name: 'Simulated preview' })).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('filters the organization directory by name and shows no-results copy', async () => {
     const user = userEvent.setup();
     renderInRouter(<DirectoryView session={studentSession} client={createFixtureWorkflowDataClient()} />);
