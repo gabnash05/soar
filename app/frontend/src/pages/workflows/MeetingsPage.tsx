@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button, LoadingBlock, ModalDialog, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import { MEETING_DOCUMENT_MAX_BYTES, formatBytes, openPrivateMeetingDocument, validateMeetingDocumentFile } from '../../lib/storageUploads';
 import type { DateEntry, MeetingRequest, MeetingRequestInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import { OfficerMeetingReview } from './OfficerPage';
-import { EmptyState, ErrorState, MeetingStatusChip, ResultMessage, RouteUnavailableState, SourceNotice, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
+import { EmptyState, ErrorState, MeetingStatusChip, ResultMessage, RouteUnavailableState, SourceNotice, TabSectionHeader, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame, WorkflowTable } from './pageParts';
 import { formatDateEntry, getApprovedOfficerGrants, todayIsoDate } from './workflowUtils';
 
 const requestInputFromOption = (option?: DateEntry): MeetingRequestInput => ({
@@ -42,10 +42,13 @@ export function MeetingDocumentButton({ request }: { request: MeetingRequest }) 
 }
 
 export function MeetingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
+  const [searchParams] = useSearchParams();
+  const requestedOrganizationId = searchParams.get('organizationId') ?? '';
   const optionsQuery = useWorkflowQuery(() => client.listMeetingOptions(session), [client, session.uid]);
   const requestsQuery = useWorkflowQuery(() => client.listMyMeetingRequests(session), [client, session.uid]);
   const options = optionsQuery.data ?? [];
   const requests = requestsQuery.data ?? [];
+  const preferredOption = options.find((option) => option.organizationId === requestedOrganizationId) ?? options[0];
   const officerGrants = getApprovedOfficerGrants(session);
   const hasOfficerReview = officerGrants.length > 0;
   const tabItems = [
@@ -62,10 +65,10 @@ export function MeetingsView({ session, client }: { session: UserSession; client
   const [documentError, setDocumentError] = useState('');
 
   useEffect(() => {
-    if (!form.dateEntryId && options.length) {
-      setForm(requestInputFromOption(options[0]));
+    if (!form.dateEntryId && preferredOption) {
+      setForm(requestInputFromOption(preferredOption));
     }
-  }, [form.dateEntryId, options]);
+  }, [form.dateEntryId, preferredOption]);
 
   const groupedOptions = useMemo(() => options.reduce<Record<string, typeof options>>((groups, option) => {
     groups[option.organizationName] = [...(groups[option.organizationName] ?? []), option];
@@ -83,7 +86,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
     setResult(null);
     setDocumentError('');
     setRequestDirty(false);
-    if (!form.dateEntryId && options[0]) setForm(requestInputFromOption(options[0]));
+    if (!form.dateEntryId && preferredOption) setForm(requestInputFromOption(preferredOption));
     setRequestOpen(true);
   };
 
@@ -91,7 +94,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
     setRequestOpen(false);
     setDocumentError('');
     setRequestDirty(false);
-    setForm(requestInputFromOption(options[0]));
+    setForm(requestInputFromOption(preferredOption));
   };
 
   const submit = async (event: FormEvent) => {
@@ -105,7 +108,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
         setRequestOpen(false);
         setRequestDirty(false);
         setDocumentError('');
-        setForm(requestInputFromOption(options[0]));
+        setForm(requestInputFromOption(preferredOption));
         await requestsQuery.reload();
       }
     } catch (error) {
@@ -121,7 +124,6 @@ export function MeetingsView({ session, client }: { session: UserSession; client
       title={hasOfficerReview ? 'Review meeting requests or switch to your own requests.' : 'Request meetings from posted availability.'}
       description="Pending requests are not confirmed bookings. Use tabs to separate posted availability, personal statuses, and officer decisions."
       session={session}
-      actions={activeId !== 'review' ? <Button type="button" variant="primary" disabled={!options.length} onClick={openRequestDialog}>Request meeting</Button> : undefined}
     >
       <SourceNotice client={client} message={optionsQuery.sourceMessage || requestsQuery.sourceMessage} />
       {!requestOpen ? <ResultMessage result={result} /> : null}
@@ -218,14 +220,12 @@ export function MeetingsView({ session, client }: { session: UserSession; client
       ) : null}
 
       <SubtabPanel baseId="meetings" tabId="availability" activeId={activeId}>
-        <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0 grid gap-3">
-          <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)] flex items-end justify-between gap-4 max-[820px]:flex-col max-[820px]:items-start">
-            <div>
-              <h2>Available meeting/interview dates</h2>
-              <p>Choose a posted availability window, then send a request from the action above.</p>
-            </div>
-            {options.length ? <Button type="button" variant="secondary" onClick={openRequestDialog}>Request from this list</Button> : null}
-          </header>
+        <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)]">
+          <TabSectionHeader
+            title="Available meeting/interview dates"
+            description="Choose a posted availability window, then send a request."
+            action={options.length ? <Button type="button" onClick={openRequestDialog}>Request meeting</Button> : undefined}
+          />
           {options.length ? (
             <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
               {options.map((entry) => (

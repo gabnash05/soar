@@ -14,6 +14,7 @@ import {
   StageChip,
   useWorkflowQuery,
   useWorkflowSession,
+  TabSectionHeader,
   WorkflowPageFrame,
   WorkflowTable,
 } from './pageParts';
@@ -95,27 +96,24 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
 
   return (
     <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0">
-      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)] flex items-end justify-between gap-4 max-[820px]:flex-col max-[820px]:items-start">
-        <div>
-          <h2>Organization profile and recruitment</h2>
-          <p>Update the public profile, recruitment copy, contact email, and logo shown to students and sponsors.</p>
-        </div>
-        <Button type="submit" form={formId} disabled={busy}>Save profile</Button>
-      </header>
+      <TabSectionHeader
+        title="Organization profile and recruitment"
+        description="Update the public profile, recruitment copy, contact email, and logo shown to students and sponsors."
+      />
       <form id={formId} className="grid gap-4" onSubmit={submit}>
-        <div className="grid md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="org-name">Organization name</label><input id="org-name" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></div>
           <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="org-contact">Contact email</label><input id="org-contact" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="email" value={form.contactEmail} onChange={(event) => setForm((current) => ({ ...current, contactEmail: event.target.value }))} /></div>
         </div>
         <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="org-phone">Contact phone <span>Optional</span></label><input id="org-phone" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="tel" inputMode="tel" autoComplete="tel" value={form.contactPhone ?? ''} onChange={(event) => setForm((current) => ({ ...current, contactPhone: event.target.value }))} placeholder="+63 912 345 6789" maxLength={32} /><span className="text-xs text-[var(--muted-foreground)]">Shown on the public profile only when provided. Use digits, spaces, dashes, parentheses, or extension text.</span></div>
         <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="org-short">Short description</label><input id="org-short" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.shortDescription} onChange={(event) => setForm((current) => ({ ...current, shortDescription: event.target.value }))} /></div>
         <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="org-description">Profile description</label><textarea id="org-description" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
-        <div className="grid md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="grid min-w-0 gap-1.5">
             <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="logo-file">Logo image <span>Optional</span></label>
             <input
               id="logo-file"
-              className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
+              className="min-h-[46px] w-full min-w-0 rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
               type="file"
               accept="image/png,image/jpeg,image/webp,image/gif"
               onChange={(event) => {
@@ -136,11 +134,14 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
           <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="external-form">External form URL <span>Optional</span></label><input id="external-form" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="url" value={form.externalFormUrl ?? ''} onChange={(event) => setForm((current) => ({ ...current, externalFormUrl: event.target.value }))} /></div>
         </div>
         <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="recruitment-title">Recruitment title</label><input id="recruitment-title" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.recruitmentTitle} onChange={(event) => setForm((current) => ({ ...current, recruitmentTitle: event.target.value }))} /></div>
-        <div className="grid md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="recruitment-requirements">Requirements</label><textarea id="recruitment-requirements" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.recruitmentRequirements} onChange={(event) => setForm((current) => ({ ...current, recruitmentRequirements: event.target.value }))} /></div>
           <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="recruitment-instructions">Instructions</label><textarea id="recruitment-instructions" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.recruitmentInstructions} onChange={(event) => setForm((current) => ({ ...current, recruitmentInstructions: event.target.value }))} /></div>
         </div>
         <ResultMessage result={result} />
+        <div className="flex justify-end max-sm:[&>button]:w-full">
+          <Button type="submit" disabled={busy}>Save profile</Button>
+        </div>
       </form>
       <ConfirmDialog
         open={confirmSaveOpen}
@@ -315,13 +316,11 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
 
   return (
     <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0">
-      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)] flex items-end justify-between gap-4 max-[820px]:flex-col max-[820px]:items-start">
-        <div>
-          <h2>Published announcements</h2>
-          <p>{allowPosting ? 'Create announcements for this organization.' : 'Review this organization\'s announcement history. Publish new posts from the Announcements feed.'}</p>
-        </div>
-        {allowPosting ? <Button type="button" onClick={() => setComposerOpen(true)}>Post announcement</Button> : null}
-      </header>
+      <TabSectionHeader
+        title="Published announcements"
+        description={allowPosting ? 'Create announcements for this organization.' : 'Review this organization\'s announcement history. Publish new posts from the Announcements feed.'}
+        action={allowPosting ? <Button type="button" onClick={() => setComposerOpen(true)}>Post announcement</Button> : undefined}
+      />
       {allowPosting ? (
         <>
           <ModalDialog open={composerOpen} title="Post announcement" dirty={composerDirty} onClose={() => setComposerOpen(false)}>
@@ -474,13 +473,11 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
 
   return (
     <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0">
-      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)] flex items-end justify-between gap-4 max-[820px]:flex-col max-[820px]:items-start">
-        <div>
-          <h2>Events and availability</h2>
-          <p>Post public events or meeting/interview availability for this organization.</p>
-        </div>
-        <Button type="button" onClick={openCreate}>Add dated entry</Button>
-      </header>
+      <TabSectionHeader
+        title="Events and availability"
+        description="Post public events or meeting/interview availability for this organization."
+        action={<Button type="button" onClick={openCreate}>Add dated entry</Button>}
+      />
       <ModalDialog open={dialogOpen} title={form.id ? 'Edit dated entry' : 'Add dated entry'} dirty={dirty} onClose={() => {
         setDialogOpen(false);
         setDirty(false);

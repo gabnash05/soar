@@ -88,7 +88,7 @@ export function WorkflowPageFrame({
   children: ReactNode;
 }) {
   return (
-    <main className="mx-auto w-[min(1120px,100%)] min-w-0 mx-auto grid w-[min(1120px,100%)] gap-[18px]" data-testid="workflow-page">
+    <main className="mx-auto grid w-[min(1120px,100%)] min-w-0 gap-[18px]" data-testid="workflow-page">
       <section className="relative flex min-h-0 items-end justify-between gap-4 overflow-hidden rounded-[18px] border border-white/15 bg-[var(--color-navy)] bg-[image:var(--gradient-brand)] p-[clamp(16px,3vw,24px)] text-white [&_.eyebrow]:text-[var(--color-gold)] [&_h1]:mb-1.5 [&_h1]:font-[var(--font-display)] [&_h1]:text-[clamp(1.85rem,4vw,3rem)] [&_h1]:font-bold [&_h1]:leading-[1.05] [&_h1]:tracking-[-0.035em] [&_h1]:text-white [&_p:not(.eyebrow)]:m-0 [&_p:not(.eyebrow)]:max-w-[72ch] [&_p:not(.eyebrow)]:text-white/80 max-[820px]:flex-col max-[820px]:items-start max-[820px]:[&_h1]:max-w-none max-[820px]:[&_h1]:text-[2.15rem]">
         <div>
           <p className="eyebrow mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-gold)]">{eyebrow}</p>
@@ -130,6 +130,18 @@ export function SourceNotice({ client }: { message?: string | null; client: Work
     <aside className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-blue)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] [&_p]:m-0" role="note">
       <p>{copy}</p>
     </aside>
+  );
+}
+
+export function TabSectionHeader({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
+  return (
+    <header className="mb-3.5 flex min-w-0 items-start justify-between gap-4 max-[820px]:flex-col max-[820px]:items-stretch">
+      <div className="grid min-w-0 gap-1">
+        <h2 className="m-0 font-[var(--font-display)] text-[clamp(1.25rem,2.4vw,1.75rem)] font-extrabold leading-[1.14] tracking-[-0.02em] text-[var(--color-navy)]">{title}</h2>
+        {description ? <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">{description}</p> : null}
+      </div>
+      {action ? <div className="flex shrink-0 flex-wrap items-center gap-2 max-[820px]:w-full max-[820px]:[&_a]:w-full max-[820px]:[&_button]:w-full">{action}</div> : null}
+    </header>
   );
 }
 
@@ -190,10 +202,8 @@ export function ResultMessage({ result }: { result: WorkflowMutationResult<unkno
 
 export function DateEntryList({ title, entries, emptyCopy }: { title: string; entries: DateEntry[]; emptyCopy: string }) {
   return (
-    <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0 grid gap-3">
-      <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
-        <h2>{title}</h2>
-      </header>
+    <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)]">
+      <TabSectionHeader title={title} />
       {entries.length ? (
         <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
           {entries.map((entry) => (

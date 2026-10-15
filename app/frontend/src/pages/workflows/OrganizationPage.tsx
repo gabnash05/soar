@@ -27,18 +27,6 @@ function RecruitmentActions({ organization, session, client }: { organization: O
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (isSponsor(session)) {
-    return (
-      <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0 grid gap-3">
-        <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
-          <h2>Applications hidden for sponsors</h2>
-          <p>Sponsors can browse organization information and request meetings without student application tools.</p>
-        </header>
-        <ButtonLink to="/app/meetings" variant="primary">Request a meeting</ButtonLink>
-      </section>
-    );
-  }
-
   const confirmSubmission = async () => {
     setBusy(true);
     const next = await client.confirmExternalApplication(
@@ -96,12 +84,12 @@ export function OrganizationView({ organizationId, session, client }: { organiza
   const grants = getApprovedOfficerGrants(session);
   const canManage = organization ? grants.some((grant) => grant.organizationId === organization.id) : false;
   const split = organization ? splitDateEntries(organization.dateEntries) : { events: [], availability: [] };
-  const actionTabId = isSponsor(session) ? 'meetings' : 'apply';
+  const canApply = !isSponsor(session);
   const tabItems = [
     { id: 'feed', label: 'Feed', count: organization?.posts.length },
     { id: 'about', label: 'About' },
     { id: 'dates', label: 'Dates & availability', count: organization?.dateEntries.length },
-    { id: actionTabId, label: isSponsor(session) ? 'Meetings' : 'Apply' },
+    ...(canApply ? [{ id: 'apply', label: 'Apply' }] : []),
   ];
   const { activeId, getTabTo } = useQueryTab(tabItems.map((item) => item.id), 'feed');
 
@@ -182,14 +170,16 @@ export function OrganizationView({ organizationId, session, client }: { organiza
                 <DateEntryList title="Meeting/interview availability" entries={split.availability} emptyCopy="No requestable meeting or interview availability is posted yet." />
               </div>
               <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full">
-                <ButtonLink to={`/app/meetings?organizationId=${encodeURIComponent(organization.id)}`} variant="primary">Request meeting</ButtonLink>
+                <ButtonLink to={`/app/meetings?organizationId=${encodeURIComponent(organization.id)}&tab=availability`} variant="primary">Request meeting</ButtonLink>
               </div>
             </section>
           </SubtabPanel>
 
-          <SubtabPanel baseId="organization-profile" tabId={actionTabId} activeId={activeId}>
-            <RecruitmentActions organization={organization} session={session} client={client} />
-          </SubtabPanel>
+          {canApply ? (
+            <SubtabPanel baseId="organization-profile" tabId="apply" activeId={activeId}>
+              <RecruitmentActions organization={organization} session={session} client={client} />
+            </SubtabPanel>
+          ) : null}
         </>
       ) : null}
     </WorkflowPageFrame>

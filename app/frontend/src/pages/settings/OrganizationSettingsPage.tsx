@@ -32,45 +32,27 @@ function DepartmentStudentCountPanel({ organization, session, client }: { organi
     [client, organization.id, session.uid],
   );
 
-  if (loading) {
-    return <LoadingBlock label="Loading department student count" />;
-  }
+  if (loading) return <LoadingBlock label="Loading department student count" />;
 
-  if (error) {
-    return (
-      <section className="flex flex-wrap items-center justify-between gap-3.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)] p-4 shadow-[var(--shadow-soft)] [&_p]:m-0 [&_p]:max-w-[62ch] [&_p]:text-[var(--muted-foreground)] [&_span]:text-xs [&_span]:font-extrabold [&_span]:uppercase [&_span]:tracking-[0.06em] [&_span]:text-[var(--color-blue-deep)] [&_strong]:font-[var(--font-display)] [&_strong]:text-[clamp(2rem,4vw,3rem)] [&_strong]:font-black [&_strong]:leading-none [&_strong]:tracking-[-0.04em] [&_strong]:text-[var(--color-navy)]" aria-label="Registered students from this department">
-        <div className="grid gap-1">
-          <span>Department count unavailable</span>
-          <strong>{organization.department ?? 'Department not assigned'}</strong>
-        </div>
-        <p>{error}</p>
-      </section>
-    );
-  }
-
-  if (!data) {
-    return (
-      <section className="flex flex-wrap items-center justify-between gap-3.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-off-white)] p-4 [&_p]:m-0 [&_p]:max-w-[62ch] [&_p]:text-[var(--muted-foreground)] [&_span]:text-xs [&_span]:font-extrabold [&_span]:uppercase [&_span]:tracking-[0.06em] [&_span]:text-[var(--color-blue-deep)] [&_strong]:font-[var(--font-display)] [&_strong]:text-[clamp(2rem,4vw,3rem)] [&_strong]:font-black [&_strong]:leading-none [&_strong]:tracking-[-0.04em] [&_strong]:text-[var(--color-navy)]" aria-label="Registered students from this department">
-        <div className="grid gap-1">
-          <span>Department not assigned</span>
-          <strong>{organization.name}</strong>
-        </div>
-        <p>This organization does not have an authoritative department link yet, so SOAR does not show a registered-student count.</p>
-      </section>
-    );
-  }
+  const currentCount = error ? undefined : data?.registeredStudentCount;
+  const departmentName = data?.department ?? organization.department;
+  const statusCopy = error
+    ? error
+    : data
+      ? 'Saved student accounts whose registered department matches this organization.'
+      : 'This organization has no authoritative department link, so a count is not available.';
 
   return (
-    <section className="flex flex-wrap items-center justify-between gap-3.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)] p-4 shadow-[var(--shadow-soft)] [&_p]:m-0 [&_p]:max-w-[62ch] [&_p]:text-[var(--muted-foreground)] [&_span]:text-xs [&_span]:font-extrabold [&_span]:uppercase [&_span]:tracking-[0.06em] [&_span]:text-[var(--color-blue-deep)] [&_strong]:font-[var(--font-display)] [&_strong]:text-[clamp(2rem,4vw,3rem)] [&_strong]:font-black [&_strong]:leading-none [&_strong]:tracking-[-0.04em] [&_strong]:text-[var(--color-navy)]" aria-label="Registered students from this department">
-      <div className="grid gap-1">
-        <span>{data.department}</span>
-        <strong>{data.registeredStudentCount}</strong>
+    <section className="flex min-w-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-y border-[var(--color-border)] py-3" aria-label="Registered students from this department">
+      <div className="grid min-w-0 gap-0.5">
+        <h3 className="m-0 font-[var(--font-display)] text-sm font-bold text-[var(--color-navy)]">{departmentName ?? 'Department not assigned'}</h3>
+        <p className="m-0 max-w-[68ch] text-sm text-[var(--muted-foreground)]">{statusCopy}</p>
+        {sourceMessage ? <p className="m-0 text-xs text-[var(--muted-foreground)]">{sourceMessage}</p> : null}
       </div>
-      <div className="grid gap-2">
-        <p>registered saved student accounts from this department. Officers with student accounts are included; sponsors, members, applicants, meetings, and legacy missing departments are not.</p>
-        {sourceMessage ? <p>{sourceMessage}</p> : null}
-        <p>Generated {new Date(data.generatedAt).toLocaleString()}.</p>
-      </div>
+      <p className="m-0 flex shrink-0 items-baseline gap-2 text-sm text-[var(--muted-foreground)]" aria-live="polite">
+        <strong className="font-[var(--font-display)] text-2xl font-bold tabular-nums text-[var(--color-navy)]">{currentCount ?? '—'}</strong>
+        <span>registered students</span>
+      </p>
     </section>
   );
 }
@@ -170,12 +152,13 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
                 </div>
               </section>
 
-              <DepartmentStudentCountPanel organization={dashboard.organization} session={session} client={client} />
-
               <SubtabNav label="Organization management tasks" baseId="organization-management" items={tabsWithCounts} activeId={activeId} getTabTo={getTabTo} />
 
               <SubtabPanel baseId="organization-management" tabId="details" activeId={activeId}>
-                <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} formId={profileFormId} onDirtyChange={handleProfileDirtyChange} />
+                <div className="grid min-w-0 gap-4">
+                  <DepartmentStudentCountPanel organization={dashboard.organization} session={session} client={client} />
+                  <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} formId={profileFormId} onDirtyChange={handleProfileDirtyChange} />
+                </div>
               </SubtabPanel>
               <SubtabPanel baseId="organization-management" tabId="announcements" activeId={activeId}>
                 <AnnouncementSection dashboard={dashboard} session={session} client={client} onChanged={reload} allowPosting />

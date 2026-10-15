@@ -104,7 +104,8 @@ describe('SOAR workflow pages', () => {
   it('excludes sponsors from application tools and tracker rows', async () => {
     renderInRouter(<OrganizationView organizationId="robotics" session={sponsorSession} client={createFixtureWorkflowDataClient()} />);
 
-    expect(await screen.findByText(/Applications hidden for sponsors/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Computer Engineering Department/i, level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Apply|Meetings/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /I submitted the external form/i })).not.toBeInTheDocument();
 
     renderInRouter(<ApplicationsView session={sponsorSession} client={createFixtureWorkflowDataClient()} />);
@@ -112,6 +113,7 @@ describe('SOAR workflow pages', () => {
   });
 
   it('defaults organization profiles to the feed with role-appropriate profile tabs', async () => {
+    const user = userEvent.setup();
     const { unmount } = renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={createFixtureWorkflowDataClient()} />, ['/app/organizations/robotics']);
 
     expect(await screen.findByRole('heading', { name: /Computer Engineering Department/i, level: 1 })).toBeInTheDocument();
@@ -125,16 +127,26 @@ describe('SOAR workflow pages', () => {
     renderInRouter(<OrganizationView organizationId="health" session={sponsorSession} client={createFixtureWorkflowDataClient()} />, ['/app/organizations/health?tab=apply']);
     expect(await screen.findByRole('heading', { name: /Civil Engineering Department/i, level: 1 })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Feed' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: 'Meetings' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Meetings' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Apply' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Dates & availability' }));
+    const datesPanel = screen.getByRole('tabpanel', { name: 'Dates & availability' });
+    expect(within(datesPanel).getByRole('link', { name: 'Request meeting' })).toHaveAttribute('href', '/app/meetings?organizationId=health&tab=availability');
+    const datedEventsHeading = within(datesPanel).getByRole('heading', { name: 'Dated public events' });
+    const availabilityHeading = within(datesPanel).getByRole('heading', { name: 'Meeting/interview availability' });
+    expect(datedEventsHeading.closest('section')?.className).toBe(availabilityHeading.closest('section')?.className);
   });
 
-  it('shows meeting duplicates clearly and keeps pending requests distinct from confirmed bookings', async () => {
+  it('keeps one meeting request CTA in the active Availability tab and distinguishes pending requests', async () => {
     const user = userEvent.setup();
     renderInRouter(<MeetingsView session={studentSession} client={createFixtureWorkflowDataClient()} />);
 
     await screen.findAllByText(/Computer Engineering consultation window/i);
-    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    const availabilityPanel = screen.getByRole('tabpanel', { name: 'Availability' });
+    const requestButton = within(availabilityPanel).getByRole('button', { name: /^Request meeting$/i });
+    expect(screen.getAllByRole('button', { name: /^Request meeting$/i })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1 }).closest('section')).not.toContainElement(requestButton);
+    await user.click(requestButton);
     await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
     expect(await screen.findByText(/repeated identical request/i)).toBeInTheDocument();
 
@@ -146,6 +158,15 @@ describe('SOAR workflow pages', () => {
     await user.click(screen.getByRole('tab', { name: /My requests/i }));
     const table = await screen.findByRole('region', { name: /My meeting request statuses/i });
     expect(within(table).getAllByText(/Not a confirmed booking/i).length).toBeGreaterThan(0);
+  });
+
+  it('honors an organization context link when opening a meeting request', async () => {
+    const user = userEvent.setup();
+    renderInRouter(<MeetingsView session={studentSession} client={createFixtureWorkflowDataClient()} />, ['/app/meetings?organizationId=health&tab=availability']);
+
+    await screen.findAllByText(/Civil Engineering partner meeting slot/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    expect(screen.getByLabelText(/Posted availability/i)).toHaveValue('date-health-partner-meeting');
   });
 
   it('keeps officer controls on relevant pages and scoped to the managed organization', async () => {
@@ -182,7 +203,7 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByRole('link', { name: /Review meetings/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Request meeting/i })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('tab', { name: /Dates & availability/i }));
-    expect(screen.getByRole('link', { name: /Request meeting/i })).toHaveAttribute('href', '/app/meetings?organizationId=robotics');
+    expect(screen.getByRole('link', { name: /Request meeting/i })).toHaveAttribute('href', '/app/meetings?organizationId=robotics&tab=availability');
   });
 
   it('uses prominent organization identity areas in the directory and profile', async () => {
@@ -295,9 +316,17 @@ describe('SOAR workflow pages', () => {
     renderInRouter(<OrganizationSettingsView session={officerSession} client={client} />, ['/settings/organization?organizationId=robotics']);
 
     const nameInput = await screen.findByLabelText(/^Organization name$/i);
+    const saveButton = screen.getByRole('button', { name: /^Save profile$/i });
     expect(screen.getAllByRole('button', { name: /^Save profile$/i })).toHaveLength(1);
+    const profileForm = nameInput.closest('form');
+    expect(profileForm).toContainElement(saveButton);
+    expect(profileForm?.lastElementChild).toBe(saveButton.parentElement);
+    const logoInput = screen.getByLabelText(/Logo image/i);
+    const logoRow = logoInput.parentElement?.parentElement;
+    expect(logoRow).toHaveClass('grid', 'gap-4', 'md:grid-cols-2');
+    expect(within(logoRow as HTMLElement).getByLabelText(/External form URL/i)).toBeInTheDocument();
     await user.type(nameInput, ' Updated');
-    await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+    await user.click(saveButton);
 
     const dialog = screen.getByRole('alertdialog', { name: /Save profile changes/i });
     expect(dialog).toBeInTheDocument();
@@ -382,17 +411,34 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByText(/Phone:/i)).not.toBeInTheDocument();
   });
 
-  it('shows department-organization registered student counts only in management context', async () => {
-    renderInRouter(<OrganizationSettingsView session={officerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics&tab=students']);
+  it('shows the restrained department count only inside the Details tab', async () => {
+    const user = userEvent.setup();
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics']);
 
     expect(await screen.findByRole('heading', { name: /Organization settings/i, level: 1 })).toBeInTheDocument();
+    const frame = screen.getByTestId('workflow-page');
+    expect(frame).toHaveClass('w-[min(1120px,100%)]', 'min-w-0');
+    const detailsPanel = screen.getByRole('tabpanel', { name: 'Details' });
+    const countPanel = await within(detailsPanel).findByRole('region', { name: /Registered students from this department/i });
+    expect(within(countPanel).getByText('Computer Engineering Department')).toBeInTheDocument();
+    expect(within(countPanel).getByText('3')).toBeInTheDocument();
+    expect(within(countPanel).getByText(/saved fixture student records/i)).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /Student stats/i })).not.toBeInTheDocument();
-    const countCard = await screen.findByRole('region', { name: /Registered students from this department/i });
-    expect(within(countCard).getByText('Computer Engineering Department')).toBeInTheDocument();
-    expect(within(countCard).getByText('3')).toBeInTheDocument();
-    expect(within(countCard).getByText(/saved fixture student records/i)).toBeInTheDocument();
     expect(screen.queryByText(/mara@example.edu/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Mara Santos/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Announcements' }));
+    expect(frame).toHaveClass('w-[min(1120px,100%)]', 'min-w-0');
+    expect(screen.queryByRole('region', { name: /Registered students from this department/i })).not.toBeInTheDocument();
+    const announcementsPanel = screen.getByRole('tabpanel', { name: 'Announcements' });
+    const postAction = within(announcementsPanel).getByRole('button', { name: 'Post announcement' });
+    expect(postAction.closest('header')).toContainElement(postAction);
+    expect(within(screen.getByRole('heading', { name: /Organization settings/i }).closest('section')!).queryByRole('button', { name: 'Post announcement' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Dates & availability' }));
+    expect(frame).toHaveClass('w-[min(1120px,100%)]', 'min-w-0');
+    expect(screen.queryByRole('region', { name: /Registered students from this department/i })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('tabpanel', { name: 'Dates & availability' })).getByRole('button', { name: /Add dated entry/i })).toBeInTheDocument();
   });
 
   it('copies stable announcement direct links and focuses a deep-linked announcement', async () => {
