@@ -47,7 +47,7 @@ export function DirectoryView({ session, client }: { session: UserSession; clien
       {!loading && !error && data && data.length > 0 && filtered.length === 0 ? (
         <EmptyState title="No organizations match this search">Clear the search or try a different organization name.</EmptyState>
       ) : null}
-      <section className="grid grid-cols-3 gap-[18px] max-lg:grid-cols-2 max-[820px]:grid-cols-1" aria-label="Organization directory results">
+      <section className="grid min-w-0 grid-cols-1 gap-[18px] md:grid-cols-2 xl:grid-cols-3" aria-label="Organization directory results">
         {filtered.map((organization) => {
           const organizationPath = `/app/organizations/${organization.id}`;
           return (
