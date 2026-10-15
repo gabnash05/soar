@@ -125,6 +125,9 @@ function seedComments() {
   fakeDb.docs.set('accounts/student3', { uid: 'student3', role: 'student', displayName: 'Student Three', department: 'Civil Engineering Department', departmentKey: 'civil engineering department' });
   fakeDb.docs.set('accounts/student4', { uid: 'student4', role: 'student', displayName: 'Legacy Student' });
   fakeDb.docs.set('accounts/sponsor1', { uid: 'sponsor1', role: 'sponsor', displayName: 'Sponsor', companyName: 'Sponsor Co' });
+  fakeDb.docs.set('accounts/author', { uid: 'author', role: 'student', displayName: 'Author User', email: 'author@example.test' });
+  fakeDb.docs.set('accounts/other', { uid: 'other', role: 'sponsor', displayName: 'Other User', email: 'other@example.test', companyName: 'Private Co' });
+  fakeDb.docs.set('organizations/org1/officerGrants/author', { uid: 'author', status: 'active' });
   fakeDb.docs.set('announcements/post1', {
     announcementId: 'post1',
     orgId: 'org1',
@@ -173,6 +176,52 @@ describe('announcement comment ownership service behavior', () => {
     await expect(updateAnnouncementComment(user('other'), 'post1', 'comment1', { body: 'Nope' })).rejects.toMatchObject({ code: 'comment_owner_required' });
     await expect(deleteAnnouncementComment(user('other'), 'post1', 'comment1')).rejects.toMatchObject({ code: 'comment_owner_required' });
     expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(2);
+  });
+
+  it('returns trusted author roles from saved accounts and only the comment organization grant', async () => {
+    const { listAnnouncementComments } = await import('../service');
+    fakeDb.docs.set('announcements/post2', { announcementId: 'post2', orgId: 'org2', body: 'Other organization', deletedAt: null, commentCount: 1 });
+    fakeDb.docs.set('announcements/post2/comments/comment3', {
+      commentId: 'comment3',
+      announcementId: 'post2',
+      authorUid: 'author',
+      authorName: 'Author User',
+      body: 'Different organization',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now()
+    });
+
+    const comments = await listAnnouncementComments(user('viewer'), 'post1', {});
+    expect(comments.items[0]).toMatchObject({ authorAccountKind: 'student', authorOrganizationRole: 'approved_officer' });
+    expect(comments.items[0]).not.toHaveProperty('email');
+    expect(comments.items[1]).toMatchObject({ authorAccountKind: 'sponsor' });
+    expect(comments.items[1]).not.toHaveProperty('authorOrganizationRole');
+    expect(comments.items[1]).not.toHaveProperty('companyName');
+
+    const otherOrganizationComments = await listAnnouncementComments(user('viewer'), 'post2', {});
+    expect(otherOrganizationComments.items[0]).toMatchObject({ authorAccountKind: 'student' });
+    expect(otherOrganizationComments.items[0]).not.toHaveProperty('authorOrganizationRole');
+
+    fakeDb.docs.set('organizations/org1/officerGrants/author', { uid: 'author', status: 'revoked' });
+    const revokedGrantComments = await listAnnouncementComments(user('viewer'), 'post1', {});
+    expect(revokedGrantComments.items[0]).not.toHaveProperty('authorOrganizationRole');
+  });
+
+  it('returns trusted account kind on comment creation without exposing private account fields', async () => {
+    const { addAnnouncementComment } = await import('../service');
+    const created = await addAnnouncementComment(user('student1'), 'post1', { body: 'A saved-account comment.' });
+
+    expect(created).toMatchObject({ authorAccountKind: 'student', viewerCanEdit: true, viewerCanDelete: true });
+    expect(created).not.toHaveProperty('email');
+    expect(created).not.toHaveProperty('department');
+  });
+
+  it('keeps raw pagination values when scoping date-entry queries for the service parser', async () => {
+    const { scopedDateEntryQuery } = await import('../service');
+    const { dateEntryQuerySchema } = await import('../validation');
+    const query = scopedDateEntryQuery('org1', { limit: '20', pageToken: '0' });
+
+    expect(dateEntryQuerySchema.parse(query)).toMatchObject({ organizationId: 'org1', limit: 20, pageToken: 0 });
   });
 
   it('returns only the authorized organization department registered-student count', async () => {

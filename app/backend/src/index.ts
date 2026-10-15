@@ -4,7 +4,7 @@ import { createApiApp } from './http/api';
 
 setGlobalOptions({ region: process.env.SOAR_FUNCTION_REGION ?? 'asia-southeast1', maxInstances: 10 });
 
-export const api = onRequest(createApiApp());
+export const api = onRequest({ cors: false }, createApiApp());
 
 export { createPaidAccountFromConfirmedRegistration } from './identity/registration';
 export { assignInitialOrganizationOwner, approveOfficerGrant, revokeOfficerGrant } from './organizations/service';

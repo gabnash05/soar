@@ -28,8 +28,7 @@ import {
   mediaTargetRequestSchema,
   normalizedName,
   organizationListQuerySchema,
-  organizationProfileUpdateSchema,
-  paginationSchema
+  organizationProfileUpdateSchema
 } from './validation';
 
 interface Page<T> {
@@ -175,13 +174,25 @@ function dateEntryFromDoc(data: DocumentData) {
   };
 }
 
-function commentFromDoc(data: DocumentData, viewerUid?: string) {
+async function commentFromDoc(data: DocumentData, viewerUid?: string, organizationId?: string) {
   const ownsComment = Boolean(viewerUid && data.authorUid === viewerUid);
+  const authorUid = typeof data.authorUid === 'string' ? data.authorUid : '';
+  const authorAccount = authorUid ? await db.doc(`accounts/${authorUid}`).get() : undefined;
+  const savedRole = authorAccount?.data()?.role;
+  const authorAccountKind: 'student' | 'sponsor' | undefined = savedRole === 'student' || savedRole === 'sponsor' ? savedRole : undefined;
+  const officerGrant = authorAccountKind === 'student' && organizationId
+    ? await db.doc(officerGrantPath(organizationId, authorUid)).get()
+    : undefined;
+  const authorOrganizationRole: 'approved_officer' | undefined = officerGrant?.exists && officerGrant.data()?.status === 'active'
+    ? 'approved_officer'
+    : undefined;
   return {
     id: data.commentId,
     commentId: data.commentId,
     announcementId: data.announcementId,
     authorName: data.authorName,
+    ...(authorAccountKind ? { authorAccountKind } : {}),
+    ...(authorOrganizationRole ? { authorOrganizationRole } : {}),
     body: data.body,
     viewerCanEdit: ownsComment,
     viewerCanDelete: ownsComment,
@@ -485,7 +496,7 @@ export async function setAnnouncementLike(user: DecodedIdToken, announcementIdPa
   return announcementFromDoc(snap.data() ?? {}, nextLiked);
 }
 
-export async function listAnnouncementComments(user: DecodedIdToken, announcementIdParam: string, rawQuery: unknown): Promise<Page<ReturnType<typeof commentFromDoc>>> {
+export async function listAnnouncementComments(user: DecodedIdToken, announcementIdParam: string, rawQuery: unknown): Promise<Page<Awaited<ReturnType<typeof commentFromDoc>>>> {
   await requireReadableUser(user);
   const announcementId = routeDocumentId(announcementIdParam, 'announcement');
   const query = commentQuerySchema.parse(rawQuery);
@@ -494,7 +505,8 @@ export async function listAnnouncementComments(user: DecodedIdToken, announcemen
     throw new AppError('announcement_missing', 'The announcement was not found.', 404);
   }
   const snap = await offsetQuery(announcement.ref.collection('comments').orderBy('createdAt', 'asc'), query.pageToken, query.limit).get();
-  const items = snap.docs.map((doc) => commentFromDoc(doc.data(), user.uid));
+  const organizationId = typeof announcement.data()?.orgId === 'string' ? announcement.data()?.orgId as string : undefined;
+  const items = await Promise.all(snap.docs.map((doc) => commentFromDoc(doc.data(), user.uid, organizationId)));
   return { items: pageItems(items, query.limit), nextPageToken: pageToken(query.pageToken, items.length, query.limit) };
 }
 
@@ -521,8 +533,9 @@ export async function addAnnouncementComment(user: DecodedIdToken, announcementI
     });
     tx.update(announcementRef, { commentCount: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() });
   });
-  const snap = await commentRef.get();
-  return commentFromDoc(snap.data() ?? {}, user.uid);
+  const [snap, announcementSnap] = await Promise.all([commentRef.get(), announcementRef.get()]);
+  const organizationId = typeof announcementSnap.data()?.orgId === 'string' ? announcementSnap.data()?.orgId as string : undefined;
+  return commentFromDoc(snap.data() ?? {}, user.uid, organizationId);
 }
 
 export async function updateAnnouncementComment(user: DecodedIdToken, announcementIdParam: string, commentIdParam: string, rawBody: unknown) {
@@ -549,8 +562,9 @@ export async function updateAnnouncementComment(user: DecodedIdToken, announceme
     tx.update(announcementRef, { updatedAt: FieldValue.serverTimestamp() });
   });
 
-  const snap = await commentRef.get();
-  return commentFromDoc(snap.data() ?? {}, user.uid);
+  const [snap, announcementSnap] = await Promise.all([commentRef.get(), announcementRef.get()]);
+  const organizationId = typeof announcementSnap.data()?.orgId === 'string' ? announcementSnap.data()?.orgId as string : undefined;
+  return commentFromDoc(snap.data() ?? {}, user.uid, organizationId);
 }
 
 export async function deleteAnnouncementComment(user: DecodedIdToken, announcementIdParam: string, commentIdParam: string) {
@@ -669,6 +683,8 @@ export async function deleteDateEntry(user: DecodedIdToken, orgIdParam: string, 
 }
 
 export function scopedDateEntryQuery(orgId: string, rawQuery: unknown): unknown {
-  const parsed = paginationSchema.extend({ kind: dateEntryQuerySchema.shape.kind }).parse(rawQuery);
-  return { ...parsed, organizationId: routeOrgId(orgId) };
+  const query = typeof rawQuery === 'object' && rawQuery !== null && !Array.isArray(rawQuery)
+    ? rawQuery as Record<string, unknown>
+    : {};
+  return { ...query, organizationId: routeOrgId(orgId) };
 }
