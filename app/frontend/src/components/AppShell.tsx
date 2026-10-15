@@ -55,6 +55,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
 
   const accessTone = activeAccess ? 'approved' : session.access.status === 'expired' ? 'attention' : 'danger';
   const accessLabel = activeAccess ? 'Active access' : session.access.status === 'expired' ? 'Expired access' : 'Access locked';
+  const sidebarRole = session.accountKind === 'sponsor' ? 'Sponsor' : officer ? 'Officer' : 'Student';
 
   return (
     <div className="min-h-screen bg-[var(--color-off-white)] pb-0 text-[var(--color-ink)]">
@@ -85,8 +86,8 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
       <div className="mx-auto grid w-[min(1480px,100%)] grid-cols-[248px_minmax(0,1fr)] max-lg:grid-cols-1">
         <aside
           className={cn(
-            'sticky top-[72px] flex min-h-[calc(100vh-72px)] flex-col gap-4 self-start bg-[var(--color-navy)] bg-[image:var(--gradient-brand-quiet)] px-3.5 py-5.5 text-white',
-            'max-lg:fixed max-lg:inset-[72px_auto_0_0] max-lg:z-[35] max-lg:w-[min(300px,86vw)] max-lg:-translate-x-[105%] max-lg:shadow-[var(--shadow-floating)] max-lg:transition-transform max-lg:duration-200 max-lg:ease-out max-sm:inset-[64px_auto_0_0]',
+            'sticky top-[72px] flex h-[calc(100dvh-72px)] min-h-0 flex-col gap-4 self-start overflow-y-auto overscroll-contain bg-[var(--color-navy)] bg-[image:var(--gradient-brand-quiet)] px-3.5 py-5.5 text-white',
+            'max-lg:fixed max-lg:inset-[72px_auto_0_0] max-lg:z-[35] max-lg:h-auto max-lg:min-h-0 max-lg:w-[min(300px,86vw)] max-lg:overflow-y-auto max-lg:-translate-x-[105%] max-lg:shadow-[var(--shadow-floating)] max-lg:transition-transform max-lg:duration-200 max-lg:ease-out max-sm:inset-[64px_auto_0_0]',
             mobileOpen && 'max-lg:translate-x-0',
           )}
           id="app-sidebar"
@@ -95,14 +96,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
             <SoarLogo />
             <div>
               <strong>{session.displayName}</strong>
-              {gateway.mode === 'fixture' ? (
-                <small aria-label="Demo persona roles">
-                  <span>Demo persona</span>
-                  <span>{session.accountKind === 'student' ? 'Student' : 'Sponsor'}{officer ? ' + scoped officer' : ''}</span>
-                </small>
-              ) : (
-                <small>{session.email}</small>
-              )}
+              <small className="mt-0.5 block text-xs text-white/70" aria-label={sidebarRole}>{sidebarRole}</small>
             </div>
           </div>
           {!session.emailVerified ? (
@@ -111,7 +105,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
           {!activeAccess ? (
             <div className="rounded-[var(--radius-md)] bg-white/10 p-3 text-[13px] text-white/80">Main SOAR pages are locked until PHP10 six-month access is active.</div>
           ) : null}
-          <nav className="grid gap-1 [&_a]:flex [&_a]:min-h-11 [&_a]:items-center [&_a]:rounded-lg [&_a]:px-3 [&_a]:font-bold [&_a]:text-white/70 [&_a]:no-underline hover:[&_a]:bg-white/10 hover:[&_a]:text-white [&_a.active]:bg-white/10 [&_a.active]:text-white" aria-label="SOAR sections">
+          <nav className="grid gap-1 [&_a]:flex [&_a]:min-h-11 [&_a]:items-center [&_a]:rounded-lg [&_a]:border-l-2 [&_a]:border-transparent [&_a]:px-3 [&_a]:font-bold [&_a]:text-white/70 [&_a]:no-underline" aria-label="SOAR sections">
             {navRoutes.map((route) => {
               const to = resolveRouteTo(route.to);
               return (
@@ -120,7 +114,12 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
                   to={to}
                   end={route.to === '/app'}
                   onClick={() => setMobileOpen(false)}
-                  className={({ isActive }) => (isActive ? 'active' : undefined)}
+                  className={({ isActive }) =>
+                    cn(
+                      'hover:bg-white/10 hover:text-white',
+                      isActive && 'active border-[var(--color-gold)] bg-white/15 text-white',
+                    )
+                  }
                 >
                   {route.label}
                 </NavLink>
