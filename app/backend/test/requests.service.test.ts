@@ -244,6 +244,9 @@ describe('request service meeting workflow', () => {
     expect(studentMeeting.status).toBe('Pending');
     expect(sponsorMeeting.status).toBe('Pending');
     expect(store.meetings.size).toBe(2);
+    expect(store.meetings.get(studentMeeting.id)).not.toHaveProperty('document');
+    expect(store.meetings.get(sponsorMeeting.id)).not.toHaveProperty('note');
+    expect(store.meetings.get(sponsorMeeting.id)).not.toHaveProperty('document');
   });
 
   it('creates validated private PDF document targets and stores matching request metadata', async () => {

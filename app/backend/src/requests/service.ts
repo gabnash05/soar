@@ -333,8 +333,8 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
         requestedDate: input.requestedDate,
         requestedTime: input.requestedTime,
         status: 'Pending',
-        note: input.note,
-        document: input.document,
+        ...(input.note !== undefined ? { note: input.note } : {}),
+        ...(input.document !== undefined ? { document: input.document } : {}),
         createdAt: now,
         updatedAt: now
       };
