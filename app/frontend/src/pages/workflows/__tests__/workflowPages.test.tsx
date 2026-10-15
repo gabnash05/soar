@@ -1,10 +1,10 @@
 import type { ReactElement } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
-import type { WorkflowDataClient } from '../contracts';
+import type { AnnouncementPage, WorkflowDataClient, WorkflowQueryResult } from '../contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
 import { DirectoryView } from '../DirectoryPage';
@@ -280,6 +280,115 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByText(/Open organization profile/i)).not.toBeInTheDocument();
   });
 
+  it('loads announcement pages on demand with the server cursor and de-duplicates appended posts', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+    const first = Array.from({ length: 15 }, (_, index) => post(`post-${index}`, `Post body ${index}`));
+    const second = [post('post-14', 'Duplicate'), post('post-15', 'Post body 15')];
+    const listAnnouncements = vi.fn()
+      .mockResolvedValueOnce({ data: { items: first, nextPageToken: 'cursor-15' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: second }, source: 'fixture' });
+    const client = { ...base, listAnnouncements };
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+
+    expect(await screen.findByText('Post body 14')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(1);
+    expect(listAnnouncements).toHaveBeenNthCalledWith(1, studentSession, { limit: 15 });
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Post body 15')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenNthCalledWith(2, studentSession, { limit: 15, pageToken: 'cursor-15' });
+    expect(screen.queryAllByText('Duplicate')).toHaveLength(0);
+    expect(screen.getByText('You’re all caught up.')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores a late page response after the feed session changes', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+    let resolveNextPage: (result: WorkflowQueryResult<AnnouncementPage>) => void = () => undefined;
+    const pendingNextPage = new Promise<WorkflowQueryResult<AnnouncementPage>>((resolve) => { resolveNextPage = resolve; });
+    const oldList = vi.fn()
+      .mockResolvedValueOnce({ data: { items: [post('old-context', 'Old context post')], nextPageToken: 'old-cursor' }, source: 'fixture' })
+      .mockReturnValueOnce(pendingNextPage);
+    const newList = vi.fn().mockResolvedValue({ data: { items: [post('new-context', 'New context post')] }, source: 'fixture' });
+    const oldClient = { ...base, listAnnouncements: oldList };
+    const newClient = { ...base, listAnnouncements: newList };
+    const rendered = renderInRouter(<FeedView session={studentSession} client={oldClient} />);
+
+    expect(await screen.findByText('Old context post')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(oldList).toHaveBeenCalledTimes(2);
+    rendered.rerender(<MemoryRouter><FeedView session={{ ...studentSession, uid: 'student-next' }} client={newClient} /></MemoryRouter>);
+    expect(await screen.findByText('New context post')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveNextPage({ data: { items: [post('stale-page', 'Stale page item')] }, source: 'fixture' });
+      await pendingNextPage;
+    });
+    expect(screen.queryByText('Stale page item')).not.toBeInTheDocument();
+    expect(screen.getByText('New context post')).toBeInTheDocument();
+  });
+
+  it('loads the next page when the announcement sentinel intersects', async () => {
+    const previousObserver = globalThis.IntersectionObserver;
+    const observers: Array<{ trigger: () => void }> = [];
+    class ObserverMock {
+      root: Element | Document | null = null;
+      rootMargin: string;
+      thresholds: number[] = [];
+      target?: Element;
+      constructor(private readonly callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        this.rootMargin = options?.rootMargin ?? '0px';
+        observers.push(this);
+      }
+      observe(target: Element) { this.target = target; }
+      unobserve() {}
+      disconnect() {}
+      takeRecords(): IntersectionObserverEntry[] { return []; }
+      trigger() {
+        this.callback([{ isIntersecting: true, target: this.target } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+      }
+    }
+    Object.defineProperty(globalThis, 'IntersectionObserver', { configurable: true, value: ObserverMock });
+    try {
+      const base = createFixtureWorkflowDataClient();
+      const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+      const listAnnouncements = vi.fn()
+        .mockResolvedValueOnce({ data: { items: [post('first-page', 'First page post')], nextPageToken: 'cursor-next' }, source: 'fixture' })
+        .mockResolvedValueOnce({ data: { items: [post('second-page', 'Observer loaded post')] }, source: 'fixture' });
+      renderInRouter(<FeedView session={studentSession} client={{ ...base, listAnnouncements }} />);
+      expect(await screen.findByText('First page post')).toBeInTheDocument();
+      expect(observers.length).toBeGreaterThan(0);
+      await act(async () => { observers[0].trigger(); });
+      expect(await screen.findByText('Observer loaded post')).toBeInTheDocument();
+      expect(listAnnouncements).toHaveBeenCalledTimes(2);
+    } finally {
+      if (previousObserver) Object.defineProperty(globalThis, 'IntersectionObserver', { configurable: true, value: previousObserver });
+      else Reflect.deleteProperty(globalThis, 'IntersectionObserver');
+    }
+  });
+
+  it('preserves loaded announcements when a next-page request fails and retries that cursor', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+    const original = { data: { items: [post('kept-post', 'Keep this loaded announcement')], nextPageToken: 'cursor-next' }, source: 'fixture' as const };
+    const listAnnouncements = vi.fn()
+      .mockResolvedValueOnce(original)
+      .mockRejectedValueOnce(new Error('Temporary network issue'))
+      .mockResolvedValueOnce({ data: { items: [], nextPageToken: undefined }, source: 'fixture' });
+    const client = { ...base, listAnnouncements };
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+    expect(await screen.findByText('Keep this loaded announcement')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Temporary network issue/i);
+    expect(screen.getByText('Keep this loaded announcement')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry loading announcements' }));
+    await waitFor(() => expect(screen.getByText('You’re all caught up.')).toBeInTheDocument());
+    expect(listAnnouncements).toHaveBeenNthCalledWith(2, studentSession, { limit: 15, pageToken: 'cursor-next' });
+    expect(listAnnouncements).toHaveBeenNthCalledWith(3, studentSession, { limit: 15, pageToken: 'cursor-next' });
+  });
+
   it('keeps public organization profiles public-facing even for managers', async () => {
     renderInRouter(<OrganizationView organizationId="robotics" session={officerSession} client={createFixtureWorkflowDataClient()} />);
 
@@ -474,7 +583,7 @@ describe('SOAR workflow pages', () => {
     const client: WorkflowDataClient = {
       ...fixtureClient,
       listAnnouncements: async () => ({
-        data: [{
+        data: { items: [{
           id: 'persisted-comment-post',
           organizationId: 'robotics',
           organizationName: 'Computer Engineering Department',
@@ -484,7 +593,7 @@ describe('SOAR workflow pages', () => {
           viewerHasLiked: false,
           commentCount: 1,
           comments: [],
-        }],
+        }] },
         source: 'production',
       }),
       listAnnouncementComments: vi.fn(async () => ({

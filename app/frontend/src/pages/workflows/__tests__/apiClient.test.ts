@@ -84,6 +84,29 @@ describe('production announcement media payloads', () => {
     mocks.storageDownloadUrl.mockResolvedValue('https://storage.test/announcement.png');
   });
 
+  it('requests announcement pages with a bounded size and forwards the server cursor', async () => {
+    mocks.apiFetch
+      .mockResolvedValueOnce({
+        items: [{ id: 'page-one', orgId: 'org-test', organizationName: 'Test Organization', body: 'First page', createdAt: '2026-10-15T00:00:00.000Z' }],
+        nextPageToken: 'cursor-15',
+      })
+      .mockResolvedValueOnce({
+        items: [{ id: 'page-two', orgId: 'org-test', organizationName: 'Test Organization', body: 'Second page', createdAt: '2026-10-14T00:00:00.000Z' }],
+      });
+    const client = createProductionWorkflowDataClient();
+
+    const first = await client.listAnnouncements(session, { limit: 15 });
+    const second = await client.listAnnouncements(session, { limit: 15, pageToken: first.data.nextPageToken });
+
+    expect(first.data.items.map((item) => item.id)).toEqual(['page-one']);
+    expect(first.data.nextPageToken).toBe('cursor-15');
+    expect(second.data.items.map((item) => item.id)).toEqual(['page-two']);
+    expect(mocks.apiFetch.mock.calls.map(([path]) => path)).toEqual([
+      '/announcements?limit=15',
+      '/announcements?limit=15&pageToken=cursor-15',
+    ]);
+  });
+
   it('sends the uploaded Storage references once under media, not as both media and legacy image', async () => {
     mockAnnouncementApi();
     mocks.uploadToStorageTarget.mockImplementation(async (
