@@ -66,6 +66,7 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
   const [confirmSaveError, setConfirmSaveError] = useState<string | null>(null);
   const [approvalPassword, setApprovalPassword] = useState('');
   const savingRef = useRef(false);
+  const fixtureApproval = import.meta.env.VITE_SOAR_USE_FIXTURES === 'true' && client.mode === 'fixture';
   const dirty = profileInputDirty(form, dashboard);
 
   useEffect(() => {
@@ -94,14 +95,18 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
 
   const confirmSave = async (event: FormEvent) => {
     event.preventDefault();
-    if (savingRef.current || !approvalPassword) return;
+    if (savingRef.current || (!fixtureApproval && !approvalPassword)) return;
     savingRef.current = true;
     setBusy(true);
     setConfirmSaveError(null);
     try {
-      const verification = reauthenticate(approvalPassword, session.uid);
-      setApprovalPassword('');
-      await verification;
+      if (fixtureApproval) {
+        setApprovalPassword('');
+      } else {
+        const verification = reauthenticate(approvalPassword, session.uid);
+        setApprovalPassword('');
+        await verification;
+      }
       const next = await client.saveOrganizationProfile(form, session);
       setResult(next);
       if (next.ok) {
@@ -179,27 +184,31 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
       <ModalDialog
         open={confirmSaveOpen}
         title="Approve organization changes"
-        description={`Enter your sign-in password to approve and save changes to ${dashboard.organization.name}. Your password is used only to reauthenticate your account and is never sent with the organization update.`}
+        description={fixtureApproval
+          ? 'This simulated preview uses local approval only. It does not request a real password or contact Firebase, account, or payment services.'
+          : `Enter your sign-in password to approve and save changes to ${dashboard.organization.name}. Your password is used only to reauthenticate your account and is never sent with the organization update.`}
         onClose={cancelApproval}
       >
         <form className="grid gap-4" onSubmit={confirmSave}>
-          <div className="grid min-w-0 gap-1.5">
-            <label className="text-[13px] font-bold text-[var(--color-navy)]" htmlFor="organization-approval-password">Password</label>
-            <input
-              id="organization-approval-password"
-              className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={approvalPassword}
-              onChange={(event) => { setApprovalPassword(event.target.value); setConfirmSaveError(null); }}
-              disabled={busy}
-            />
-          </div>
+          {!fixtureApproval ? (
+            <div className="grid min-w-0 gap-1.5">
+              <label className="text-[13px] font-bold text-[var(--color-navy)]" htmlFor="organization-approval-password">Password</label>
+              <input
+                id="organization-approval-password"
+                className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={approvalPassword}
+                onChange={(event) => { setApprovalPassword(event.target.value); setConfirmSaveError(null); }}
+                disabled={busy}
+              />
+            </div>
+          ) : null}
           {confirmSaveError ? <p className="m-0 text-sm font-bold text-[var(--color-orange-deep)]" role="alert">{confirmSaveError}</p> : null}
           <div className="flex flex-wrap justify-end gap-2 max-sm:[&>button]:w-full">
             <Button type="button" variant="secondary" disabled={busy} onClick={cancelApproval}>Cancel</Button>
-            <Button type="submit" variant="primary" disabled={busy || !approvalPassword}>{busy ? 'Verifying…' : 'Approve and save changes'}</Button>
+            <Button type="submit" variant="primary" disabled={busy || (!fixtureApproval && !approvalPassword)}>{busy ? (fixtureApproval ? 'Saving simulated changes…' : 'Verifying…') : fixtureApproval ? 'Approve simulated changes' : 'Approve and save changes'}</Button>
           </div>
         </form>
       </ModalDialog>

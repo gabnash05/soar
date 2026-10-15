@@ -374,6 +374,34 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
   });
 
+  it('uses password-free local approval for simulated fixture profile edits', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    const reauthenticate = vi.fn(async (_password: string, _expectedUid: string) => undefined);
+    client.saveOrganizationProfile = saveProfile;
+    vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'true');
+    try {
+      renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
+      const nameInput = await screen.findByLabelText(/^Organization name$/i);
+      await user.type(nameInput, ' Preview');
+      await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+
+      const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
+      expect(dialog).toHaveTextContent(/simulated preview uses local approval only/i);
+      expect(within(dialog).queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
+      expect(client.mode).toBe('fixture');
+      await user.click(within(dialog).getByRole('button', { name: /^Approve simulated changes$/i }));
+
+      await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+      expect(reauthenticate).not.toHaveBeenCalled();
+      expect(saveProfile.mock.calls[0]?.[0]).not.toHaveProperty('password');
+      expect(await screen.findByText(/Organization profile saved in demo mode/i)).toBeInTheDocument();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('preserves profile drafts on rejected password, clears the input, and lets the user cancel', async () => {
     const user = userEvent.setup();
     const client = createFixtureWorkflowDataClient();
