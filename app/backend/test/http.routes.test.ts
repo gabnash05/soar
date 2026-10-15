@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
   updateDisplayName: vi.fn(),
   requestVerifiedEmailChange: vi.fn(),
   approveOfficerGrant: vi.fn(),
+  assignAdminOfficerGrant: vi.fn(),
   assignInitialOrganizationOwner: vi.fn(),
+  listAdminOrganizations: vi.fn(),
+  searchAdminStudents: vi.fn(),
   revokeOfficerGrant: vi.fn(),
   attachAuthToPaymentRequest: vi.fn((req: unknown) => req),
   sendPaymentResult: vi.fn(async (res: any, resultPromise: Promise<any>) => {
@@ -64,8 +67,11 @@ vi.mock('../src/identity/accountSettings', () => ({
 }));
 vi.mock('../src/organizations/service', () => ({
   approveOfficerGrant: mocks.approveOfficerGrant,
+  assignAdminOfficerGrant: mocks.assignAdminOfficerGrant,
   assignInitialOrganizationOwner: mocks.assignInitialOrganizationOwner,
+  listAdminOrganizations: mocks.listAdminOrganizations,
   revokeOfficerGrant: mocks.revokeOfficerGrant,
+  searchAdminStudents: mocks.searchAdminStudents,
 }));
 vi.mock('../src/paymentsAdapter', () => ({
   attachAuthToPaymentRequest: mocks.attachAuthToPaymentRequest,
@@ -244,6 +250,78 @@ describe('SOAR HTTP route contracts', () => {
     expect(mocks.createAnnouncementMediaTargets).toHaveBeenCalled();
     expect(mocks.updateAnnouncementComment).toHaveBeenCalled();
     expect(mocks.deleteAnnouncementComment).toHaveBeenCalled();
+  });
+
+  it('keeps admin provisioning routes behind the trusted soarAdmin claim', async () => {
+    mocks.requireBearerToken.mockRejectedValueOnce(new AppError('unauthenticated', 'Sign in is required.', 401));
+
+    await withApiServer(async (baseUrl) => {
+      const publicSearch = await fetch(`${baseUrl}/api/admin/students?q=Mara`);
+      expect(publicSearch.status).toBe(401);
+
+      const ordinarySearch = await fetch(`${baseUrl}/api/admin/students?q=Mara`, { headers: { authorization: 'Bearer test-token' } });
+      expect(ordinarySearch.status).toBe(403);
+      const ordinaryOrganizations = await fetch(`${baseUrl}/api/admin/organizations`, { headers: { authorization: 'Bearer test-token' } });
+      expect(ordinaryOrganizations.status).toBe(403);
+      const ordinaryAssignment = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ uid: 'student-1' }),
+      });
+      expect(ordinaryAssignment.status).toBe(403);
+      const ordinaryCreate = await fetch(`${baseUrl}/api/admin/organizations`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      expect(ordinaryCreate.status).toBe(403);
+    });
+
+    expect(mocks.searchAdminStudents).not.toHaveBeenCalled();
+    expect(mocks.listAdminOrganizations).not.toHaveBeenCalled();
+    expect(mocks.assignAdminOfficerGrant).not.toHaveBeenCalled();
+    expect(mocks.assignInitialOrganizationOwner).not.toHaveBeenCalled();
+  });
+
+  it('serves bounded admin student and organization results and idempotent scoped grants', async () => {
+    mocks.requireBearerToken.mockResolvedValue({ uid: 'trusted-admin', email_verified: true, soarAdmin: true });
+    mocks.searchAdminStudents.mockResolvedValue({ items: [{ uid: 'student-1', displayName: 'Mara Santos' }] });
+    mocks.listAdminOrganizations.mockResolvedValue({ items: [{ id: 'robotics', name: 'Robotics Club' }] });
+    mocks.assignInitialOrganizationOwner.mockResolvedValue({ orgId: 'robotics' });
+    mocks.assignAdminOfficerGrant.mockResolvedValue({ orgId: 'robotics', uid: 'student-1', status: 'approved', alreadyAssigned: true });
+
+    await withApiServer(async (baseUrl) => {
+      const students = await fetch(`${baseUrl}/api/admin/students?q=Mara`, { headers: { authorization: 'Bearer test-token' } });
+      expect(students.status).toBe(200);
+      await expect(students.json()).resolves.toEqual({ items: [{ uid: 'student-1', displayName: 'Mara Santos' }] });
+
+      const organizations = await fetch(`${baseUrl}/api/admin/organizations`, { headers: { authorization: 'Bearer test-token' } });
+      expect(organizations.status).toBe(200);
+      await expect(organizations.json()).resolves.toEqual({ items: [{ id: 'robotics', name: 'Robotics Club' }] });
+
+      const created = await fetch(`${baseUrl}/api/admin/organizations`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ orgId: 'robotics', name: 'Robotics Club', slug: 'robotics', ownerUid: 'student-1' }),
+      });
+      expect(created.status).toBe(201);
+
+      const assignment = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ uid: 'student-1' }),
+      });
+      expect(assignment.status).toBe(200);
+      await expect(assignment.json()).resolves.toMatchObject({ alreadyAssigned: true });
+    });
+
+    expect(mocks.searchAdminStudents).toHaveBeenCalledWith({ q: 'Mara' });
+    expect(mocks.listAdminOrganizations).toHaveBeenCalledWith({});
+    expect(mocks.assignInitialOrganizationOwner).toHaveBeenCalledWith(
+      { orgId: 'robotics', name: 'Robotics Club', slug: 'robotics', ownerUid: 'student-1' },
+      'trusted-admin',
+    );
+    expect(mocks.assignAdminOfficerGrant).toHaveBeenCalledWith('robotics', { uid: 'student-1' }, 'trusted-admin');
   });
 
   it('mounts request workflow routes with explicit application confirmation', async () => {

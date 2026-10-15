@@ -5,7 +5,14 @@ import { AppError, assertAppError } from '../errors';
 import { requireBearerToken } from './auth';
 import { getUserSession } from '../identity/session';
 import { requestVerifiedEmailChange, updateDisplayName } from '../identity/accountSettings';
-import { approveOfficerGrant, assignInitialOrganizationOwner, revokeOfficerGrant } from '../organizations/service';
+import {
+  approveOfficerGrant,
+  assignAdminOfficerGrant,
+  assignInitialOrganizationOwner,
+  listAdminOrganizations,
+  revokeOfficerGrant,
+  searchAdminStudents
+} from '../organizations/service';
 import { attachAuthToPaymentRequest, paymentHandlers, sendPaymentResult } from '../paymentsAdapter';
 import {
   addAnnouncementComment,
@@ -251,9 +258,24 @@ export function createApiApp() {
     res.json(await revokeOfficerGrant(user, getParam(req, 'orgId'), getParam(req, 'uid')));
   }));
 
+  app.get(['/admin/organizations', '/api/admin/organizations'], asyncRoute(async (req, res) => {
+    await requireAdmin(req);
+    res.json(await listAdminOrganizations(req.query));
+  }));
+
+  app.get(['/admin/students', '/api/admin/students'], asyncRoute(async (req, res) => {
+    await requireAdmin(req);
+    res.json(await searchAdminStudents(req.query));
+  }));
+
   app.post(['/admin/organizations', '/api/admin/organizations'], asyncRoute(async (req, res) => {
     const admin = await requireAdmin(req);
     res.status(201).json(await assignInitialOrganizationOwner(req.body, admin.uid));
+  }));
+
+  app.post(['/admin/organizations/:orgId/officer-grants', '/api/admin/organizations/:orgId/officer-grants'], asyncRoute(async (req, res) => {
+    const admin = await requireAdmin(req);
+    res.json(await assignAdminOfficerGrant(getParam(req, 'orgId'), req.body, admin.uid));
   }));
 
   mountRequestRoutes(app, asyncRoute);

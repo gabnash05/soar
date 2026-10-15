@@ -68,7 +68,7 @@ const normalizeAccess = (access: RawAccess): AccessEntitlement => {
 type RawUserSession = Omit<UserSession, 'accountKind'> & { accountKind?: string };
 
 const normalizeAccountKind = (accountKind: string | undefined): UserSession['accountKind'] =>
-  accountKind === 'sponsor' ? 'sponsor' : 'student';
+  accountKind === 'admin' ? 'admin' : accountKind === 'sponsor' ? 'sponsor' : 'student';
 
 const mapSession = (session: RawUserSession): UserSession => ({
   ...session,
