@@ -206,17 +206,16 @@ export function DateEntryList({ title, entries, emptyCopy }: { title: string; en
     <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)]">
       <TabSectionHeader title={title} />
       {entries.length ? (
-        <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
+        <ul className="m-0 grid list-none gap-0 p-0">
           {entries.map((entry) => (
-            <li key={entry.id}>
-              <div className="grid size-[50px] shrink-0 place-items-center rounded-xl bg-[var(--color-gold-soft)] text-center font-[var(--font-display)] text-[0.72rem] font-extrabold uppercase leading-[1.15] text-[var(--color-navy)]" aria-hidden="true">
-                {entry.kind === 'event' ? 'EVT' : 'REQ'}
-              </div>
+            <li key={entry.id} className="flex min-w-0 items-center gap-2.5 border-b border-[var(--color-border)] py-3 max-[820px]:items-start">
               <div className="min-w-0 flex-1 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:mt-0.5 [&_span]:block [&_span]:[overflow-wrap:anywhere] [&_span]:text-[0.88rem] [&_span]:text-[var(--muted-foreground)]">
                 <strong>{entry.title}</strong>
                 <span>{formatDateEntry(entry)} · {entry.details}</span>
               </div>
-              <StatusChip tone={entry.kind === 'event' ? 'neutral' : 'info'}>{entry.kind === 'event' ? 'Dated event' : <span aria-label="Meeting/interview availability">Availability</span>}</StatusChip>
+              <StatusChip className="min-h-6 shrink-0 whitespace-nowrap px-2 text-[0.7rem]" tone={entry.kind === 'event' ? 'neutral' : 'info'}>
+                <span aria-label={entry.kind === 'event' ? 'Dated event' : 'Meeting/interview availability'}>{entry.kind === 'event' ? 'Event' : 'Availability'}</span>
+              </StatusChip>
             </li>
           ))}
         </ul>
