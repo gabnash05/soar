@@ -50,9 +50,9 @@ export const EntryPage = () => (
         <p>Sponsors can view organization information and meeting status without unrelated application or officer tools.</p>
       </Card>
       <Card>
-        <RoleBadge kind="officer">Approved officer grant</RoleBadge>
-        <h2>Organization grants only</h2>
-        <p>Officers manage only the organizations where they have access, with controls placed on the relevant pages.</p>
+        <RoleBadge kind="officer">Officer workspace</RoleBadge>
+        <h2>Keep your organization moving</h2>
+        <p>Share updates, coordinate meetings and activities, and handle student requests in one place.</p>
       </Card>
     </section>
 

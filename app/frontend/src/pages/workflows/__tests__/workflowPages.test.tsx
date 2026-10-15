@@ -68,8 +68,14 @@ describe('SOAR workflow pages', () => {
     expect(within(capabilities).getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
       'Track applications honestly',
       'Browse and request meetings',
-      'Organization grants only',
+      'Keep your organization moving',
     ]);
+    expect(within(capabilities).getByText('Student workspace')).toBeInTheDocument();
+    expect(within(capabilities).getByText('Opening an external form never counts as a submission. Students explicitly confirm in SOAR after returning from the form.')).toBeInTheDocument();
+    expect(within(capabilities).getByText('Sponsor workspace')).toBeInTheDocument();
+    expect(within(capabilities).getByText('Sponsors can view organization information and meeting status without unrelated application or officer tools.')).toBeInTheDocument();
+    expect(within(capabilities).getByText('Officer workspace')).toBeInTheDocument();
+    expect(within(capabilities).getByText('Share updates, coordinate meetings and activities, and handle student requests in one place.')).toBeInTheDocument();
     expect(capabilities.querySelector('.entry-card-primary')).not.toBeInTheDocument();
   });
 
@@ -149,10 +155,18 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByRole('tab', { name: 'Apply' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Dates & availability' }));
     const datesPanel = screen.getByRole('tabpanel', { name: 'Dates & availability' });
-    expect(within(datesPanel).getByRole('link', { name: 'Request meeting' })).toHaveAttribute('href', '/app/meetings?organizationId=health&tab=availability');
+    const requestMeetingLink = within(datesPanel).getByRole('link', { name: 'Request meeting' });
+    expect(requestMeetingLink).toHaveAttribute('href', '/app/meetings?organizationId=health&tab=availability');
+    expect(within(datesPanel).getAllByRole('link', { name: 'Request meeting' })).toHaveLength(1);
     const datedEventsHeading = within(datesPanel).getByRole('heading', { name: 'Dated public events' });
     const availabilityHeading = within(datesPanel).getByRole('heading', { name: 'Meeting/interview availability' });
     expect(datedEventsHeading.closest('section')?.className).toBe(availabilityHeading.closest('section')?.className);
+    expect(datesPanel.querySelector('.profile-date-grid')).toHaveClass('gap-x-6', 'gap-y-8', 'md:grid-cols-2');
+    const availabilityHeader = availabilityHeading.closest('header');
+    expect(availabilityHeader).not.toBeNull();
+    expect(requestMeetingLink.closest('header')).toBe(availabilityHeader);
+    expect(availabilityHeader).toHaveClass('justify-between', 'max-[820px]:flex-col', 'max-[820px]:items-stretch');
+    expect(requestMeetingLink.parentElement).toHaveClass('max-[820px]:w-full');
     expect(within(datesPanel).getByText('Availability')).toHaveAttribute('aria-label', 'Meeting/interview availability');
   });
 

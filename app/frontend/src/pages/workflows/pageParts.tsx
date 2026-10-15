@@ -201,10 +201,10 @@ export function ResultMessage({ result }: { result: WorkflowMutationResult<unkno
   );
 }
 
-export function DateEntryList({ title, entries, emptyCopy }: { title: string; entries: DateEntry[]; emptyCopy: string }) {
+export function DateEntryList({ title, entries, emptyCopy, action }: { title: string; entries: DateEntry[]; emptyCopy: string; action?: ReactNode }) {
   return (
     <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)]">
-      <TabSectionHeader title={title} />
+      <TabSectionHeader title={title} action={action} />
       {entries.length ? (
         <ul className="m-0 grid list-none gap-0 p-0">
           {entries.map((entry) => (
