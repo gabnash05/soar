@@ -163,6 +163,35 @@ describe('announcement comment ownership service behavior', () => {
     seedComments();
   });
 
+  it('lets an approved organization officer update only the post body', async () => {
+    const { updateAnnouncement } = await import('../service');
+    const createdAt = fakeDb.docs.get('announcements/post1')?.createdAt;
+    Object.assign(fakeDb.docs.get('announcements/post1')!, {
+      authorUid: 'author',
+      image: { storagePath: 'announcement-images/org1/post1/photo.png', contentType: 'image/png', sizeBytes: 12 },
+      likeCount: 7,
+      commentCount: 2
+    });
+
+    await expect(updateAnnouncement(user('officer'), 'org1', 'post1', { body: 'Edited by officer' })).resolves.toMatchObject({
+      id: 'post1', body: 'Edited by officer', likeCount: 7, commentCount: 2,
+      image: { storagePath: 'announcement-images/org1/post1/photo.png' }
+    });
+    expect(fakeDb.docs.get('announcements/post1')).toMatchObject({ authorUid: 'author', likeCount: 7, commentCount: 2, createdAt });
+  });
+
+  it('rejects revoked officers, wrong organization, and immutable update fields', async () => {
+    const { updateAnnouncement } = await import('../service');
+    fakeDb.docs.set('announcements/post2', { announcementId: 'post2', orgId: 'org2', body: 'Other organization', deletedAt: null });
+    fakeDb.docs.set('organizations/org2', { orgId: 'org2', name: 'Other Org', ownerUid: 'someone-else' });
+
+    await expect(updateAnnouncement(user('officer'), 'org1', 'post2', { body: 'Cross-org edit' })).rejects.toMatchObject({ code: 'announcement_organization_mismatch' });
+    await expect(updateAnnouncement(user('student1'), 'org1', 'post1', { body: 'Unapproved edit' })).rejects.toMatchObject({ code: 'organization_management_required' });
+    await expect(updateAnnouncement(user('officer'), 'org1', 'post1', { body: 'Changed', authorUid: 'officer' })).rejects.toMatchObject({ name: 'ZodError' });
+    fakeDb.docs.set('organizations/org1/officerGrants/officer', { uid: 'officer', status: 'revoked' });
+    await expect(updateAnnouncement(user('officer'), 'org1', 'post1', { body: 'Revoked edit' })).rejects.toMatchObject({ code: 'organization_management_required' });
+  });
+
   it('lets authors edit their own comments without changing the count', async () => {
     const { updateAnnouncementComment } = await import('../service');
     const updated = await updateAnnouncementComment(user('author'), 'post1', 'comment1', { body: 'Updated body' });

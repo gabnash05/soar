@@ -3,6 +3,7 @@ import {
   MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES,
   MAX_IMAGE_SIZE_BYTES,
   announcementCreateSchema,
+  announcementUpdateSchema,
   announcementImagePathMatch,
   assertLogoPathForOrganization,
   dateEntryCreateSchema,
@@ -45,6 +46,13 @@ describe('content validation', () => {
     if (!invalid.success) {
       expect(invalid.error.issues).toContainEqual(expect.objectContaining({ path: ['media'], message: 'Use either legacy image or media, not both.' }));
     }
+  });
+
+  it('accepts only a non-empty announcement body for post updates', () => {
+    expect(announcementUpdateSchema.parse({ body: '  Revised update  ' }).body).toBe('Revised update');
+    expectParseFailure(() => announcementUpdateSchema.parse({ body: '  ' }));
+    expectParseFailure(() => announcementUpdateSchema.parse({ body: 'Valid', organizationId: 'other-org' }));
+    expectParseFailure(() => announcementUpdateSchema.parse({ body: 'Valid', media: [] }));
   });
 
   it('validates image metadata before Storage writes are referenced', () => {

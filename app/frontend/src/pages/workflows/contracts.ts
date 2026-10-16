@@ -241,6 +241,7 @@ export interface WorkflowDataClient {
   getOfficerDashboard(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OfficerDashboard | undefined>>;
   saveOrganizationProfile(input: OrganizationProfileInput, session: UserSession): Promise<WorkflowMutationResult<OrganizationProfile>>;
   publishAnnouncement(input: AnnouncementInput, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
+  updateAnnouncement(announcementId: string, organizationId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   deleteAnnouncement(announcementId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
   getOrganizationDepartmentStudentCount(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OrganizationDepartmentStudentCount | undefined>>;
   updateApplicationStage(applicationId: string, stage: ApplicationStage, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<ApplicationRecord>>;

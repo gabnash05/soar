@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   createAnnouncementImageTarget: vi.fn(),
   createAnnouncementMediaTargets: vi.fn(),
   createAnnouncement: vi.fn(),
+  updateAnnouncement: vi.fn(),
   deleteAnnouncement: vi.fn(),
   deleteAnnouncementComment: vi.fn(),
   getAnnouncement: vi.fn(),
@@ -97,6 +98,7 @@ vi.mock('../src/content/service', () => ({
   listOrganizations: mocks.listOrganizations,
   scopedDateEntryQuery: mocks.scopedDateEntryQuery,
   setAnnouncementLike: mocks.setAnnouncementLike,
+  updateAnnouncement: mocks.updateAnnouncement,
   updateAnnouncementComment: mocks.updateAnnouncementComment,
   updateDateEntry: mocks.updateDateEntry,
   updateOrganizationProfile: mocks.updateOrganizationProfile,
@@ -262,6 +264,7 @@ describe('SOAR HTTP route contracts', () => {
   it('mounts department counts and revised announcement routes without exposing student lists', async () => {
     mocks.getStudentDepartmentCounts.mockResolvedValue({ organizationId: 'computer-engineering', department: 'Computer Engineering Department', departmentKey: 'computer engineering department', registeredStudentCount: 2 });
     mocks.createAnnouncementMediaTargets.mockResolvedValue({ announcementId: 'post1', items: [] });
+    mocks.updateAnnouncement.mockResolvedValue({ id: 'post1', body: 'Revised post' });
     mocks.updateAnnouncementComment.mockResolvedValue({ id: 'comment1', body: 'Updated', viewerCanEdit: true });
     mocks.deleteAnnouncementComment.mockResolvedValue({ announcementId: 'post1', commentId: 'comment1', deleted: true });
     mocks.getAnnouncement.mockResolvedValue({ id: 'post1', deepLinkPath: '/app?announcementId=post1' });
@@ -275,6 +278,11 @@ describe('SOAR HTTP route contracts', () => {
       expect(removedAdminStats.status).toBe(404);
 
       await expect((await fetch(`${baseUrl}/api/announcements/post1`, { headers: { authorization: 'Bearer test-token' } })).json()).resolves.toMatchObject({ deepLinkPath: '/app?announcementId=post1' });
+      expect((await fetch(`${baseUrl}/api/organizations/robotics/announcements/post1`, {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ body: 'Revised post' }),
+      })).status).toBe(200);
       expect((await fetch(`${baseUrl}/api/organizations/robotics/announcements/media-targets`, {
         method: 'POST',
         headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
@@ -293,6 +301,7 @@ describe('SOAR HTTP route contracts', () => {
 
     expect(mocks.getStudentDepartmentCounts).toHaveBeenCalledWith({ uid: 'user1', email_verified: true }, 'computer-engineering');
     expect(mocks.createAnnouncementMediaTargets).toHaveBeenCalled();
+    expect(mocks.updateAnnouncement).toHaveBeenCalledWith({ uid: 'user1', email_verified: true }, 'robotics', 'post1', { body: 'Revised post' });
     expect(mocks.updateAnnouncementComment).toHaveBeenCalled();
     expect(mocks.deleteAnnouncementComment).toHaveBeenCalled();
   });

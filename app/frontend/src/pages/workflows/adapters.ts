@@ -75,6 +75,7 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   getOfficerDashboard: () => unavailableQuery<OfficerDashboard | undefined>(undefined),
   saveOrganizationProfile: () => unavailableMutation<OrganizationProfile>(),
   publishAnnouncement: () => unavailableMutation<Announcement>(),
+  updateAnnouncement: () => unavailableMutation<Announcement>(),
   deleteAnnouncement: () => unavailableMutation(),
   getOrganizationDepartmentStudentCount: () => unavailableQuery<OrganizationDepartmentStudentCount | undefined>(undefined),
   updateApplicationStage: () => unavailableMutation<ApplicationRecord>(),
@@ -815,6 +816,17 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       };
       announcements.unshift(announcement);
       return success('Announcement published in demo mode.', hydrateAnnouncement(announcement, session));
+    },
+
+    async updateAnnouncement(announcementId, organizationId, body, session) {
+      const permission = assertOfficer<Announcement>(organizationId, session);
+      if (permission) return permission;
+      const announcement = announcements.find((item) => item.id === announcementId && item.organizationId === organizationId);
+      if (!announcement) return failure('not-found', 'Announcement not found.');
+      const trimmed = body.trim();
+      if (!trimmed) return failure('validation', 'Announcement text is required.');
+      announcement.body = trimmed;
+      return success('Announcement updated in demo mode.', hydrateAnnouncement(announcement, session));
     },
 
     async deleteAnnouncement(announcementId, organizationId, session) {
