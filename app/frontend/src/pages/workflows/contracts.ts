@@ -14,7 +14,7 @@ export interface WorkflowMutationResult<T = undefined> {
   source: WorkflowDataMode;
   message: string;
   data?: T;
-  reason?: 'validation' | 'permission' | 'duplicate' | 'unavailable' | 'not-found' | 'error';
+  reason?: 'validation' | 'permission' | 'duplicate' | 'closed' | 'unavailable' | 'not-found' | 'error';
 }
 
 export interface WorkflowImage {
@@ -95,6 +95,7 @@ export interface OrganizationSummary {
 
 export interface OrganizationProfile extends OrganizationSummary {
   description: string;
+  applicationsOpen?: boolean;
   recruitment: RecruitmentOpportunity;
   posts: Announcement[];
   dateEntries: DateEntry[];
@@ -220,7 +221,7 @@ export interface AnnouncementPage {
 export interface WorkflowDataClient {
   readonly mode: WorkflowDataMode;
   readonly label: string;
-  listAnnouncements(session: UserSession, page?: { limit: number; pageToken?: string }): Promise<WorkflowQueryResult<AnnouncementPage>>;
+  listAnnouncements(session: UserSession, page?: { limit: number; pageToken?: string; organizationId?: string }): Promise<WorkflowQueryResult<AnnouncementPage>>;
   getAnnouncement(announcementId: string, session: UserSession): Promise<WorkflowQueryResult<Announcement | undefined>>;
   listAnnouncementComments(announcementId: string, session: UserSession): Promise<WorkflowQueryResult<AnnouncementComment[]>>;
   toggleAnnouncementLike(announcementId: string, liked: boolean, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
@@ -240,7 +241,9 @@ export interface WorkflowDataClient {
 
   getOfficerDashboard(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OfficerDashboard | undefined>>;
   saveOrganizationProfile(input: OrganizationProfileInput, session: UserSession): Promise<WorkflowMutationResult<OrganizationProfile>>;
+  setApplicationsOpen(organizationId: string, applicationsOpen: boolean, session: UserSession): Promise<WorkflowMutationResult<{ applicationsOpen: boolean }>>;
   publishAnnouncement(input: AnnouncementInput, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
+  updateAnnouncement(announcementId: string, organizationId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   deleteAnnouncement(announcementId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
   getOrganizationDepartmentStudentCount(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OrganizationDepartmentStudentCount | undefined>>;
   updateApplicationStage(applicationId: string, stage: ApplicationStage, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<ApplicationRecord>>;

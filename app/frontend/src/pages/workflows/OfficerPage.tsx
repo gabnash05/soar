@@ -1,11 +1,12 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, ButtonLink, ConfirmDialog, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
 import { safeErrorMessage } from '../../lib/safeErrors';
 import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
 import { createEmptyOfficerDateEntry } from './adapters';
-import type { AnnouncementInput, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
+import type { Announcement, AnnouncementInput, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
+  AnnouncementCard,
   ErrorState,
   MeetingStatusChip,
   OrganizationAvatar,
@@ -291,6 +292,121 @@ export function AnnouncementComposer({
   );
 }
 
+function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onDelete: (id: string) => void }) {
+  const [items, setItems] = useState<Announcement[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
+  const [editBody, setEditBody] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const busy = useRef(false);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const organizationId = dashboard.organization.id;
+
+  const loadFirst = useCallback(async () => {
+    const current = ++generation.current;
+    busy.current = true;
+    setLoading(true);
+    setError(null);
+    setPageError(null);
+    setItems([]);
+    setCursor(undefined);
+    try {
+      const result = await client.listAnnouncements(session, { limit: 15, organizationId });
+      if (generation.current !== current) return;
+      setItems(result.data.items);
+      setCursor(result.data.nextPageToken);
+    } catch (caught) {
+      if (generation.current === current) setError(caught instanceof Error ? caught.message : 'Unable to load announcements.');
+    } finally {
+      if (generation.current === current) { busy.current = false; setLoading(false); }
+    }
+  }, [client, organizationId, session]);
+
+  const loadNext = useCallback(async () => {
+    if (!cursor || busy.current || loading || loadingMore) return;
+    const current = generation.current;
+    busy.current = true;
+    setLoadingMore(true);
+    setPageError(null);
+    try {
+      const result = await client.listAnnouncements(session, { limit: 15, pageToken: cursor, organizationId });
+      if (generation.current !== current) return;
+      setItems((previous) => {
+        const ids = new Set(previous.map((item) => item.id));
+        return [...previous, ...result.data.items.filter((item) => !ids.has(item.id))];
+      });
+      setCursor(result.data.nextPageToken);
+    } catch (caught) {
+      if (generation.current === current) setPageError(caught instanceof Error ? caught.message : 'Unable to load more announcements.');
+    } finally {
+      if (generation.current === current) { busy.current = false; setLoadingMore(false); }
+    }
+  }, [client, cursor, loading, loadingMore, organizationId, session]);
+
+  useEffect(() => {
+    void loadFirst();
+    return () => { generation.current += 1; busy.current = false; };
+  }, [loadFirst]);
+
+  useEffect(() => {
+    const target = sentinel.current;
+    if (!target || !cursor || loading || loadingMore || pageError || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) void loadNext(); }, { root: null, rootMargin: '0px', threshold: 0 });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [cursor, loadNext, loading, loadingMore, pageError]);
+
+  const saveAnnouncement = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingAnnouncement) return;
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      const result = await client.updateAnnouncement(editingAnnouncement.id, organizationId, editBody, session);
+      if (!result.ok || !result.data) {
+        setEditError(result.message || 'The announcement could not be updated.');
+        return;
+      }
+      const updatedAnnouncement = result.data;
+      setItems((current) => current.map((item) => item.id === updatedAnnouncement.id ? updatedAnnouncement : item));
+      setEditingAnnouncement(null);
+    } catch (caught) {
+      setEditError(caught instanceof Error ? caught.message : 'The announcement could not be updated.');
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  return <div className="mx-auto grid w-[min(720px,100%)] min-w-0 gap-4" aria-label="Managed announcements">
+    {loading ? <LoadingBlock label="Loading organization announcements" /> : null}
+    {error ? <ErrorState onRetry={loadFirst}>{error}</ErrorState> : null}
+    {!loading && !error && items.length === 0 ? <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p> : null}
+    {items.map((item) => {
+      const images = (item.media?.length ? item.media : item.image ? [item.image] : []).filter((media) => !media.contentType?.startsWith('video/'));
+      return <div key={item.id} className="grid gap-2"><AnnouncementCard announcement={{ ...item, image: images[0], media: images.length ? images : undefined }} session={session} client={client} onChanged={loadFirst} /><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => { setEditError(null); setEditBody(item.body); setEditingAnnouncement(item); }}>Edit announcement</Button><Button type="button" variant="danger" onClick={() => onDelete(item.id)}>Delete announcement</Button></div></div>;
+    })}
+    {pageError ? <div role="alert" className="py-4 text-center text-sm">Could not load more announcements: {pageError} <Button type="button" variant="secondary" onClick={loadNext}>Retry loading announcements</Button></div> : null}
+    {cursor && !pageError ? <div ref={sentinel} className="flex min-h-12 items-center justify-center py-3" aria-live="polite">{loadingMore ? <span role="status">Loading more announcements…</span> : <Button type="button" variant="secondary" onClick={loadNext}>Load more announcements</Button>}</div> : null}
+    {!loading && items.length > 0 && !cursor ? <p className="py-5 text-center text-sm text-[var(--muted-foreground)]" role="status">You’re all caught up.</p> : null}
+    <ModalDialog open={Boolean(editingAnnouncement)} title="Edit announcement" dirty={Boolean(editingAnnouncement && editBody !== editingAnnouncement.body)} onClose={() => setEditingAnnouncement(null)}>
+      {editingAnnouncement ? <form className="grid gap-3" onSubmit={saveAnnouncement}>
+        <label className="grid min-w-0 gap-1.5 text-[13px] font-bold text-[var(--color-navy)]" htmlFor={`edit-announcement-${editingAnnouncement.id}`}>Announcement text
+          <textarea id={`edit-announcement-${editingAnnouncement.id}`} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[150px] resize-y" maxLength={4000} required value={editBody} onChange={(event) => setEditBody(event.target.value)} />
+        </label>
+        <p className="m-0 text-xs text-[var(--muted-foreground)]">Attached images, likes, comments, and publication date will be kept.</p>
+        {editError ? <p className="m-0 text-sm text-[var(--color-orange-deep)]" role="alert">{editError}</p> : null}
+        <div className="flex flex-wrap justify-end gap-2"><Button type="submit" disabled={editBusy || !editBody.trim()}>{editBusy ? 'Saving…' : 'Save announcement'}</Button></div>
+      </form> : null}
+    </ModalDialog>
+  </div>;
+}
+
 export function AnnouncementSection({ dashboard, session, client, onChanged, allowPosting = true }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; allowPosting?: boolean }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [composerResult, setComposerResult] = useState<WorkflowMutationResult<unknown> | null>(null);
@@ -299,6 +415,11 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
   const [deleteAnnouncementId, setDeleteAnnouncementId] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refreshAnnouncements = useCallback(() => {
+    onChanged();
+    setRefreshKey((key) => key + 1);
+  }, [onChanged]);
 
   const confirmDeleteAnnouncement = async () => {
     if (!deleteAnnouncementId) return;
@@ -309,7 +430,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
     setDeleteBusy(false);
     if (next.ok) {
       setDeleteAnnouncementId(null);
-      onChanged();
+      refreshAnnouncements();
     } else {
       setDeleteError(next.message);
     }
@@ -331,7 +452,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
                 organizationName={dashboard.organization.name}
                 session={session}
                 client={client}
-                onChanged={onChanged}
+                onChanged={refreshAnnouncements}
                 onDirtyChange={setComposerDirty}
                 onResult={setComposerResult}
                 onSubmitted={() => setComposerOpen(false)}
@@ -341,16 +462,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
           <ResultMessage result={composerResult} />
         </>
       ) : null}
-      {dashboard.announcements.length ? (
-        <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
-          {dashboard.announcements.map((announcement) => (
-            <li key={announcement.id}>
-              <div className="min-w-0 flex-1 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:mt-0.5 [&_span]:block [&_span]:[overflow-wrap:anywhere] [&_span]:text-[0.88rem] [&_span]:text-[var(--muted-foreground)]"><strong>{announcement.body}</strong><span>{new Date(announcement.createdAt).toLocaleDateString()}</span></div>
-              <Button type="button" variant="danger" onClick={() => { setDeleteError(null); setDeleteAnnouncementId(announcement.id); }}>Delete</Button>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p>}
+      <ManagedAnnouncementList key={`${dashboard.organization.id}-${refreshKey}`} dashboard={dashboard} session={session} client={client} onDelete={(id) => { setDeleteError(null); setDeleteAnnouncementId(id); }} />
       <ResultMessage result={result} />
       <ConfirmDialog
         open={Boolean(deleteAnnouncementId)}
@@ -748,14 +860,14 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
   );
 }
 
-export function OfficerOrganizationPicker({ selectedOrganizationId, onChange, session }: { selectedOrganizationId: string; onChange: (value: string) => void; session: UserSession }) {
+export function OfficerOrganizationPicker({ selectedOrganizationId, onChange, session, disabled = false, id = 'managed-organization' }: { selectedOrganizationId: string; onChange: (value: string) => void; session: UserSession; disabled?: boolean; id?: string }) {
   const grants = getApprovedOfficerGrants(session);
   if (grants.length <= 1) return null;
   return (
     <section className="max-w-[480px] py-3" aria-label="Managed organization">
       <div className="grid min-w-0 gap-1.5">
-        <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="managed-organization">Organization</label>
-        <select id="managed-organization" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={selectedOrganizationId} onChange={(event) => onChange(event.target.value)}>
+        <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor={id}>Organization</label>
+        <select id={id} disabled={disabled} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={selectedOrganizationId} onChange={(event) => onChange(event.target.value)}>
           {grants.map((grant) => <option key={grant.organizationId} value={grant.organizationId}>{grant.organizationName}</option>)}
         </select>
       </div>
@@ -790,7 +902,7 @@ export function OfficerOrganizationManagement({ organizationId, session, client 
   return (
     <aside className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-blue)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] [&_p]:m-0" role="note">
       <strong>Organization management</strong>
-      <p>Edit profile details, announcements, and dated entries from the dedicated Manage Organization sidebar tab.</p>
+      <p>Edit profile details, application intake, announcements, and dated entries from Manage Organization.</p>
       <ButtonLink to={`/settings/organization?organizationId=${encodeURIComponent(organizationId)}`} variant="primary">Manage organization</ButtonLink>
     </aside>
   );

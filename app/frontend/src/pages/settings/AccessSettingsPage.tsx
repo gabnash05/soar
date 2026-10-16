@@ -16,17 +16,22 @@ const formatDate = (value?: string) => {
 };
 
 export const AccessSettingsPage = () => {
-  const { session, requestManualRenewal, reloadSession, error, clearError, gateway } = useAuth();
+  const { session, requestManualRenewal, reloadSession, error, clearError, gateway } = useAuth('access-settings');
   const [searchParams] = useSearchParams();
   const [message, setMessage] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    clearError();
+    return clearError;
+  }, [clearError]);
 
   useEffect(() => {
     const renewalId = searchParams.get('renewalId');
     const fixtureStatus = searchParams.get('fixtureStatus');
     if (gateway.mode === 'fixture' && renewalId && fixtureStatus === 'confirmed') {
       markFixtureRenewalConfirmedFromUrl(renewalId, fixtureStatus);
-      void reloadSession().then(() => setMessage('Demo renewal applied locally.'));
+      void reloadSession().then(() => setMessage('Demo renewal applied locally.')).catch(() => {});
     }
   }, [gateway.mode, reloadSession, searchParams]);
 
@@ -44,6 +49,8 @@ export const AccessSettingsPage = () => {
     try {
       const renewal = await requestManualRenewal();
       navigateToHostedCheckout(renewal.checkoutUrl);
+    } catch {
+      // AuthContext exposes the safe operation-scoped message; keep the current page available.
     } finally {
       setWorking(false);
     }

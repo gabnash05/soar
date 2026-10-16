@@ -14,6 +14,7 @@ import {
   MAX_IMAGE_SIZE_BYTES,
   announcementCreateSchema,
   announcementImagePathMatch,
+  announcementUpdateSchema,
   announcementQuerySchema,
   assertLogoPathForOrganization,
   commentCreateSchema,
@@ -183,6 +184,9 @@ async function commentFromDoc(data: DocumentData, viewerUid?: string, organizati
   const authorOrganizationRole: 'approved_officer' | undefined = officerGrant?.exists && officerGrant.data()?.status === 'active'
     ? 'approved_officer'
     : undefined;
+  const createdAt = iso(data.createdAt);
+  const updatedAt = iso(data.updatedAt);
+  const hasActualEdit = Boolean(iso(data.editedAt) || (createdAt && updatedAt && updatedAt !== createdAt));
   return {
     id: data.commentId,
     commentId: data.commentId,
@@ -193,8 +197,8 @@ async function commentFromDoc(data: DocumentData, viewerUid?: string, organizati
     body: data.body,
     viewerCanEdit: ownsComment,
     viewerCanDelete: ownsComment,
-    createdAt: iso(data.createdAt),
-    updatedAt: iso(data.updatedAt) ?? iso(data.createdAt)
+    createdAt,
+    ...(hasActualEdit && updatedAt ? { updatedAt } : {})
   };
 }
 
@@ -260,6 +264,7 @@ export async function getOrganizationProfile(user: DecodedIdToken, orgIdParam: s
 
   return {
     ...summaryFromOrganization(data),
+    applicationsOpen: data.applicationsOpen !== false,
     recruitment: recruitmentFromOrganization(data),
     posts: posts.items,
     dateEntries: dateEntries.items,
@@ -273,6 +278,7 @@ export async function updateOrganizationProfile(user: DecodedIdToken, orgIdParam
   const input = organizationProfileUpdateSchema.parse(rawBody);
   const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
 
+  if (input.applicationsOpen !== undefined) update.applicationsOpen = input.applicationsOpen;
   if (input.name !== undefined) {
     update.name = input.name;
     update.searchName = normalizedName(input.name);
@@ -445,6 +451,25 @@ export async function createAnnouncement(user: DecodedIdToken, orgIdParam: strin
   return announcementFromDoc(snap.data() ?? {}, false);
 }
 
+export async function updateAnnouncement(user: DecodedIdToken, orgIdParam: string, announcementIdParam: string, rawBody: unknown) {
+  const orgId = routeOrgId(orgIdParam);
+  await assertCanManageOrganization(user, orgId);
+  const announcementId = routeDocumentId(announcementIdParam, 'announcement');
+  const input = announcementUpdateSchema.parse(rawBody);
+  const ref = db.collection(COLLECTIONS.announcements).doc(announcementId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists || snap.data()?.deletedAt) {
+      throw new AppError('announcement_missing', 'The announcement was not found.', 404);
+    }
+    if (snap.data()?.orgId !== orgId) {
+      throw new AppError('announcement_organization_mismatch', 'The announcement does not belong to this organization.', 400);
+    }
+    tx.update(ref, { body: input.body, updatedAt: FieldValue.serverTimestamp() });
+  });
+  return getAnnouncement(user, announcementId);
+}
+
 export async function deleteAnnouncement(user: DecodedIdToken, orgIdParam: string, announcementIdParam: string) {
   const orgId = routeOrgId(orgIdParam);
   await assertCanManageOrganization(user, orgId);
@@ -552,7 +577,7 @@ export async function updateAnnouncementComment(user: DecodedIdToken, announceme
     if (comment.data()?.authorUid !== user.uid) {
       throw new AppError('comment_owner_required', 'You can edit only your own comments.', 403);
     }
-    tx.update(commentRef, { body: input.body, updatedAt: now });
+    tx.update(commentRef, { body: input.body, updatedAt: now, editedAt: now });
     tx.update(announcementRef, { updatedAt: FieldValue.serverTimestamp() });
   });
 

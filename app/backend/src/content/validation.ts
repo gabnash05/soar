@@ -30,6 +30,7 @@ export const organizationListQuerySchema = paginationSchema.extend({
 });
 
 export const organizationProfileUpdateSchema = z.object({
+  applicationsOpen: z.boolean().optional(),
   name: optionalText(140),
   shortDescription: blankableText(180),
   description: blankableText(4000),
@@ -82,6 +83,10 @@ const announcementMediaItemSchema = z.object({
   contentType: z.enum(ALLOWED_IMAGE_CONTENT_TYPES),
   sizeBytes: z.number().int().min(1).max(MAX_IMAGE_SIZE_BYTES),
   alt: z.string().trim().max(180).optional().default('')
+}).strict();
+
+export const announcementUpdateSchema = z.object({
+  body: trimmedString.min(1).max(4000)
 }).strict();
 
 export const announcementCreateSchema = z.object({

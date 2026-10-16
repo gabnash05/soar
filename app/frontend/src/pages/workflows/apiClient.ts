@@ -205,6 +205,7 @@ async function mapOrganizationProfile(raw: unknown): Promise<OrganizationProfile
   return {
     ...summary,
     description: pickString(item.description),
+    applicationsOpen: item.applicationsOpen !== false,
     recruitment: {
       id: recruitmentOpportunityId(summary.id, title, pickString(recruitment.id || recruitment.opportunityId)),
       organizationId: summary.id,
@@ -393,6 +394,7 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     async listAnnouncements(_session, page = { limit: 15 }) {
       const params = new URLSearchParams({ limit: String(page.limit) });
       if (page.pageToken) params.set('pageToken', page.pageToken);
+      if (page.organizationId) params.set('orgId', page.organizationId);
       const response = await apiFetch<ListEnvelope<unknown> | unknown[]>(`/announcements?${params.toString()}`, await activeHeaders());
       const envelope = Array.isArray(response) ? undefined : response;
       const items = await Promise.all(listItems(response).map(mapAnnouncement));
@@ -505,10 +507,21 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return mutationResult('Organization profile saved.', await mapOrganizationProfile(response));
     },
 
+    async setApplicationsOpen(organizationId, applicationsOpen, _session) {
+      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}`, await bodyInit({ applicationsOpen }, 'PATCH'));
+      const savedValue = pickBoolean(asRecord(response).applicationsOpen, applicationsOpen);
+      return mutationResult(savedValue ? 'Applications are open.' : 'Applications are closed.', { applicationsOpen: savedValue });
+    },
+
     async publishAnnouncement(input: AnnouncementInput) {
       const upload = await createAnnouncementUpload(input);
       const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(input.organizationId)}/announcements`, await bodyInit({ body: input.body, ...upload }));
       return mutationResult('Announcement published.', await mapAnnouncement(response));
+    },
+
+    async updateAnnouncement(announcementId, organizationId, body) {
+      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}/announcements/${encodeURIComponent(announcementId)}`, await bodyInit({ body }, 'PATCH'));
+      return mutationResult('Announcement updated.', await mapAnnouncement(response));
     },
 
     async deleteAnnouncement(announcementId, organizationId) {

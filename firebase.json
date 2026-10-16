@@ -6,6 +6,23 @@
   "storage": {
     "rules": "storage.rules"
   },
+  "hosting": {
+    "site": "soar-a711e",
+    "public": "app/frontend/dist",
+    "rewrites": [
+      {
+        "glob": "/api/**",
+        "function": {
+          "functionId": "api",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "glob": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
   "functions": [
     {
       "source": "app/backend",

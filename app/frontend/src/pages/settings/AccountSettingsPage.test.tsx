@@ -1,10 +1,27 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ValidationProblemError } from '../../lib/contracts';
+import { UserFacingError } from '../../lib/safeErrors';
 import { AuthProvider } from '../../context/AuthContext';
 import { createMockGateway, makeSession } from '../../test/createMockGateway';
+import { AccessSettingsPage } from './AccessSettingsPage';
 import { AccountSettingsPage } from './AccountSettingsPage';
+
+const renderSettingsFlow = (gateway: ReturnType<typeof createMockGateway>, initialPath = '/settings/account') => render(
+  <MemoryRouter initialEntries={[initialPath]}>
+    <AuthProvider gateway={gateway}>
+      <nav>
+        <Link to="/settings/account">Account settings</Link>
+        <Link to="/settings/access">Payment &amp; access</Link>
+      </nav>
+      <Routes>
+        <Route path="/settings/account" element={<AccountSettingsPage />} />
+        <Route path="/settings/access" element={<AccessSettingsPage />} />
+      </Routes>
+    </AuthProvider>
+  </MemoryRouter>,
+);
 
 const renderAccountSettings = (gateway = createMockGateway(makeSession({
   officerGrants: [{ organizationId: 'robotics', organizationName: 'Computer Engineering Department', status: 'approved' }],
@@ -104,6 +121,81 @@ describe('AccountSettingsPage', () => {
     expect(alert).not.toHaveTextContent(/2030-01-02|private account path/);
     expect(nameInput).toHaveValue('Mara New Santos');
     expect(screen.getByRole('button', { name: 'Save name' })).toBeEnabled();
+  });
+
+  it('keeps a settings validation error on Account Settings and clears it across navigation', async () => {
+    const user = userEvent.setup();
+    const gateway = createMockGateway(makeSession());
+    vi.mocked(gateway.updateDisplayName).mockRejectedValue(new ValidationProblemError(
+      'The request contains invalid fields.',
+      { displayName: 'Sensitive validation detail' },
+    ));
+    renderSettingsFlow(gateway);
+
+    const nameInput = await screen.findByRole('textbox', { name: 'Full name' });
+    await user.clear(nameInput);
+    await user.type(nameInput, 'X');
+    await user.click(screen.getByRole('button', { name: 'Save name' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a name between 2 and 120 characters.');
+
+    await user.click(screen.getByRole('link', { name: 'Payment & access' }));
+    expect(await screen.findByRole('heading', { name: 'Six-month access status' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Account settings' }));
+    expect(await screen.findByRole('textbox', { name: 'Full name' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('does not apply a late settings failure after navigating away and back', async () => {
+    const user = userEvent.setup();
+    const gateway = createMockGateway(makeSession());
+    let rejectSave!: (reason: unknown) => void;
+    const pendingSave = new Promise<never>((_resolve, reject) => {
+      rejectSave = reject;
+    });
+    vi.mocked(gateway.updateDisplayName).mockReturnValue(pendingSave);
+    renderSettingsFlow(gateway);
+
+    const nameInput = await screen.findByRole('textbox', { name: 'Full name' });
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Mara Updated');
+    await user.click(screen.getByRole('button', { name: 'Save name' }));
+    await user.click(screen.getByRole('link', { name: 'Payment & access' }));
+    expect(await screen.findByRole('heading', { name: 'Six-month access status' })).toBeInTheDocument();
+
+    await act(async () => {
+      rejectSave(new ValidationProblemError('Invalid fields.', { displayName: 'Sensitive validation detail' }));
+      await pendingSave.catch(() => undefined);
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Account settings' }));
+    expect(await screen.findByRole('textbox', { name: 'Full name' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows real access-operation failures only on Payment & access', async () => {
+    const user = userEvent.setup();
+    const session = makeSession();
+    const gateway = createMockGateway(makeSession({
+      access: { ...session.access, renewalAvailable: true },
+    }));
+    vi.mocked(gateway.requestManualRenewal).mockRejectedValue(new UserFacingError('Renewal could not be started. Please try again.'));
+    renderSettingsFlow(gateway, '/settings/access');
+
+    const renewButton = await screen.findByRole('button', { name: 'Renew when available' });
+    await user.click(renewButton);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Renewal could not be started. Please try again.');
+    expect(renewButton).toBeEnabled();
+    expect(gateway.requestManualRenewal).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('link', { name: 'Account settings' }));
+    expect(await screen.findByRole('textbox', { name: 'Full name' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Payment & access' }));
+    expect(await screen.findByRole('heading', { name: 'Six-month access status' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('redacts provider failures, escapes attempted markup, and recovers the save control', async () => {

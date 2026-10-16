@@ -207,7 +207,7 @@ describe('production announcement media payloads', () => {
       organizationId: 'org-test',
       body: 'Unsupported media must not upload.',
       media: [{ url: 'blob:local-preview', alt: file.name, file, contentType: file.type, sizeBytes: file.size }],
-    }, session)).rejects.toThrow('Use a PNG, JPEG, GIF, WebP, MP4, or WebM file.');
+    }, session)).rejects.toThrow('Use a PNG, JPEG, GIF, or WebP image.');
 
     expect(mocks.apiFetch).not.toHaveBeenCalled();
     expect(mocks.uploadToStorageTarget).not.toHaveBeenCalled();

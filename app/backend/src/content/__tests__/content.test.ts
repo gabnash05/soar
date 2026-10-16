@@ -3,6 +3,7 @@ import {
   MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES,
   MAX_IMAGE_SIZE_BYTES,
   announcementCreateSchema,
+  announcementUpdateSchema,
   announcementImagePathMatch,
   assertLogoPathForOrganization,
   dateEntryCreateSchema,
@@ -27,6 +28,9 @@ describe('content validation', () => {
     expect(organizationProfileUpdateSchema.parse({ contactPhone: '+63 917 555 0101' }).contactPhone).toBe('+63 917 555 0101');
     expect(organizationProfileUpdateSchema.parse({ department: 'Computer Engineering Department' }).department).toBe('Computer Engineering Department');
     expect(organizationProfileUpdateSchema.parse({ department: '' }).department).toBe('');
+    expect(organizationProfileUpdateSchema.parse({ applicationsOpen: false }).applicationsOpen).toBe(false);
+    expect(organizationProfileUpdateSchema.parse({ applicationsOpen: true }).applicationsOpen).toBe(true);
+    expectParseFailure(() => organizationProfileUpdateSchema.parse({ applicationsOpen: 'false' }));
     expectParseFailure(() => organizationProfileUpdateSchema.parse({ recruitment: { applicationLink: 'javascript:alert(1)' } }));
     expectParseFailure(() => organizationProfileUpdateSchema.parse({ contactPhone: '<script>alert(1)</script>' }));
     expectParseFailure(() => organizationProfileUpdateSchema.parse({ department: 'Computer Science' }));
@@ -45,6 +49,13 @@ describe('content validation', () => {
     if (!invalid.success) {
       expect(invalid.error.issues).toContainEqual(expect.objectContaining({ path: ['media'], message: 'Use either legacy image or media, not both.' }));
     }
+  });
+
+  it('accepts only a non-empty announcement body for post updates', () => {
+    expect(announcementUpdateSchema.parse({ body: '  Revised update  ' }).body).toBe('Revised update');
+    expectParseFailure(() => announcementUpdateSchema.parse({ body: '  ' }));
+    expectParseFailure(() => announcementUpdateSchema.parse({ body: 'Valid', organizationId: 'other-org' }));
+    expectParseFailure(() => announcementUpdateSchema.parse({ body: 'Valid', media: [] }));
   });
 
   it('validates image metadata before Storage writes are referenced', () => {
