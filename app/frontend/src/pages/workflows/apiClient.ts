@@ -308,9 +308,6 @@ interface AnnouncementMediaTargetResponse {
   allowedContentTypes?: readonly string[];
   maxItems?: number;
   maxSizeBytes?: number;
-  maxImageSizeBytes?: number;
-  maxVideoSizeBytes?: number;
-  maxVideoItems?: number;
   maxAggregateSizeBytes?: number;
 }
 
@@ -400,6 +397,16 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       const envelope = Array.isArray(response) ? undefined : response;
       const items = await Promise.all(listItems(response).map(mapAnnouncement));
       return queryResult<AnnouncementPage>({ items, nextPageToken: envelope?.nextPageToken });
+    },
+
+    async getAnnouncement(announcementId) {
+      try {
+        const response = await apiFetch<unknown>(`/announcements/${encodeURIComponent(announcementId)}`, await activeHeaders());
+        return queryResult(await mapAnnouncement(response));
+      } catch (error) {
+        if (error && typeof error === 'object' && (error as { status?: unknown }).status === 404) return queryResult<Announcement | undefined>(undefined);
+        throw error;
+      }
     },
 
     async listAnnouncementComments(announcementId) {

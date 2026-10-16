@@ -2,12 +2,8 @@ import { z } from 'zod';
 import { departmentSchema, orgIdSchema } from '../contracts/validation';
 
 export const ALLOWED_IMAGE_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
-export const ALLOWED_VIDEO_CONTENT_TYPES = ['video/mp4', 'video/webm'] as const;
-export const ALLOWED_ANNOUNCEMENT_MEDIA_CONTENT_TYPES = [...ALLOWED_IMAGE_CONTENT_TYPES, ...ALLOWED_VIDEO_CONTENT_TYPES] as const;
 export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-export const MAX_VIDEO_SIZE_BYTES = 25 * 1024 * 1024;
 export const MAX_ANNOUNCEMENT_MEDIA_ITEMS = 4;
-export const MAX_ANNOUNCEMENT_VIDEO_ITEMS = 1;
 export const MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES = 30 * 1024 * 1024;
 
 const trimmedString = z.string().trim();
@@ -63,13 +59,9 @@ export const imageTargetRequestSchema = z.object({
 
 const announcementMediaTargetFileSchema = z.object({
   fileName: trimmedString.min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'Use a simple file name without folders.'),
-  contentType: z.enum(ALLOWED_ANNOUNCEMENT_MEDIA_CONTENT_TYPES),
-  sizeBytes: z.number().int().min(1).max(MAX_VIDEO_SIZE_BYTES)
-}).strict().superRefine((value, ctx) => {
-  if (value.contentType.startsWith('image/') && value.sizeBytes > MAX_IMAGE_SIZE_BYTES) {
-    ctx.addIssue({ code: 'custom', path: ['sizeBytes'], message: 'Announcement images must be 5 MiB or smaller.' });
-  }
-});
+  contentType: z.enum(ALLOWED_IMAGE_CONTENT_TYPES),
+  sizeBytes: z.number().int().min(1).max(MAX_IMAGE_SIZE_BYTES)
+}).strict();
 
 export const mediaTargetRequestSchema = z.object({
   announcementId: z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/).optional(),
@@ -77,11 +69,7 @@ export const mediaTargetRequestSchema = z.object({
 }).strict().superRefine((value, ctx) => {
   const total = value.files.reduce((sum, file) => sum + file.sizeBytes, 0);
   if (total > MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES) {
-    ctx.addIssue({ code: 'custom', path: ['files'], message: 'Announcement media exceeds the total upload limit.' });
-  }
-  const videoCount = value.files.filter((file) => file.contentType.startsWith('video/')).length;
-  if (videoCount > MAX_ANNOUNCEMENT_VIDEO_ITEMS) {
-    ctx.addIssue({ code: 'custom', path: ['files'], message: 'Only one video is allowed per announcement.' });
+    ctx.addIssue({ code: 'custom', path: ['files'], message: 'Announcement images exceed the total upload limit.' });
   }
 });
 
@@ -91,14 +79,10 @@ export const announcementQuerySchema = paginationSchema.extend({
 
 const announcementMediaItemSchema = z.object({
   storagePath: z.string().trim().max(512),
-  contentType: z.enum(ALLOWED_ANNOUNCEMENT_MEDIA_CONTENT_TYPES),
-  sizeBytes: z.number().int().min(1).max(MAX_VIDEO_SIZE_BYTES),
+  contentType: z.enum(ALLOWED_IMAGE_CONTENT_TYPES),
+  sizeBytes: z.number().int().min(1).max(MAX_IMAGE_SIZE_BYTES),
   alt: z.string().trim().max(180).optional().default('')
-}).strict().superRefine((value, ctx) => {
-  if (value.contentType.startsWith('image/') && value.sizeBytes > MAX_IMAGE_SIZE_BYTES) {
-    ctx.addIssue({ code: 'custom', path: ['sizeBytes'], message: 'Announcement images must be 5 MiB or smaller.' });
-  }
-});
+}).strict();
 
 export const announcementCreateSchema = z.object({
   announcementId: z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/).optional(),
@@ -112,11 +96,7 @@ export const announcementCreateSchema = z.object({
   const media = value.media ?? (value.image ? [value.image] : []);
   const total = media.reduce((sum, item) => sum + item.sizeBytes, 0);
   if (total > MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES) {
-    ctx.addIssue({ code: 'custom', path: ['media'], message: 'Announcement media exceeds the total upload limit.' });
-  }
-  const videoCount = media.filter((item) => item.contentType.startsWith('video/')).length;
-  if (videoCount > MAX_ANNOUNCEMENT_VIDEO_ITEMS) {
-    ctx.addIssue({ code: 'custom', path: ['media'], message: 'Only one video is allowed per announcement.' });
+    ctx.addIssue({ code: 'custom', path: ['media'], message: 'Announcement images exceed the total upload limit.' });
   }
 });
 

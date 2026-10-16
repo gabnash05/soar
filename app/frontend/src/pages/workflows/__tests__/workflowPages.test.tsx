@@ -335,6 +335,20 @@ describe('SOAR workflow pages', () => {
     expect(listAnnouncements).toHaveBeenCalledTimes(2);
   });
 
+  it('loads a direct-linked announcement outside page one with one bounded lookup', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+    const listAnnouncements = vi.fn().mockResolvedValue({ data: { items: Array.from({ length: 15 }, (_, index) => post(`page-${index}`, `Page post ${index}`)), nextPageToken: 'cursor-15' }, source: 'fixture' });
+    const getAnnouncement = vi.fn().mockResolvedValue({ data: post('outside-page', 'Linked announcement on page two'), source: 'fixture' });
+    renderInRouter(<FeedView session={studentSession} client={{ ...base, listAnnouncements, getAnnouncement }} />, ['/app?announcementId=outside-page']);
+
+    expect(await screen.findByText('Linked announcement on page two')).toBeInTheDocument();
+    expect(getAnnouncement).toHaveBeenCalledTimes(1);
+    expect(getAnnouncement).toHaveBeenCalledWith('outside-page', studentSession);
+    expect(listAnnouncements).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+  });
+
   it('ignores a late page response after the feed session changes', async () => {
     const base = createFixtureWorkflowDataClient();
     const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
@@ -886,7 +900,7 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByText(/Announcement link copied/i)).toBeInTheDocument();
   });
 
-  it('publishes bounded announcement images and native videos with previews and documented limits', async () => {
+  it('publishes bounded announcement images and rejects unsupported videos', async () => {
     const user = userEvent.setup();
     renderInRouter(<FeedView session={officerSession} client={createFixtureWorkflowDataClient()} />);
 
@@ -894,20 +908,20 @@ describe('SOAR workflow pages', () => {
     await user.type(screen.getByLabelText(/Post text/i), 'Two image update for the build team.');
     const permissiveUser = userEvent.setup({ applyAccept: false });
     await permissiveUser.upload(screen.getByLabelText(/Optional media/i), new File(['not an image'], 'notes.txt', { type: 'text/plain' }));
-    expect(await screen.findByText(/Use a PNG, JPEG, GIF, WebP, MP4, or WebM file/i)).toBeInTheDocument();
-    await user.upload(screen.getByLabelText(/Optional media/i), [
+    expect(await screen.findByText(/Use a PNG, JPEG, GIF, or WebP image/i)).toBeInTheDocument();
+    await permissiveUser.upload(screen.getByLabelText(/Optional media/i), [
       new File(['a'], 'robot-a.png', { type: 'image/png' }),
       new File(['video'], 'robot-demo.mp4', { type: 'video/mp4' }),
     ]);
+    expect(await screen.findByText(/Use a PNG, JPEG, GIF, or WebP image/i)).toBeInTheDocument();
+    expect(screen.queryByText('robot-a.png')).not.toBeInTheDocument();
+    await user.upload(screen.getByLabelText(/Optional media/i), new File(['a'], 'robot-a.png', { type: 'image/png' }));
     expect(screen.getByText(/30 MB combined maximum/i)).toBeInTheDocument();
-    expect(screen.getByText(/MP4\/WebM video/i)).toBeInTheDocument();
     expect(screen.getByText('robot-a.png')).toBeInTheDocument();
-    expect(screen.getByText('robot-demo.mp4')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));
     expect(await screen.findByText(/Two image update for the build team/i)).toBeInTheDocument();
     expect(await screen.findByAltText('robot-a.png')).toBeInTheDocument();
-    expect(await screen.findByLabelText('robot-demo.mp4')).toBeInTheDocument();
   });
 
   it('accepts optional private PDF meeting documents and rejects unsupported files', async () => {

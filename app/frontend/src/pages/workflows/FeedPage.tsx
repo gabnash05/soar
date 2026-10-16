@@ -17,11 +17,13 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
   const [pageError, setPageError] = useState<string | null>(null);
   const [sourceMessage, setSourceMessage] = useState<string | null>(null);
   const [nextPageToken, setNextPageToken] = useState<string | undefined>();
+  const [directLookup, setDirectLookup] = useState<{ key: string; status: 'loading' | 'found' | 'missing' | 'error'; announcement?: Announcement } | null>(null);
   const generation = useRef(0);
   const busy = useRef(false);
   const sentinel = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
   const directAnnouncementId = searchParams.get('announcementId') ?? '';
+  const directLookupKey = `${session.uid}:${directAnnouncementId}`;
   const officerGrants = useMemo(() => getApprovedOfficerGrants(session), [session]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerDirty, setComposerDirty] = useState(false);
@@ -35,6 +37,7 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
     setLoadingMore(false);
     setError(null);
     setPageError(null);
+    setDirectLookup(null);
     setData([]);
     setNextPageToken(undefined);
     try {
@@ -106,15 +109,33 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
 
   const selectedGrant = officerGrants.find((grant) => grant.organizationId === selectedOrganizationId) ?? officerGrants[0];
   const canPostAnnouncement = Boolean(selectedGrant);
-  const directAnnouncementMissing = Boolean(directAnnouncementId && !loading && !error && data.length && !data.some((announcement) => announcement.id === directAnnouncementId));
+  const pageContainsDirectAnnouncement = data.some((announcement) => announcement.id === directAnnouncementId);
+  const directAnnouncementMissing = Boolean(directAnnouncementId && !loading && !error && !pageContainsDirectAnnouncement && directLookup?.key === directLookupKey && directLookup.status === 'missing');
+  const visibleAnnouncements = useMemo(() => {
+    if (directLookup?.key !== directLookupKey || !directLookup.announcement || pageContainsDirectAnnouncement) return data;
+    return [directLookup.announcement, ...data];
+  }, [data, directLookup, pageContainsDirectAnnouncement]);
 
   useEffect(() => {
-    if (!directAnnouncementId || loading || !data.length) return;
+    if (!directAnnouncementId || loading || error || pageContainsDirectAnnouncement || directLookup?.key === directLookupKey) return;
+    const requestGeneration = generation.current;
+    setDirectLookup({ key: directLookupKey, status: 'loading' });
+    void client.getAnnouncement(directAnnouncementId, session).then((result) => {
+      if (generation.current !== requestGeneration) return;
+      setDirectLookup({ key: directLookupKey, status: result.data ? 'found' : 'missing', announcement: result.data });
+      setSourceMessage(result.message ?? sourceMessage);
+    }).catch(() => {
+      if (generation.current === requestGeneration) setDirectLookup({ key: directLookupKey, status: 'error' });
+    });
+  }, [client, data, directAnnouncementId, directLookup, directLookupKey, error, loading, pageContainsDirectAnnouncement, session, sourceMessage]);
+
+  useEffect(() => {
+    if (!directAnnouncementId || loading || !pageContainsDirectAnnouncement && (directLookup?.key !== directLookupKey || directLookup?.status !== 'found')) return;
     const target = document.getElementById(`announcement-${directAnnouncementId}`);
     if (!target) return;
     target.scrollIntoView({ block: 'center', behavior: 'smooth' });
     target.focus({ preventScroll: true });
-  }, [data, directAnnouncementId, loading]);
+  }, [directAnnouncementId, directLookup, directLookupKey, loading, pageContainsDirectAnnouncement]);
 
   return (
     <WorkflowPageFrame eyebrow="Announcements" title="Campus updates without the clutter." description="Newest organization posts appear here and on each organization profile." session={session}
@@ -131,10 +152,12 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
       </ModalDialog>
       {loading ? <LoadingBlock label="Loading announcements" /> : null}
       {error ? <ErrorState onRetry={loadFirstPage}>{error}</ErrorState> : null}
+      {directLookup?.key === directLookupKey && directLookup.status === 'loading' ? <p role="status" className="text-center text-sm text-[var(--muted-foreground)]">Loading linked announcement…</p> : null}
       {directAnnouncementMissing ? <StateBlock title="Announcement unavailable" symbol="?">This direct announcement link may point to a deleted post or a post your account cannot access.</StateBlock> : null}
+      {directLookup?.key === directLookupKey && directLookup.status === 'error' ? <div role="alert" className="text-center text-sm">Could not check this announcement link. <Button type="button" variant="secondary" onClick={() => setDirectLookup(null)}>Retry</Button></div> : null}
       {!loading && !error && data.length === 0 ? <EmptyState title="No announcements yet">When officers publish announcements, the newest posts will appear here.</EmptyState> : null}
       <section className="mx-auto grid w-[min(720px,100%)] min-w-0 gap-4" aria-label="Announcement feed">
-        {data.map((announcement) => <AnnouncementCard key={announcement.id} announcement={announcement} session={session} client={client} onChanged={loadFirstPage} />)}
+        {visibleAnnouncements.map((announcement) => <AnnouncementCard key={announcement.id} announcement={announcement} session={session} client={client} onChanged={loadFirstPage} />)}
       </section>
       {pageError ? <div role="alert" className="mx-auto w-[min(720px,100%)] py-4 text-center text-sm text-[var(--color-ink)]">Could not load more announcements: {pageError} <Button type="button" variant="secondary" onClick={loadNextPage}>Retry loading announcements</Button></div> : null}
       {!loading && !error && data.length > 0 && !nextPageToken ? <p className="py-5 text-center text-sm text-[var(--muted-foreground)]" role="status">You’re all caught up.</p> : null}

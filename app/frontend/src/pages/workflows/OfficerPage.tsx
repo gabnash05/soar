@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, ButtonLink, ConfirmDialog, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
 import { safeErrorMessage } from '../../lib/safeErrors';
-import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, WORKFLOW_VIDEO_MAX_BYTES, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
+import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
 import { createEmptyOfficerDateEntry } from './adapters';
 import type { AnnouncementInput, DateEntry, DateEntryInput, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
@@ -130,7 +130,7 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
               }}
             />
             {logoError ? <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{logoError}</span> : <span className="text-xs text-[var(--muted-foreground)]">PNG, JPEG, GIF, or WebP. Maximum 5 MB. Existing logo stays if no file is selected.</span>}
-            {form.logoUrl ? <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover [&_video]:block [&_video]:max-h-[340px] [&_video]:w-full [&_video]:bg-[var(--color-ink)] [&_video]:object-cover [&_img]:bg-[var(--color-white)] [&_img]:object-contain [&_img]:p-3"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
+            {form.logoUrl ? <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover [&_img]:bg-[var(--color-white)] [&_img]:object-contain [&_img]:p-3"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
           </div>
           <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="external-form">External form URL <span>Optional</span></label><input id="external-form" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="url" value={form.externalFormUrl ?? ''} onChange={(event) => setForm((current) => ({ ...current, externalFormUrl: event.target.value }))} /></div>
         </div>
@@ -246,7 +246,7 @@ export function AnnouncementComposer({
             className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
             type="file"
             multiple
-            accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
+            accept="image/png,image/jpeg,image/webp,image/gif"
             onChange={(event) => {
               const files = Array.from(event.target.files ?? []);
               setImageError('');
@@ -263,14 +263,14 @@ export function AnnouncementComposer({
           {imageError ? (
             <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{imageError}</span>
           ) : (
-            <span className="text-xs text-[var(--muted-foreground)]">Up to {ANNOUNCEMENT_MEDIA_MAX_ITEMS} total images or videos. Images can be PNG, JPEG, GIF, or WebP; one MP4/WebM video may be attached up to {formatBytes(WORKFLOW_VIDEO_MAX_BYTES)}. {formatBytes(ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES)} combined maximum.</span>
+            <span className="text-xs text-[var(--muted-foreground)]">Up to {ANNOUNCEMENT_MEDIA_MAX_ITEMS} images. Use PNG, JPEG, GIF, or WebP, up to {formatBytes(ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES)} combined.</span>
           )}
         </div>
         {media.length ? (
-          <ul className="m-0 grid list-none gap-2.5 p-0 [&_li]:grid [&_li]:grid-cols-[96px_minmax(0,1fr)] [&_li]:items-center [&_li]:gap-3 [&_li]:rounded-[var(--radius-md)] [&_li]:border [&_li]:border-[var(--color-border)] [&_li]:bg-[var(--color-white)] [&_li]:p-2.5 max-sm:[&_li]:grid-cols-1 [&_img]:size-auto [&_img]:h-[76px] [&_img]:w-24 [&_img]:rounded-[var(--radius-sm)] [&_img]:bg-[var(--color-ink)] [&_img]:object-cover [&_video]:h-[76px] [&_video]:w-24 [&_video]:rounded-[var(--radius-sm)] [&_video]:bg-[var(--color-ink)] [&_video]:object-cover max-sm:[&_img]:h-[150px] max-sm:[&_img]:w-full max-sm:[&_video]:h-[150px] max-sm:[&_video]:w-full [&_strong]:block [&_span]:block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]" aria-label="Selected announcement images">
+          <ul className="m-0 grid list-none gap-2.5 p-0 [&_li]:grid [&_li]:grid-cols-[96px_minmax(0,1fr)] [&_li]:items-center [&_li]:gap-3 [&_li]:rounded-[var(--radius-md)] [&_li]:border [&_li]:border-[var(--color-border)] [&_li]:bg-[var(--color-white)] [&_li]:p-2.5 max-sm:[&_li]:grid-cols-1 [&_img]:size-auto [&_img]:h-[76px] [&_img]:w-24 [&_img]:rounded-[var(--radius-sm)] [&_img]:bg-[var(--color-ink)] [&_img]:object-cover max-sm:[&_img]:h-[150px] max-sm:[&_img]:w-full [&_strong]:block [&_span]:block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]" aria-label="Selected announcement images">
             {media.map((item, index) => (
               <li key={`${item.alt}-${index}`}>
-                {item.contentType?.startsWith('video/') ? <video src={item.url} controls preload="metadata" aria-label={item.alt} /> : <img src={item.url} alt={item.alt} />}
+                <img src={item.url} alt={item.alt} />
                 <div>
                   <strong>{item.alt}</strong>
                   <span>{item.sizeBytes ? formatBytes(item.sizeBytes) : 'Ready to upload'}</span>

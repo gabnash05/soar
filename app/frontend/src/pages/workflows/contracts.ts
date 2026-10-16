@@ -221,6 +221,7 @@ export interface WorkflowDataClient {
   readonly mode: WorkflowDataMode;
   readonly label: string;
   listAnnouncements(session: UserSession, page?: { limit: number; pageToken?: string }): Promise<WorkflowQueryResult<AnnouncementPage>>;
+  getAnnouncement(announcementId: string, session: UserSession): Promise<WorkflowQueryResult<Announcement | undefined>>;
   listAnnouncementComments(announcementId: string, session: UserSession): Promise<WorkflowQueryResult<AnnouncementComment[]>>;
   toggleAnnouncementLike(announcementId: string, liked: boolean, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   addAnnouncementComment(announcementId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<AnnouncementComment>>;

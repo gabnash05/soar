@@ -107,6 +107,22 @@ describe('production announcement media payloads', () => {
     ]);
   });
 
+  it('loads one announcement by id for a direct link and treats a server 404 as missing', async () => {
+    const client = createProductionWorkflowDataClient();
+    mocks.apiFetch.mockResolvedValueOnce({ id: 'linked-id', orgId: 'org-test', organizationName: 'Test Organization', body: 'Linked post', createdAt: '2026-10-15T00:00:00.000Z' });
+
+    const found = await client.getAnnouncement('linked-id', session);
+
+    expect(found.data?.id).toBe('linked-id');
+    expect(found.data?.body).toBe('Linked post');
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/announcements/linked-id', expect.anything());
+
+    const missingError = Object.assign(new Error('not found'), { status: 404 });
+    mocks.apiFetch.mockRejectedValueOnce(missingError);
+    await expect(client.getAnnouncement('missing-id', session)).resolves.toMatchObject({ data: undefined });
+    expect(mocks.apiFetch).toHaveBeenLastCalledWith('/announcements/missing-id', expect.anything());
+  });
+
   it('sends the uploaded Storage references once under media, not as both media and legacy image', async () => {
     mockAnnouncementApi();
     mocks.uploadToStorageTarget.mockImplementation(async (

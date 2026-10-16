@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES,
   MAX_IMAGE_SIZE_BYTES,
-  MAX_VIDEO_SIZE_BYTES,
   announcementCreateSchema,
   announcementImagePathMatch,
   assertLogoPathForOrganization,
@@ -50,13 +49,13 @@ describe('content validation', () => {
 
   it('validates image metadata before Storage writes are referenced', () => {
     expect(imageTargetRequestSchema.parse({ fileName: 'logo.png', contentType: 'image/png', sizeBytes: 1024 }).contentType).toBe('image/png');
-    expect(mediaTargetRequestSchema.parse({ files: [{ fileName: 'a.png', contentType: 'image/png', sizeBytes: 1024 }, { fileName: 'b.mp4', contentType: 'video/mp4', sizeBytes: 2048 }] }).files).toHaveLength(2);
+    expect(mediaTargetRequestSchema.parse({ files: [{ fileName: 'a.png', contentType: 'image/png', sizeBytes: 1024 }, { fileName: 'b.webp', contentType: 'image/webp', sizeBytes: 2048 }] }).files).toHaveLength(2);
     expectParseFailure(() => imageTargetRequestSchema.parse({ fileName: '../logo.png', contentType: 'image/png', sizeBytes: 1024 }));
     expectParseFailure(() => imageTargetRequestSchema.parse({ fileName: 'logo.svg', contentType: 'image/svg+xml', sizeBytes: 1024 }));
     expectParseFailure(() => imageTargetRequestSchema.parse({ fileName: 'logo.png', contentType: 'image/png', sizeBytes: MAX_IMAGE_SIZE_BYTES + 1 }));
     expectParseFailure(() => mediaTargetRequestSchema.parse({ files: Array.from({ length: 5 }, (_, index) => ({ fileName: `image-${index}.png`, contentType: 'image/png', sizeBytes: 1024 })) }));
-    expectParseFailure(() => mediaTargetRequestSchema.parse({ files: [{ fileName: 'a.mp4', contentType: 'video/mp4', sizeBytes: MAX_VIDEO_SIZE_BYTES }, { fileName: 'b.webm', contentType: 'video/webm', sizeBytes: 1024 }] }));
-    expectParseFailure(() => announcementCreateSchema.parse({ body: 'Too large', media: [{ storagePath: 'announcement-images/org1/post1/a.mp4', contentType: 'video/mp4', sizeBytes: MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES + 1 }] }));
+    expectParseFailure(() => mediaTargetRequestSchema.parse({ files: [{ fileName: 'clip.mp4', contentType: 'video/mp4', sizeBytes: 2048 }] }));
+    expectParseFailure(() => announcementCreateSchema.parse({ body: 'Unsupported video', media: [{ storagePath: 'announcement-images/org1/post1/clip.mp4', contentType: 'video/mp4', sizeBytes: 2048 }] }));
   });
 
   it('keeps image paths inside canonical organization-owned folders', () => {

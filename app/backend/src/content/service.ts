@@ -8,13 +8,10 @@ import { AppError } from '../errors';
 import { db } from '../firebase';
 import { loadAccount, requireActiveAccess } from '../identity/access';
 import {
-  ALLOWED_ANNOUNCEMENT_MEDIA_CONTENT_TYPES,
   ALLOWED_IMAGE_CONTENT_TYPES,
   MAX_ANNOUNCEMENT_MEDIA_ITEMS,
   MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES,
-  MAX_ANNOUNCEMENT_VIDEO_ITEMS,
   MAX_IMAGE_SIZE_BYTES,
-  MAX_VIDEO_SIZE_BYTES,
   announcementCreateSchema,
   announcementImagePathMatch,
   announcementQuerySchema,
@@ -379,12 +376,9 @@ export async function createAnnouncementMediaTargets(user: DecodedIdToken, orgId
       contentType: file.contentType,
       sizeBytes: file.sizeBytes
     })),
-    allowedContentTypes: ALLOWED_ANNOUNCEMENT_MEDIA_CONTENT_TYPES,
+    allowedContentTypes: ALLOWED_IMAGE_CONTENT_TYPES,
     maxItems: MAX_ANNOUNCEMENT_MEDIA_ITEMS,
-    maxVideoItems: MAX_ANNOUNCEMENT_VIDEO_ITEMS,
-    maxImageSizeBytes: MAX_IMAGE_SIZE_BYTES,
-    maxVideoSizeBytes: MAX_VIDEO_SIZE_BYTES,
-    maxSizeBytes: MAX_VIDEO_SIZE_BYTES,
+    maxSizeBytes: MAX_IMAGE_SIZE_BYTES,
     maxAggregateSizeBytes: MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES
   };
 }
