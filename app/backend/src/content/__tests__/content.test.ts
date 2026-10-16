@@ -4,6 +4,7 @@ import {
   MAX_IMAGE_SIZE_BYTES,
   MAX_VIDEO_SIZE_BYTES,
   announcementCreateSchema,
+  announcementUpdateSchema,
   announcementImagePathMatch,
   assertLogoPathForOrganization,
   dateEntryUpsertSchema,
@@ -35,6 +36,13 @@ describe('content validation', () => {
   it('rejects empty announcements and comments through schemas', () => {
     expect(announcementCreateSchema.parse({ body: '  Tryouts Friday  ' }).body).toBe('Tryouts Friday');
     expectParseFailure(() => announcementCreateSchema.parse({ body: '   ' }));
+  });
+
+  it('accepts only a non-empty announcement body for post updates', () => {
+    expect(announcementUpdateSchema.parse({ body: '  Revised update  ' }).body).toBe('Revised update');
+    expectParseFailure(() => announcementUpdateSchema.parse({ body: '  ' }));
+    expectParseFailure(() => announcementUpdateSchema.parse({ body: 'Valid', organizationId: 'other-org' }));
+    expectParseFailure(() => announcementUpdateSchema.parse({ body: 'Valid', media: [] }));
   });
 
   it('validates image metadata before Storage writes are referenced', () => {

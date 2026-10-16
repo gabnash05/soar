@@ -298,6 +298,10 @@ function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { das
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
+  const [editBody, setEditBody] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const generation = useRef(0);
   const busy = useRef(false);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -357,17 +361,48 @@ function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { das
     return () => observer.disconnect();
   }, [cursor, loadNext, loading, loadingMore, pageError]);
 
+  const saveAnnouncement = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingAnnouncement) return;
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      const result = await client.updateAnnouncement(editingAnnouncement.id, organizationId, editBody, session);
+      if (!result.ok || !result.data) {
+        setEditError(result.message || 'The announcement could not be updated.');
+        return;
+      }
+      const updatedAnnouncement = result.data;
+      setItems((current) => current.map((item) => item.id === updatedAnnouncement.id ? updatedAnnouncement : item));
+      setEditingAnnouncement(null);
+    } catch (caught) {
+      setEditError(caught instanceof Error ? caught.message : 'The announcement could not be updated.');
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
   return <div className="mx-auto grid w-[min(720px,100%)] min-w-0 gap-4" aria-label="Managed announcements">
     {loading ? <LoadingBlock label="Loading organization announcements" /> : null}
     {error ? <ErrorState onRetry={loadFirst}>{error}</ErrorState> : null}
     {!loading && !error && items.length === 0 ? <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p> : null}
     {items.map((item) => {
       const images = (item.media?.length ? item.media : item.image ? [item.image] : []).filter((media) => !media.contentType?.startsWith('video/'));
-      return <div key={item.id} className="grid gap-2"><AnnouncementCard announcement={{ ...item, image: images[0], media: images.length ? images : undefined }} session={session} client={client} onChanged={loadFirst} /><div className="flex justify-end"><Button type="button" variant="danger" onClick={() => onDelete(item.id)}>Delete announcement</Button></div></div>;
+      return <div key={item.id} className="grid gap-2"><AnnouncementCard announcement={{ ...item, image: images[0], media: images.length ? images : undefined }} session={session} client={client} onChanged={loadFirst} /><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => { setEditError(null); setEditBody(item.body); setEditingAnnouncement(item); }}>Edit announcement</Button><Button type="button" variant="danger" onClick={() => onDelete(item.id)}>Delete announcement</Button></div></div>;
     })}
     {pageError ? <div role="alert" className="py-4 text-center text-sm">Could not load more announcements: {pageError} <Button type="button" variant="secondary" onClick={loadNext}>Retry loading announcements</Button></div> : null}
     {cursor && !pageError ? <div ref={sentinel} className="flex min-h-12 items-center justify-center py-3" aria-live="polite">{loadingMore ? <span role="status">Loading more announcements…</span> : <Button type="button" variant="secondary" onClick={loadNext}>Load more announcements</Button>}</div> : null}
     {!loading && items.length > 0 && !cursor ? <p className="py-5 text-center text-sm text-[var(--muted-foreground)]" role="status">You’re all caught up.</p> : null}
+    <ModalDialog open={Boolean(editingAnnouncement)} title="Edit announcement" dirty={Boolean(editingAnnouncement && editBody !== editingAnnouncement.body)} onClose={() => setEditingAnnouncement(null)}>
+      {editingAnnouncement ? <form className="grid gap-3" onSubmit={saveAnnouncement}>
+        <label className="grid min-w-0 gap-1.5 text-[13px] font-bold text-[var(--color-navy)]" htmlFor={`edit-announcement-${editingAnnouncement.id}`}>Announcement text
+          <textarea id={`edit-announcement-${editingAnnouncement.id}`} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[150px] resize-y" maxLength={4000} required value={editBody} onChange={(event) => setEditBody(event.target.value)} />
+        </label>
+        <p className="m-0 text-xs text-[var(--muted-foreground)]">Attached images, likes, comments, and publication date will be kept.</p>
+        {editError ? <p className="m-0 text-sm text-[var(--color-orange-deep)]" role="alert">{editError}</p> : null}
+        <div className="flex flex-wrap justify-end gap-2"><Button type="submit" disabled={editBusy || !editBody.trim()}>{editBusy ? 'Saving…' : 'Save announcement'}</Button></div>
+      </form> : null}
+    </ModalDialog>
   </div>;
 }
 

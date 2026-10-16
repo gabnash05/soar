@@ -500,6 +500,11 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return mutationResult('Announcement published.', await mapAnnouncement(response));
     },
 
+    async updateAnnouncement(announcementId, organizationId, body) {
+      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}/announcements/${encodeURIComponent(announcementId)}`, await bodyInit({ body }, 'PATCH'));
+      return mutationResult('Announcement updated.', await mapAnnouncement(response));
+    },
+
     async deleteAnnouncement(announcementId, organizationId) {
       await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}/announcements/${encodeURIComponent(announcementId)}`, await bodyInit(undefined, 'DELETE'));
       return { ok: true, persisted: true, source: 'production', message: 'Announcement deleted.' };

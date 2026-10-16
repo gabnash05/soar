@@ -17,6 +17,7 @@ import {
   MAX_VIDEO_SIZE_BYTES,
   announcementCreateSchema,
   announcementImagePathMatch,
+  announcementUpdateSchema,
   announcementQuerySchema,
   assertLogoPathForOrganization,
   commentCreateSchema,
@@ -449,6 +450,25 @@ export async function createAnnouncement(user: DecodedIdToken, orgIdParam: strin
 
   const snap = await docRef.get();
   return announcementFromDoc(snap.data() ?? {}, false);
+}
+
+export async function updateAnnouncement(user: DecodedIdToken, orgIdParam: string, announcementIdParam: string, rawBody: unknown) {
+  const orgId = routeOrgId(orgIdParam);
+  await assertCanManageOrganization(user, orgId);
+  const announcementId = routeDocumentId(announcementIdParam, 'announcement');
+  const input = announcementUpdateSchema.parse(rawBody);
+  const ref = db.collection(COLLECTIONS.announcements).doc(announcementId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists || snap.data()?.deletedAt) {
+      throw new AppError('announcement_missing', 'The announcement was not found.', 404);
+    }
+    if (snap.data()?.orgId !== orgId) {
+      throw new AppError('announcement_organization_mismatch', 'The announcement does not belong to this organization.', 400);
+    }
+    tx.update(ref, { body: input.body, updatedAt: FieldValue.serverTimestamp() });
+  });
+  return getAnnouncement(user, announcementId);
 }
 
 export async function deleteAnnouncement(user: DecodedIdToken, orgIdParam: string, announcementIdParam: string) {

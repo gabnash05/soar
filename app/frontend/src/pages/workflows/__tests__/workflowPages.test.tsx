@@ -354,6 +354,7 @@ describe('SOAR workflow pages', () => {
     };
     const client = createFixtureWorkflowDataClient();
     const listAnnouncements = vi.spyOn(client, 'listAnnouncements');
+    const updateAnnouncement = vi.spyOn(client, 'updateAnnouncement').mockRejectedValueOnce(new Error('Temporary save error'));
     const { unmount } = renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={client} />, ['/settings/organization?organizationId=robotics&tab=announcements']);
 
     expect(await screen.findByRole('tab', { name: /Announcements/i })).toHaveAttribute('aria-selected', 'true');
@@ -364,6 +365,21 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByText('Is the consultation window open to first-year students?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete announcement' })).toBeInTheDocument();
     expect(listAnnouncements).toHaveBeenCalledWith(multiOfficerSession, { limit: 15, organizationId: 'robotics' });
+    await user.click(screen.getByRole('button', { name: 'Edit announcement' }));
+    const editor = screen.getByRole('textbox', { name: 'Announcement text' });
+    await user.clear(editor);
+    await user.type(editor, 'Updated robotics announcement text.');
+    await user.click(screen.getByRole('button', { name: 'Close Edit announcement' }));
+    expect(screen.getByRole('alertdialog', { name: /Discard unsaved changes/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Keep editing' }));
+    await user.click(screen.getByRole('button', { name: 'Save announcement' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Temporary save error');
+    expect(screen.getByRole('textbox', { name: 'Announcement text' })).toHaveValue('Updated robotics announcement text.');
+    await user.click(screen.getByRole('button', { name: 'Save announcement' }));
+    expect(await screen.findByText('Updated robotics announcement text.')).toBeInTheDocument();
+    expect(updateAnnouncement).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/Computer Engineering project night/i)).not.toBeInTheDocument();
+    expect((await client.listAnnouncements(multiOfficerSession, { limit: 15, organizationId: 'robotics' })).data.items[0].body).toBe('Updated robotics announcement text.');
     expect(screen.queryByText(/Architecture portfolio clinic signup/i)).not.toBeInTheDocument();
     unmount();
 

@@ -26,6 +26,7 @@ import {
   listOrganizations,
   scopedDateEntryQuery,
   setAnnouncementLike,
+  updateAnnouncement,
   updateAnnouncementComment,
   updateDateEntry,
   updateOrganizationProfile
@@ -179,6 +180,11 @@ export function createApiApp() {
   app.post(['/organizations/:orgId/announcements', '/api/organizations/:orgId/announcements'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.status(201).json(await createAnnouncement(user, getParam(req, 'orgId'), req.body));
+  }));
+
+  app.patch(['/organizations/:orgId/announcements/:announcementId', '/api/organizations/:orgId/announcements/:announcementId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await updateAnnouncement(user, getParam(req, 'orgId'), getParam(req, 'announcementId'), req.body));
   }));
 
   app.delete(['/organizations/:orgId/announcements/:announcementId', '/api/organizations/:orgId/announcements/:announcementId'], asyncRoute(async (req, res) => {
