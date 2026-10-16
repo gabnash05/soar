@@ -14,6 +14,7 @@ import type {
   MeetingRequest,
   MeetingRequestInput,
   OfficerDashboard,
+  OrganizationPage,
   OrganizationProfile,
   OrganizationProfileInput,
   OrganizationSummary,
@@ -65,7 +66,7 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   addAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
   updateAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
   deleteAnnouncementComment: () => unavailableMutation(),
-  listOrganizations: () => unavailableQuery<OrganizationSummary[]>([]),
+  listOrganizations: () => unavailableQuery<OrganizationPage>({ items: [] }),
   getOrganization: () => unavailableQuery<OrganizationProfile | undefined>(undefined),
   confirmExternalApplication: () => unavailableMutation<ApplicationRecord>(),
   listMyApplications: () => unavailableQuery<ApplicationRecord[]>([]),
@@ -635,9 +636,22 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       return { ok: true, persisted: true, source: 'fixture', message: 'Comment deleted in demo mode.' };
     },
 
-    async listOrganizations() {
+    async listOrganizations(_session, page = {}) {
+      const limit = page.limit ?? 20;
+      const query = page.query?.trim().toLocaleLowerCase() ?? '';
+      const cursorMatch = page.pageToken === undefined ? null : /^fixture:([^:]*):(0|[1-9]\d*)$/.exec(page.pageToken);
+      if (page.pageToken !== undefined && !cursorMatch) throw new Error('The organization page token is invalid.');
+      let offset = 0;
+      if (cursorMatch) {
+        let cursorQuery = '';
+        try { cursorQuery = decodeURIComponent(cursorMatch[1]); } catch { throw new Error('The organization page token is invalid.'); }
+        if (cursorQuery !== query) throw new Error('The organization page token does not match this search.');
+        offset = Number(cursorMatch[2]);
+      }
+      const filtered = organizations.map(toSummary).filter((organization) => !query || organization.name.toLocaleLowerCase().includes(query));
+      const items = filtered.slice(offset, offset + limit);
       return {
-        data: clone(organizations.map(toSummary)),
+        data: { items: clone(items), nextPageToken: offset + items.length < filtered.length ? `fixture:${encodeURIComponent(query)}:${offset + items.length}` : undefined },
         source: 'fixture',
         message: 'Demo mode: organization records are local samples.',
       };

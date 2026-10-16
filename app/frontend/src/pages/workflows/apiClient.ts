@@ -21,6 +21,7 @@ import type {
   MeetingRequestDocument,
   MeetingRequestInput,
   OfficerDashboard,
+  OrganizationPage,
   OrganizationProfile,
   OrganizationProfileInput,
   OrganizationSummary,
@@ -436,9 +437,14 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return { ok: true, persisted: true, source: 'production', message: 'Comment deleted.' };
     },
 
-    async listOrganizations() {
-      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/organizations', await activeHeaders());
-      return queryResult(await Promise.all(listItems(response).map(mapOrganizationSummary)));
+    async listOrganizations(_session, page = {}) {
+      const params = new URLSearchParams({ limit: String(page.limit ?? 20) });
+      if (page.pageToken) params.set('pageToken', page.pageToken);
+      if (page.query?.trim()) params.set('q', page.query.trim());
+      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>(`/organizations?${params.toString()}`, await activeHeaders());
+      const envelope = Array.isArray(response) ? undefined : response;
+      const items = await Promise.all(listItems(response).map(mapOrganizationSummary));
+      return queryResult<OrganizationPage>({ items, nextPageToken: envelope?.nextPageToken });
     },
 
     async getOrganization(organizationId) {

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
+import type { OrganizationSummary } from '../contracts';
 import type { AnnouncementPage, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
@@ -124,6 +125,41 @@ describe('SOAR workflow pages', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it('loads organization directory pages beyond the first set with the opaque cursor', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const summary = (id: string, name: string) => ({ id, slug: id, name, shortDescription: `${name} description`, contactEmail: `${id}@example.edu`, recruitmentTitle: 'Recruitment' });
+    const firstItems = Array.from({ length: 20 }, (_, index) => summary(`saved-${index}`, `Saved organization ${index}`));
+    const listOrganizations = vi.fn()
+      .mockResolvedValueOnce({ data: { items: firstItems, nextPageToken: 'cursor-after-twenty' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [summary('admin-created', 'Admin-created organization')] }, source: 'fixture' });
+    renderInRouter(<DirectoryView session={studentSession} client={{ ...base, listOrganizations }} />);
+
+    expect(await screen.findByText('Saved organization 19')).toBeInTheDocument();
+    expect(listOrganizations).toHaveBeenCalledWith(studentSession, { limit: 20, query: '' });
+    await userEvent.click(screen.getByRole('button', { name: 'Load more organizations' }));
+    expect(await screen.findByText('Admin-created organization')).toBeInTheDocument();
+    expect(listOrganizations).toHaveBeenNthCalledWith(2, studentSession, { limit: 20, pageToken: 'cursor-after-twenty', query: '' });
+  });
+
+  it('ignores stale organization search responses when the query changes', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const summary = (id: string, name: string) => ({ id, slug: id, name, shortDescription: '', contactEmail: '', recruitmentTitle: '' });
+    const pending = new Map<string, (result: { data: { items: OrganizationSummary[] }; source: 'fixture' }) => void>();
+    const listOrganizations = vi.fn((_session: UserSession, page?: { limit?: number; pageToken?: string; query?: string }) => {
+      if (page?.query === 'la' || page?.query === 'late') return new Promise<{ data: { items: OrganizationSummary[] }; source: 'fixture' }>((resolve) => pending.set(page.query!, resolve));
+      return Promise.resolve({ data: { items: [], nextPageToken: undefined }, source: 'fixture' as const });
+    });
+    renderInRouter(<DirectoryView session={studentSession} client={{ ...base, listOrganizations }} />);
+    const input = await screen.findByLabelText(/Search by organization name/i);
+    await userEvent.type(input, 'late');
+    await waitFor(() => expect(pending.has('la') && pending.has('late')).toBe(true));
+    pending.get('late')?.({ data: { items: [summary('late-org', 'Late match')] }, source: 'fixture' });
+    expect(await screen.findByText('Late match')).toBeInTheDocument();
+    pending.get('la')?.({ data: { items: [summary('stale-org', 'Stale match')] }, source: 'fixture' });
+    await waitFor(() => expect(screen.queryByText('Stale match')).not.toBeInTheDocument());
+    expect(screen.getByText('Late match')).toBeInTheDocument();
   });
 
   it('filters the organization directory by name and shows no-results copy', async () => {
