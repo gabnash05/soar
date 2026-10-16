@@ -223,7 +223,7 @@ export function AnnouncementComposer({
         onSubmitted?.();
       }
     } catch (error) {
-      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: error instanceof Error ? error.message : 'Announcement upload failed.' };
+      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: safeErrorMessage(error, 'Announcement upload failed. Please try again.') };
       setResult(failure);
       onResult?.(failure);
     } finally {

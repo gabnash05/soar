@@ -763,6 +763,25 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByText(/Architecture portfolio orientation starts Friday/i)).toBeInTheDocument();
   });
 
+  it('maps announcement upload failures safely and keeps the draft available to retry', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const providerError = Object.assign(new Error('Firebase Storage denied object gs://private-bucket/secret/path'), { code: 'storage/unauthorized' });
+    const publishAnnouncement = vi.spyOn(client, 'publishAnnouncement').mockRejectedValueOnce(providerError);
+    renderInRouter(<FeedView session={officerSession} client={client} />);
+
+    await user.click(await screen.findByRole('button', { name: /Post announcement/i }));
+    await user.type(screen.getByLabelText(/Post text/i), 'Draft that should survive an upload failure.');
+    await user.upload(screen.getByLabelText(/Optional media/i), new File(['image'], 'campus.png', { type: 'image/png' }));
+    await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('You do not have permission to upload this file.');
+    expect(screen.queryByText(/private-bucket|secret\/path|Firebase Storage denied/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Post text/i)).toHaveValue('Draft that should survive an upload failure.');
+    expect(screen.getByRole('img', { name: 'campus.png' })).toBeInTheDocument();
+    expect(publishAnnouncement).toHaveBeenCalledOnce();
+  });
+
   it('guards organization settings to approved officer grants and supports managed organization context', async () => {
     const user = userEvent.setup();
     const multiOfficerSession = {
