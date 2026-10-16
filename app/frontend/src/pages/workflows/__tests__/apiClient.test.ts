@@ -136,6 +136,23 @@ describe('production announcement media payloads', () => {
     ]);
   });
 
+  it('forwards bounded organization search pages and opaque server cursors', async () => {
+    mocks.apiFetch
+      .mockResolvedValueOnce({ items: [{ id: 'org-late', name: 'Later Organization' }], nextPageToken: 'opaque-stable-cursor' })
+      .mockResolvedValueOnce({ items: [{ id: 'org-latest', name: 'Latest Organization' }] });
+    const client = createProductionWorkflowDataClient();
+
+    const first = await client.listOrganizations(session, { limit: 20, query: 'Later' });
+    const second = await client.listOrganizations(session, { limit: 20, query: 'Later', pageToken: first.data.nextPageToken });
+
+    expect(first.data.items.map((item) => item.id)).toEqual(['org-late']);
+    expect(second.data.items.map((item) => item.id)).toEqual(['org-latest']);
+    expect(mocks.apiFetch.mock.calls.map(([path]) => path)).toEqual([
+      '/organizations?limit=20&q=Later',
+      '/organizations?limit=20&pageToken=opaque-stable-cursor&q=Later',
+    ]);
+  });
+
   it('loads one announcement by id for a direct link and treats a server 404 as missing', async () => {
     const client = createProductionWorkflowDataClient();
     mocks.apiFetch.mockResolvedValueOnce({ id: 'linked-id', orgId: 'org-test', organizationName: 'Test Organization', body: 'Linked post', createdAt: '2026-10-15T00:00:00.000Z' });

@@ -39,7 +39,7 @@ function reference(path: string) {
 
 function collectionQuery(collectionName: string) {
   let offset = 0;
-  let cursor = '';
+  let cursor: unknown[] = [];
   let maxItems = Number.MAX_SAFE_INTEGER;
   const filters: Array<[string, string, unknown]> = [];
   const query: any = {
@@ -54,8 +54,8 @@ function collectionQuery(collectionName: string) {
       offset = value;
       return query;
     },
-    startAfter(value: string) {
-      cursor = value;
+    startAfter(...values: unknown[]) {
+      cursor = values;
       return query;
     },
     limit(value: number) {
@@ -72,9 +72,15 @@ function collectionQuery(collectionName: string) {
       }
       const orderField = collectionName === 'organizations' ? 'name' : undefined;
       docs.sort((left, right) => orderField
-        ? String((left.data() as Record<string, unknown>)[orderField] ?? '').localeCompare(String((right.data() as Record<string, unknown>)[orderField] ?? ''))
+        ? String((left.data() as Record<string, unknown>)[orderField] ?? '').localeCompare(String((right.data() as Record<string, unknown>)[orderField] ?? '')) || left.id.localeCompare(right.id)
         : left.id.localeCompare(right.id));
-      if (cursor) docs = docs.filter((doc) => doc.id.localeCompare(cursor) > 0);
+      if (cursor.length) docs = docs.filter((doc) => {
+        if (orderField) {
+          const name = String((doc.data() as Record<string, unknown>)[orderField] ?? '');
+          return name.localeCompare(String(cursor[0])) > 0 || (name === cursor[0] && doc.id.localeCompare(String(cursor[1])) > 0);
+        }
+        return doc.id.localeCompare(String(cursor[0])) > 0;
+      });
       return { docs: docs.slice(offset, offset + maxItems) };
     }
   };
@@ -241,13 +247,18 @@ describe('admin organization provisioning', () => {
     await expect(assignAdminOfficerGrant('missing-org', { uid: 'student-01' }, 'trusted-admin')).rejects.toBeInstanceOf(AppError);
   });
 
-  it('lists only the organization picker fields with bounded pagination', async () => {
-    state.docs.set('organizations/a-club', { orgId: 'a-club', name: 'A Club', ownerUid: 'secret-owner' });
-    state.docs.set('organizations/b-club', { orgId: 'b-club', name: 'B Club', ownerUid: 'secret-owner' });
+  it('lists only organization picker fields with stable tied-name cursors across mutations', async () => {
+    for (const id of ['a-org', 'b-org', 'c-org']) state.docs.set(`organizations/${id}`, { orgId: id, name: 'Same name', ownerUid: 'secret-owner' });
 
-    await expect(listAdminOrganizations({ limit: 1 })).resolves.toEqual({
-      items: [{ id: 'a-club', name: 'A Club' }],
-      nextPageToken: '1'
-    });
+    const first = await listAdminOrganizations({ limit: 1 });
+    expect(first.items).toEqual([{ id: 'a-org', name: 'Same name' }]);
+    expect(first.nextPageToken).toBeTruthy();
+    state.docs.delete('organizations/a-org');
+    state.docs.set('organizations/aa-org', { orgId: 'aa-org', name: 'Same name', ownerUid: 'secret-owner' });
+    const second = await listAdminOrganizations({ limit: 1, pageToken: first.nextPageToken });
+    expect(second.items).toEqual([{ id: 'aa-org', name: 'Same name' }]);
+    const third = await listAdminOrganizations({ limit: 1, pageToken: second.nextPageToken });
+    expect(third.items).toEqual([{ id: 'b-org', name: 'Same name' }]);
+    await expect(listAdminOrganizations({ limit: 1, pageToken: '1' })).rejects.toMatchObject({ code: 'invalid_page_token' });
   });
 });
