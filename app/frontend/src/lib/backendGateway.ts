@@ -4,13 +4,13 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
-  updateProfile,
 } from '@firebase/auth';
 import {
   type AccessEntitlement,
   type CheckoutStatus,
   type EmailChangeInput,
   type NameChangeInput,
+  type NameChangeResult,
   type RegisterAccountInput,
   type RegistrationPaymentInput,
   type RegistrationPaymentIntent,
@@ -20,6 +20,7 @@ import {
   type UserSession,
 } from './contracts';
 import { apiBaseUrl, apiFetch, authHeaders } from './apiClient';
+import { UserFacingError } from './safeErrors';
 import { getFirebaseConfigStatus, getFirebaseRuntime } from './firebase';
 import { createFixtureGateway } from './fixtures';
 
@@ -36,7 +37,7 @@ export interface BackendGateway {
   resendEmailVerification(): Promise<void>;
   requestManualRenewal(input: RenewalRequestInput): Promise<RenewalRequest>;
   getAccessStatus(): Promise<UserSession['access']>;
-  updateDisplayName(input: NameChangeInput): Promise<UserSession>;
+  updateDisplayName(input: NameChangeInput): Promise<NameChangeResult>;
   requestEmailChange(input: EmailChangeInput): Promise<void>;
 }
 
@@ -68,7 +69,7 @@ const normalizeAccess = (access: RawAccess): AccessEntitlement => {
 type RawUserSession = Omit<UserSession, 'accountKind'> & { accountKind?: string };
 
 const normalizeAccountKind = (accountKind: string | undefined): UserSession['accountKind'] =>
-  accountKind === 'sponsor' ? 'sponsor' : 'student';
+  accountKind === 'admin' ? 'admin' : accountKind === 'sponsor' ? 'sponsor' : 'student';
 
 const mapSession = (session: RawUserSession): UserSession => ({
   ...session,
@@ -127,7 +128,7 @@ const createProductionGateway = (): BackendGateway => ({
   async registerAccount(input) {
     const checkout = await this.getCheckoutStatus(input.intentId);
     if (!checkout.canCreateAccount || checkout.status !== 'active') {
-      throw new Error('Payment is not confirmed yet. Account creation remains locked.');
+      throw new UserFacingError('Payment is not confirmed yet. Account creation remains locked.');
     }
 
     await apiFetch<{ uid: string; completed: boolean; accessExpiresAt?: string }>('/payments/registration/complete', {
@@ -145,7 +146,7 @@ const createProductionGateway = (): BackendGateway => ({
 
   async resendEmailVerification() {
     const { auth } = getFirebaseRuntime();
-    if (!auth.currentUser) throw new Error('Sign in before requesting a verification email.');
+    if (!auth.currentUser) throw new UserFacingError('Sign in before requesting a verification email.');
     await sendEmailVerification(auth.currentUser);
   },
 
@@ -163,21 +164,16 @@ const createProductionGateway = (): BackendGateway => ({
   },
 
   async updateDisplayName(input) {
-    const { auth } = getFirebaseRuntime();
-    if (auth.currentUser) {
-      await updateProfile(auth.currentUser, { displayName: input.displayName });
-    }
-    const session = await apiFetch<RawUserSession>('/account/display-name', {
+    return apiFetch<NameChangeResult>('/account/display-name', {
       method: 'POST',
       headers: await authHeaders(),
       body: JSON.stringify(input),
     });
-    return mapSession(session);
   },
 
   async requestEmailChange(input) {
     const { auth } = getFirebaseRuntime();
-    if (!auth.currentUser || !auth.currentUser.email) throw new Error('Sign in before changing email.');
+    if (!auth.currentUser || !auth.currentUser.email) throw new UserFacingError('Sign in before changing email.');
     await apiFetch('/account/email-change', {
       method: 'POST',
       headers: await authHeaders(),

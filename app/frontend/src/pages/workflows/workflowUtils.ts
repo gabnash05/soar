@@ -76,8 +76,8 @@ export function hasDuplicateMeetingRequest(requests: MeetingRequest[], input: Me
   );
 }
 
-export function hasDuplicateApplication(applications: ApplicationRecord[], studentUid: string, opportunityId: string): boolean {
-  return applications.some((application) => application.studentUid === studentUid && application.opportunityId === opportunityId);
+export function hasDuplicateApplication(applications: ApplicationRecord[], studentUid: string, organizationId: string): boolean {
+  return applications.some((application) => application.studentUid === studentUid && application.organizationId === organizationId);
 }
 
 export function getSafeHttpUrl(rawUrl?: string): string | undefined {

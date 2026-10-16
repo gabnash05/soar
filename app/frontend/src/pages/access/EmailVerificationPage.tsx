@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SoarLogo } from '../../components/SoarLogo';
 import { Button, Card, StatusChip } from '../../components/ui';
@@ -6,10 +6,15 @@ import { useAuth } from '../../context/AuthContext';
 import { hasActiveAccess } from '../../lib/contracts';
 
 export const EmailVerificationPage = () => {
-  const { session, reloadSession, resendEmailVerification, signOut, error, clearError } = useAuth();
+  const { session, reloadSession, resendEmailVerification, signOut, error, clearError } = useAuth('email-verification');
   const [message, setMessage] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    clearError();
+    return clearError;
+  }, [clearError]);
 
   const handleReload = async () => {
     clearError();

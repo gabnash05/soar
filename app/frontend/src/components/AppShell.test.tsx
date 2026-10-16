@@ -49,6 +49,26 @@ describe('AppShell navigation', () => {
     expect(screen.getByText('Computer Engineering Department')).toBeInTheDocument();
   });
 
+  it('shows only the provisioning tab to the trusted Admin account type without payment or officer status UI', async () => {
+    const admin = makeSession({
+      accountKind: 'admin',
+      studentId: undefined,
+      department: undefined,
+      emailVerified: false,
+      access: { status: 'missing', annualFeePhp: 10, renewalAvailable: true },
+    });
+    renderShell(admin);
+
+    await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
+    expect(screen.getByRole('complementary')).toHaveTextContent('Admin');
+    expect(screen.getByRole('link', { name: 'Admin' })).toHaveAttribute('href', '/admin');
+    expect(screen.queryByRole('link', { name: 'Announcements' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Payment & access' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Access locked')).not.toBeInTheDocument();
+    expect(screen.queryByText(/six-month access is active/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Officer permission')).not.toBeInTheDocument();
+  });
+
   it('does not expose removed admin statistics navigation for ordinary sessions', async () => {
     const gateway = { ...createMockGateway(makeSession()), mode: 'production' as const, label: 'Production gateway' };
     renderShell(makeSession(), gateway);

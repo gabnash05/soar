@@ -1,18 +1,20 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
-export type RoleBadgeKind = 'student' | 'sponsor' | 'officer';
+export type RoleBadgeKind = 'student' | 'sponsor' | 'officer' | 'admin';
 
 const labels: Record<RoleBadgeKind, string> = {
   student: 'Student',
   sponsor: 'Sponsor',
   officer: 'Approved officer',
+  admin: 'Admin',
 };
 
 const roleClasses: Record<RoleBadgeKind, { text: string; mark: string }> = {
   student: { text: 'text-[var(--color-blue-deep)]', mark: 'bg-[var(--color-blue)]' },
   sponsor: { text: 'text-[var(--color-orange-deep)]', mark: 'bg-[var(--color-gold)]' },
   officer: { text: 'text-[var(--color-navy)]', mark: 'bg-[var(--color-gold)]' },
+  admin: { text: 'text-[var(--color-navy)]', mark: 'bg-[var(--color-blue)]' },
 };
 
 export const RoleBadge = ({ kind, children }: { kind: RoleBadgeKind; children?: ReactNode }) => (

@@ -1,4 +1,4 @@
-export type AccountKind = 'student' | 'sponsor';
+export type AccountKind = 'student' | 'sponsor' | 'admin';
 
 export type AccessStatus = 'active' | 'pending' | 'failed' | 'cancelled' | 'expired' | 'revoked' | 'missing';
 
@@ -43,7 +43,7 @@ export interface UserSession {
   officerGrants: OrganizationGrant[];
 }
 
-export type RegistrationRoleIntent = AccountKind;
+export type RegistrationRoleIntent = Exclude<AccountKind, 'admin'>;
 
 export interface RegistrationPaymentInput {
   role: RegistrationRoleIntent;
@@ -95,6 +95,11 @@ export interface NameChangeInput {
   displayName: string;
 }
 
+export interface NameChangeResult {
+  displayName: string;
+  nextChangeAllowedAt: string;
+}
+
 export interface EmailChangeInput {
   newEmail: string;
   currentPassword: string;
@@ -117,6 +122,7 @@ export interface ApiProblem {
   code: string;
   message: string;
   action?: string;
+  nextChangeAllowedAt?: string;
 }
 
 export class ServiceUnavailableError extends Error {

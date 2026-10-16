@@ -36,6 +36,8 @@ class FakeDocRef {
   get id() { return this.path.split('/').at(-1) ?? ''; }
   collection(name: string) { return new FakeCollectionRef(this.db, `${this.path}/${name}`); }
   async get() { return this.db.getDoc(this); }
+  async create(data: StoredDoc) { this.db.create(this.path, data); }
+  async update(patch: StoredDoc) { this.db.update(this.path, patch); }
 }
 
 class FakeTransaction {
@@ -196,6 +198,8 @@ describe('announcement comment ownership service behavior', () => {
     const updated = await updateAnnouncementComment(user('author'), 'post1', 'comment1', { body: 'Updated body' });
 
     expect(updated).toMatchObject({ id: 'comment1', body: 'Updated body', viewerCanEdit: true, viewerCanDelete: true });
+    expect(updated.updatedAt).toBeDefined();
+    expect(fakeDb.docs.get('announcements/post1/comments/comment1')?.editedAt).toBeDefined();
     expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(2);
   });
 
@@ -241,8 +245,32 @@ describe('announcement comment ownership service behavior', () => {
     const created = await addAnnouncementComment(user('student1'), 'post1', { body: 'A saved-account comment.' });
 
     expect(created).toMatchObject({ authorAccountKind: 'student', viewerCanEdit: true, viewerCanDelete: true });
+    expect(created).not.toHaveProperty('updatedAt');
     expect(created).not.toHaveProperty('email');
     expect(created).not.toHaveProperty('department');
+
+    const listed = await (await import('../service')).listAnnouncementComments(user('student1'), 'post1', {});
+    expect(listed.items.find((comment) => comment.id === created.id)).not.toHaveProperty('updatedAt');
+  });
+
+  it('keeps Edited absent for unchanged or missing legacy timestamps but preserves real legacy edits', async () => {
+    const { listAnnouncementComments } = await import('../service');
+    const createdAt = Timestamp.fromDate(new Date('2026-10-10T00:00:00.000Z'));
+    const updatedAt = Timestamp.fromDate(new Date('2026-10-11T00:00:00.000Z'));
+    fakeDb.docs.set('announcements/post1/comments/unchanged', {
+      commentId: 'unchanged', announcementId: 'post1', authorUid: 'other', authorName: 'Other User', body: 'New comment', createdAt, updatedAt: createdAt
+    });
+    fakeDb.docs.set('announcements/post1/comments/missing-timestamps', {
+      commentId: 'missing-timestamps', announcementId: 'post1', authorUid: 'other', authorName: 'Other User', body: 'Legacy comment'
+    });
+    fakeDb.docs.set('announcements/post1/comments/legacy-edited', {
+      commentId: 'legacy-edited', announcementId: 'post1', authorUid: 'other', authorName: 'Other User', body: 'Edited legacy comment', createdAt, updatedAt
+    });
+
+    const listed = await listAnnouncementComments(user('student1'), 'post1', {});
+    expect(listed.items.find((comment) => comment.id === 'unchanged')).not.toHaveProperty('updatedAt');
+    expect(listed.items.find((comment) => comment.id === 'missing-timestamps')).not.toHaveProperty('updatedAt');
+    expect(listed.items.find((comment) => comment.id === 'legacy-edited')?.updatedAt).toBe(updatedAt.toDate().toISOString());
   });
 
   it('keeps raw pagination values when scoping date-entry queries for the service parser', async () => {
@@ -251,6 +279,59 @@ describe('announcement comment ownership service behavior', () => {
     const query = scopedDateEntryQuery('org1', { limit: '20', pageToken: '0' });
 
     expect(dateEntryQuerySchema.parse(query)).toMatchObject({ organizationId: 'org1', limit: 20, pageToken: 0 });
+  });
+
+  it('returns confirmed creates without a post-write read and safely replays the same entry key', async () => {
+    const { createDateEntry } = await import('../service');
+    const reads = vi.spyOn(fakeDb, 'getDoc');
+    const plainEntry = await createDateEntry(user('officer'), 'org1', {
+      kind: 'event', title: 'Synthetic event', date: '2026-12-20', details: 'Task-owned service test.'
+    });
+    expect(plainEntry).toMatchObject({ id: expect.any(String), kind: 'event', date: '2026-12-20' });
+    expect(reads.mock.calls.some(([ref]) => ref.path === `calendarEntries/${plainEntry.id}`)).toBe(false);
+
+    const input = {
+      entryId: 'save-key-123', kind: 'availability' as const, title: 'Synthetic window',
+      date: '2026-12-21', startTime: '14:00', endTime: '16:00', details: 'Task-owned idempotency test.'
+    };
+    const first = await createDateEntry(user('officer'), 'org1', input);
+    const afterFirst = fakeDb.docs.get('calendarEntries/save-key-123');
+    const replay = await createDateEntry(user('officer'), 'org1', input);
+    expect(first).toMatchObject({ id: 'save-key-123', kind: 'availability', date: input.date, startTime: input.startTime, endTime: input.endTime });
+    expect(replay).toEqual(first);
+    expect(fakeDb.docs.get('calendarEntries/save-key-123')).toEqual(afterFirst);
+    await expect(createDateEntry(user('officer'), 'org1', { ...input, title: 'Different payload' })).rejects.toMatchObject({ code: 'date_entry_conflict', status: 409 });
+    await expect(createDateEntry(user('owner'), 'org1', input)).rejects.toMatchObject({ code: 'date_entry_conflict', status: 409 });
+    await expect(createDateEntry(user('student1'), 'org1', { ...input, entryId: 'unprivileged-key-1' })).rejects.toMatchObject({ code: 'organization_management_required' });
+    expect(fakeDb.docs.has('calendarEntries/unprivileged-key-1')).toBe(false);
+    expect(fakeDb.docs.get('calendarEntries/save-key-123')).toEqual(afterFirst);
+    reads.mockRestore();
+  });
+
+  it('defaults missing application intake to open and lets an approved scoped officer toggle it', async () => {
+    const { getOrganizationProfile, updateOrganizationProfile } = await import('../service');
+
+    await expect(getOrganizationProfile(user('student1'), 'org1')).resolves.toMatchObject({ applicationsOpen: true });
+    const updated = await updateOrganizationProfile(user('officer'), 'org1', { applicationsOpen: false });
+
+    expect(updated.applicationsOpen).toBe(false);
+    expect(fakeDb.docs.get('organizations/org1')?.applicationsOpen).toBe(false);
+  });
+
+  it('denies application-intake changes by ungranted, cross-organization, and revoked officers', async () => {
+    const { updateOrganizationProfile } = await import('../service');
+    const now = Timestamp.fromDate(new Date('2026-10-11T00:00:00.000Z'));
+    fakeDb.docs.set('organizations/org2', {
+      orgId: 'org2', name: 'Other Organization', ownerUid: 'owner', createdAt: now, updatedAt: now
+    });
+    fakeDb.docs.set('organizations/org1/officerGrants/revoked', { uid: 'revoked', status: 'revoked' });
+
+    await expect(updateOrganizationProfile(user('student1'), 'org1', { applicationsOpen: false })).rejects.toMatchObject({ code: 'organization_management_required' });
+    await expect(updateOrganizationProfile(user('sponsor1'), 'org1', { applicationsOpen: false })).rejects.toMatchObject({ code: 'organization_management_required' });
+    await expect(updateOrganizationProfile(user('officer'), 'org2', { applicationsOpen: false })).rejects.toMatchObject({ code: 'organization_management_required' });
+    await expect(updateOrganizationProfile(user('revoked'), 'org1', { applicationsOpen: false })).rejects.toMatchObject({ code: 'organization_management_required' });
+    expect(fakeDb.docs.get('organizations/org1')?.applicationsOpen).toBeUndefined();
+    expect(fakeDb.docs.get('organizations/org2')?.applicationsOpen).toBeUndefined();
   });
 
   it('returns only the authorized organization department registered-student count', async () => {

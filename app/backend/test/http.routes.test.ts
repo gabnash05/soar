@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
   updateDisplayName: vi.fn(),
   requestVerifiedEmailChange: vi.fn(),
   approveOfficerGrant: vi.fn(),
+  assignAdminOfficerGrant: vi.fn(),
   assignInitialOrganizationOwner: vi.fn(),
+  listAdminOrganizations: vi.fn(),
+  searchAdminStudents: vi.fn(),
   revokeOfficerGrant: vi.fn(),
   attachAuthToPaymentRequest: vi.fn((req: unknown) => req),
   sendPaymentResult: vi.fn(async (res: any, resultPromise: Promise<any>) => {
@@ -65,8 +68,11 @@ vi.mock('../src/identity/accountSettings', () => ({
 }));
 vi.mock('../src/organizations/service', () => ({
   approveOfficerGrant: mocks.approveOfficerGrant,
+  assignAdminOfficerGrant: mocks.assignAdminOfficerGrant,
   assignInitialOrganizationOwner: mocks.assignInitialOrganizationOwner,
+  listAdminOrganizations: mocks.listAdminOrganizations,
   revokeOfficerGrant: mocks.revokeOfficerGrant,
+  searchAdminStudents: mocks.searchAdminStudents,
 }));
 vi.mock('../src/paymentsAdapter', () => ({
   attachAuthToPaymentRequest: mocks.attachAuthToPaymentRequest,
@@ -190,6 +196,51 @@ describe('SOAR HTTP route contracts', () => {
     expect(mocks.getUserSession).toHaveBeenCalledWith({ uid: 'user1', email_verified: true });
   });
 
+  it('preserves the name-save response DTO without claiming it is a complete session', async () => {
+    const user = { uid: 'user1', email_verified: true };
+    const result = { displayName: 'New Name', nextChangeAllowedAt: '2030-01-01T00:00:00.000Z' };
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.updateDisplayName.mockResolvedValue(result);
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/account/display-name`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ displayName: 'New Name' }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual(result);
+    });
+
+    expect(mocks.updateDisplayName).toHaveBeenCalledWith(user, { displayName: 'New Name' });
+    expect(mocks.getUserSession).not.toHaveBeenCalled();
+  });
+
+  it('returns cooldown retry timing as structured data with a safe plain-language message', async () => {
+    const nextChangeAllowedAt = '2030-01-02T03:04:05.000Z';
+    mocks.updateDisplayName.mockRejectedValue(new AppError(
+      'name_change_cooldown',
+      'Name changes are limited to once every 30 days. Please try again later.',
+      409,
+      undefined,
+      nextChangeAllowedAt,
+    ));
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/account/display-name`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ displayName: 'New Name' }),
+      });
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        code: 'name_change_cooldown',
+        message: 'Name changes are limited to once every 30 days. Please try again later.',
+        nextChangeAllowedAt,
+      });
+    });
+  });
+
   it('keeps content mutations behind the established organization route contract', async () => {
     mocks.createDateEntry.mockResolvedValue({ id: 'date1', organizationId: 'robotics', kind: 'availability' });
 
@@ -208,6 +259,25 @@ describe('SOAR HTTP route contracts', () => {
       'robotics',
       { kind: 'availability', title: 'Interview', date: '2026-11-12', details: 'Request a slot.' },
     );
+  });
+
+  it('uses the existing organization profile patch contract for intake changes', async () => {
+    const user = { uid: 'approved-officer', email_verified: true };
+    const updatedProfile = { id: 'robotics', applicationsOpen: false };
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.updateOrganizationProfile.mockResolvedValue(updatedProfile);
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/organizations/robotics`, {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ applicationsOpen: false }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual(updatedProfile);
+    });
+
+    expect(mocks.updateOrganizationProfile).toHaveBeenCalledWith(user, 'robotics', { applicationsOpen: false });
   });
 
   it('mounts department counts and revised announcement routes without exposing student lists', async () => {
@@ -253,6 +323,78 @@ describe('SOAR HTTP route contracts', () => {
     expect(mocks.updateAnnouncement).toHaveBeenCalledWith({ uid: 'user1', email_verified: true }, 'robotics', 'post1', { body: 'Revised post' });
     expect(mocks.updateAnnouncementComment).toHaveBeenCalled();
     expect(mocks.deleteAnnouncementComment).toHaveBeenCalled();
+  });
+
+  it('keeps admin provisioning routes behind the trusted soarAdmin claim', async () => {
+    mocks.requireBearerToken.mockRejectedValueOnce(new AppError('unauthenticated', 'Sign in is required.', 401));
+
+    await withApiServer(async (baseUrl) => {
+      const publicSearch = await fetch(`${baseUrl}/api/admin/students?q=Mara`);
+      expect(publicSearch.status).toBe(401);
+
+      const ordinarySearch = await fetch(`${baseUrl}/api/admin/students?q=Mara`, { headers: { authorization: 'Bearer test-token' } });
+      expect(ordinarySearch.status).toBe(403);
+      const ordinaryOrganizations = await fetch(`${baseUrl}/api/admin/organizations`, { headers: { authorization: 'Bearer test-token' } });
+      expect(ordinaryOrganizations.status).toBe(403);
+      const ordinaryAssignment = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ uid: 'student-1' }),
+      });
+      expect(ordinaryAssignment.status).toBe(403);
+      const ordinaryCreate = await fetch(`${baseUrl}/api/admin/organizations`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      expect(ordinaryCreate.status).toBe(403);
+    });
+
+    expect(mocks.searchAdminStudents).not.toHaveBeenCalled();
+    expect(mocks.listAdminOrganizations).not.toHaveBeenCalled();
+    expect(mocks.assignAdminOfficerGrant).not.toHaveBeenCalled();
+    expect(mocks.assignInitialOrganizationOwner).not.toHaveBeenCalled();
+  });
+
+  it('serves bounded admin student and organization results and idempotent scoped grants', async () => {
+    mocks.requireBearerToken.mockResolvedValue({ uid: 'trusted-admin', email_verified: true, soarAdmin: true });
+    mocks.searchAdminStudents.mockResolvedValue({ items: [{ uid: 'student-1', displayName: 'Mara Santos' }] });
+    mocks.listAdminOrganizations.mockResolvedValue({ items: [{ id: 'robotics', name: 'Robotics Club' }] });
+    mocks.assignInitialOrganizationOwner.mockResolvedValue({ orgId: 'robotics' });
+    mocks.assignAdminOfficerGrant.mockResolvedValue({ orgId: 'robotics', uid: 'student-1', status: 'approved', alreadyAssigned: true });
+
+    await withApiServer(async (baseUrl) => {
+      const students = await fetch(`${baseUrl}/api/admin/students?q=Mara`, { headers: { authorization: 'Bearer test-token' } });
+      expect(students.status).toBe(200);
+      await expect(students.json()).resolves.toEqual({ items: [{ uid: 'student-1', displayName: 'Mara Santos' }] });
+
+      const organizations = await fetch(`${baseUrl}/api/admin/organizations`, { headers: { authorization: 'Bearer test-token' } });
+      expect(organizations.status).toBe(200);
+      await expect(organizations.json()).resolves.toEqual({ items: [{ id: 'robotics', name: 'Robotics Club' }] });
+
+      const created = await fetch(`${baseUrl}/api/admin/organizations`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ orgId: 'robotics', name: 'Robotics Club', slug: 'robotics', ownerUid: 'student-1' }),
+      });
+      expect(created.status).toBe(201);
+
+      const assignment = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ uid: 'student-1' }),
+      });
+      expect(assignment.status).toBe(200);
+      await expect(assignment.json()).resolves.toMatchObject({ alreadyAssigned: true });
+    });
+
+    expect(mocks.searchAdminStudents).toHaveBeenCalledWith({ q: 'Mara' });
+    expect(mocks.listAdminOrganizations).toHaveBeenCalledWith({});
+    expect(mocks.assignInitialOrganizationOwner).toHaveBeenCalledWith(
+      { orgId: 'robotics', name: 'Robotics Club', slug: 'robotics', ownerUid: 'student-1' },
+      'trusted-admin',
+    );
+    expect(mocks.assignAdminOfficerGrant).toHaveBeenCalledWith('robotics', { uid: 'student-1' }, 'trusted-admin');
   });
 
   it('mounts request workflow routes with explicit application confirmation', async () => {

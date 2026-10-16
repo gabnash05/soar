@@ -205,6 +205,7 @@ async function mapOrganizationProfile(raw: unknown): Promise<OrganizationProfile
   return {
     ...summary,
     description: pickString(item.description),
+    applicationsOpen: item.applicationsOpen !== false,
     recruitment: {
       id: recruitmentOpportunityId(summary.id, title, pickString(recruitment.id || recruitment.opportunityId)),
       organizationId: summary.id,
@@ -308,13 +309,10 @@ interface AnnouncementMediaTargetResponse {
   allowedContentTypes?: readonly string[];
   maxItems?: number;
   maxSizeBytes?: number;
-  maxImageSizeBytes?: number;
-  maxVideoSizeBytes?: number;
-  maxVideoItems?: number;
   maxAggregateSizeBytes?: number;
 }
 
-async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ announcementId?: string; image?: { storagePath: string; contentType: string; sizeBytes: number; alt?: string }; media?: { storagePath: string; contentType: string; sizeBytes: number; alt?: string }[] }> {
+async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ announcementId?: string; media?: { storagePath: string; contentType: string; sizeBytes: number; alt?: string }[] }> {
   const media = input.media?.length ? input.media : input.image ? [input.image] : [];
   if (!media.length) return {};
 
@@ -323,7 +321,7 @@ async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ ann
     const existing = media
       .filter((item) => item.storagePath && item.contentType && item.sizeBytes)
       .map((item) => ({ storagePath: item.storagePath as string, contentType: item.contentType as string, sizeBytes: item.sizeBytes as number, alt: item.alt }));
-    return existing.length ? { media: existing, image: existing[0] } : {};
+    return existing.length ? { media: existing } : {};
   }
 
   validateAnnouncementMediaFiles(files);
@@ -339,7 +337,6 @@ async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ ann
   return {
     announcementId: response.announcementId,
     media: uploadedMedia,
-    image: uploadedMedia[0],
   };
 }
 
@@ -379,6 +376,7 @@ async function profileInputToBackend(input: OrganizationProfileInput) {
 
 function dateInputToBackend(input: DateEntryInput) {
   return {
+    ...(input.id || !input.idempotencyKey ? {} : { entryId: input.idempotencyKey }),
     kind: input.kind,
     title: input.title,
     date: input.date,
@@ -401,6 +399,21 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       const envelope = Array.isArray(response) ? undefined : response;
       const items = await Promise.all(listItems(response).map(mapAnnouncement));
       return queryResult<AnnouncementPage>({ items, nextPageToken: envelope?.nextPageToken });
+    },
+
+    async getAnnouncement(announcementId) {
+      try {
+        const response = await apiFetch<unknown>(`/announcements/${encodeURIComponent(announcementId)}`, await activeHeaders());
+        return queryResult(await mapAnnouncement(response));
+      } catch (error) {
+        if (error && typeof error === 'object' && (error as { status?: unknown }).status === 404) return queryResult<Announcement | undefined>(undefined);
+        throw error;
+      }
+    },
+
+    async listAnnouncementComments(announcementId) {
+      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>(`/announcements/${encodeURIComponent(announcementId)}/comments?limit=50`, await activeHeaders());
+      return queryResult(listItems(response).map(mapComment));
     },
 
     async toggleAnnouncementLike(announcementId, liked) {
@@ -494,6 +507,12 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return mutationResult('Organization profile saved.', await mapOrganizationProfile(response));
     },
 
+    async setApplicationsOpen(organizationId, applicationsOpen, _session) {
+      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}`, await bodyInit({ applicationsOpen }, 'PATCH'));
+      const savedValue = pickBoolean(asRecord(response).applicationsOpen, applicationsOpen);
+      return mutationResult(savedValue ? 'Applications are open.' : 'Applications are closed.', { applicationsOpen: savedValue });
+    },
+
     async publishAnnouncement(input: AnnouncementInput) {
       const upload = await createAnnouncementUpload(input);
       const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(input.organizationId)}/announcements`, await bodyInit({ body: input.body, ...upload }));
@@ -528,11 +547,12 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return mutationResult(`Application moved to ${stage}.`, mapApplication(response));
     },
 
-    async saveDateEntry(input: DateEntryInput) {
+    async saveDateEntry(input: DateEntryInput, _session: UserSession, signal?: AbortSignal) {
       const path = input.id
         ? `/organizations/${encodeURIComponent(input.organizationId)}/date-entries/${encodeURIComponent(input.id)}`
         : `/organizations/${encodeURIComponent(input.organizationId)}/date-entries`;
-      const response = await apiFetch<unknown>(path, await bodyInit(dateInputToBackend(input), input.id ? 'PATCH' : 'POST'));
+      const request = await bodyInit(dateInputToBackend(input), input.id ? 'PATCH' : 'POST');
+      const response = await apiFetch<unknown>(path, signal ? { ...request, signal } : request);
       return mutationResult(`${input.kind === 'event' ? 'Event' : 'Meeting availability'} saved.`, mapDateEntry(response));
     },
 

@@ -22,17 +22,20 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
   const activeAccess = hasActiveAccess(session);
   const officer = hasApprovedOfficerGrant(session);
   const student = isStudentAccount(session);
+  const admin = session?.accountKind === 'admin';
 
   const navRoutes = useMemo(
     () =>
       appNavRoutes.filter((route) => {
+        if (route.requiresAdmin) return admin;
+        if (admin) return false;
         if (route.requiresStudent && !student) return false;
         if (route.requiresOfficerGrant && !officer) return false;
         if (route.requiresActiveAccess && !activeAccess) return false;
         if (!activeAccess && !allowLockedMain && route.to.startsWith('/app')) return false;
         return true;
       }),
-    [activeAccess, allowLockedMain, officer, student],
+    [activeAccess, admin, allowLockedMain, officer, student],
   );
 
   useEffect(() => {
@@ -90,7 +93,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
 
   const accessTone = activeAccess ? 'approved' : session.access.status === 'expired' ? 'attention' : 'danger';
   const accessLabel = activeAccess ? 'Active access' : session.access.status === 'expired' ? 'Expired access' : 'Access locked';
-  const sidebarRole = session.accountKind === 'sponsor' ? 'Sponsor' : officer ? 'Officer' : 'Student';
+  const sidebarRole = admin ? 'Admin' : session.accountKind === 'sponsor' ? 'Sponsor' : officer ? 'Officer' : 'Student';
 
   return (
     <div className="min-h-screen bg-[var(--color-off-white)] pb-0 text-[var(--color-ink)]">
@@ -105,7 +108,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
         >
           Menu
         </Button>
-        <NavLink className="inline-flex min-w-0 items-center gap-2.5 text-[var(--color-navy)] no-underline [&_strong]:block [&_strong]:font-[var(--font-display)] [&_strong]:text-lg [&_strong]:font-extrabold [&_strong]:leading-none [&_small]:mt-0.5 [&_small]:block [&_small]:text-xs [&_small]:text-[var(--muted-foreground)] max-[820px]:[&_small]:hidden" to={activeAccess ? '/app' : '/settings/access'}>
+        <NavLink className="inline-flex min-w-0 items-center gap-2.5 text-[var(--color-navy)] no-underline [&_strong]:block [&_strong]:font-[var(--font-display)] [&_strong]:text-lg [&_strong]:font-extrabold [&_strong]:leading-none [&_small]:mt-0.5 [&_small]:block [&_small]:text-xs [&_small]:text-[var(--muted-foreground)] max-[820px]:[&_small]:hidden" to={admin ? '/admin' : activeAccess ? '/app' : '/settings/access'}>
           <SoarLogo />
           <span>
             <strong>SOAR</strong>
@@ -114,7 +117,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
         </NavLink>
         <div className="flex flex-wrap items-center justify-end gap-2 max-sm:max-w-[115px] max-sm:[&_.chip]:w-full max-sm:[&_.chip]:justify-center max-[820px]:[&_.chip:first-child]:hidden">
           {gateway.mode === 'fixture' ? <StatusChip tone="attention">Demo mode</StatusChip> : null}
-          <StatusChip tone={accessTone}>{accessLabel}</StatusChip>
+          {!admin ? <StatusChip tone={accessTone}>{accessLabel}</StatusChip> : null}
         </div>
       </header>
 
@@ -139,10 +142,10 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
               <small className="mt-0.5 block text-xs text-white/70" aria-label={sidebarRole}>{sidebarRole}</small>
             </div>
           </div>
-          {!session.emailVerified ? (
+          {!admin && !session.emailVerified ? (
             <div className="rounded-[var(--radius-md)] bg-white/10 p-3 text-[13px] text-white/80">Verify your email before using the main app.</div>
           ) : null}
-          {!activeAccess ? (
+          {!admin && !activeAccess ? (
             <div className="rounded-[var(--radius-md)] bg-white/10 p-3 text-[13px] text-white/80">Main SOAR pages are locked until PHP10 six-month access is active.</div>
           ) : null}
           <nav className="grid gap-1 [&_a]:flex [&_a]:min-h-11 [&_a]:items-center [&_a]:rounded-lg [&_a]:border-l-2 [&_a]:border-transparent [&_a]:px-3 [&_a]:font-bold [&_a]:text-white/70 [&_a]:no-underline" aria-label="SOAR sections">

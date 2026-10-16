@@ -8,6 +8,7 @@ import { getWorkflowDataClientForGatewayMode, unavailableWorkflowDataClient } fr
 import type { Announcement, DateEntry, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from './contracts';
 import { formatDateEntry, getMeetingTone, getStageTone, getUnavailableCopy } from './workflowUtils';
 import { cn } from '../../lib/utils';
+import { safeErrorMessage } from '../../lib/safeErrors';
 
 export function useWorkflowDataClient(): WorkflowDataClient {
   const gateway = useBackendGateway();
@@ -200,22 +201,21 @@ export function ResultMessage({ result }: { result: WorkflowMutationResult<unkno
   );
 }
 
-export function DateEntryList({ title, entries, emptyCopy }: { title: string; entries: DateEntry[]; emptyCopy: string }) {
+export function DateEntryList({ title, entries, emptyCopy, action }: { title: string; entries: DateEntry[]; emptyCopy: string; action?: ReactNode }) {
   return (
     <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)]">
-      <TabSectionHeader title={title} />
+      <TabSectionHeader title={title} action={action} />
       {entries.length ? (
-        <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
+        <ul className="m-0 grid list-none gap-0 p-0">
           {entries.map((entry) => (
-            <li key={entry.id}>
-              <div className="grid size-[50px] shrink-0 place-items-center rounded-xl bg-[var(--color-gold-soft)] text-center font-[var(--font-display)] text-[0.72rem] font-extrabold uppercase leading-[1.15] text-[var(--color-navy)]" aria-hidden="true">
-                {entry.kind === 'event' ? 'EVT' : 'REQ'}
-              </div>
+            <li key={entry.id} className="flex min-w-0 items-center gap-2.5 border-b border-[var(--color-border)] py-3 max-[820px]:items-start">
               <div className="min-w-0 flex-1 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:mt-0.5 [&_span]:block [&_span]:[overflow-wrap:anywhere] [&_span]:text-[0.88rem] [&_span]:text-[var(--muted-foreground)]">
                 <strong>{entry.title}</strong>
                 <span>{formatDateEntry(entry)} · {entry.details}</span>
               </div>
-              <StatusChip tone={entry.kind === 'event' ? 'neutral' : 'info'}>{entry.kind === 'event' ? 'Dated event' : 'Meeting/interview availability'}</StatusChip>
+              <StatusChip className="min-h-6 shrink-0 whitespace-nowrap px-2 text-[0.7rem]" tone={entry.kind === 'event' ? 'neutral' : 'info'}>
+                <span aria-label={entry.kind === 'event' ? 'Dated event' : 'Meeting/interview availability'}>{entry.kind === 'event' ? 'Event' : 'Availability'}</span>
+              </StatusChip>
             </li>
           ))}
         </ul>
@@ -236,7 +236,7 @@ export function WorkflowTable({
   rows: ReactNode[];
 }) {
   return (
-    <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)]" role="region" aria-label={caption} tabIndex={0}>
+    <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)]" role="region" aria-label={caption} tabIndex={0}>
       <table className="w-full min-w-[640px] border-collapse [&_caption]:px-3 [&_caption]:py-2.5 [&_caption]:text-left [&_caption]:text-[0.85rem] [&_caption]:font-bold [&_caption]:text-[var(--muted-foreground)] [&_th]:border-b [&_th]:border-[var(--color-border)] [&_th]:bg-[var(--color-off-white)] [&_th]:p-3 [&_th]:text-left [&_th]:align-top [&_th]:text-[0.82rem] [&_th]:uppercase [&_th]:tracking-[0.04em] [&_th]:text-[var(--color-navy)] [&_td]:border-b [&_td]:border-[var(--color-border)] [&_td]:p-3 [&_td]:text-left [&_td]:align-top">
         <caption>{caption}</caption>
         <thead>
@@ -283,6 +283,9 @@ export function AnnouncementCard({
   onChanged?: () => void;
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [comments, setComments] = useState(announcement.comments);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
   const [comment, setComment] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState('');
@@ -292,6 +295,19 @@ export function AnnouncementCard({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const media = announcement.media?.length ? announcement.media : announcement.image ? [announcement.image] : [];
   const commentCount = announcement.commentCount ?? announcement.comments.length;
+
+  const loadComments = async () => {
+    setCommentsLoading(true);
+    setCommentsError(null);
+    try {
+      const result = await client.listAnnouncementComments(announcement.id, session);
+      setComments(result.data);
+    } catch (error) {
+      setCommentsError(safeErrorMessage(error, 'Comments could not be loaded. Please try again.'));
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
 
   const toggleLike = async () => {
     setBusy(true);
@@ -321,6 +337,7 @@ export function AnnouncementCard({
     setBusy(false);
     if (next.ok) {
       setComment('');
+      await loadComments();
       onChanged?.();
     }
   };
@@ -341,6 +358,7 @@ export function AnnouncementCard({
     if (next.ok) {
       setEditingCommentId(null);
       setEditingBody('');
+      await loadComments();
       onChanged?.();
     }
   };
@@ -354,6 +372,7 @@ export function AnnouncementCard({
     setBusy(false);
     if (next.ok) {
       setDeleteCommentId(null);
+      await loadComments();
       onChanged?.();
     } else {
       setDeleteError(next.message);
@@ -374,14 +393,10 @@ export function AnnouncementCard({
         </div>
       </div>
       {media.length ? (
-        <div className={cn('grid gap-2 [&_img]:min-h-[180px] [&_img]:max-h-[420px] [&_video]:min-h-[180px] [&_video]:max-h-[420px]', media.length > 1 && 'md:grid-cols-2')}>
+        <div className={cn('grid gap-2 [&_img]:min-h-[180px] [&_img]:max-h-[420px]', media.length > 1 && 'md:grid-cols-2')}>
           {media.map((item, index) => (
-            <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover [&_video]:block [&_video]:max-h-[340px] [&_video]:w-full [&_video]:bg-[var(--color-ink)] [&_video]:object-cover" key={`${item.url}-${index}`}>
-              {item.contentType?.startsWith('video/') ? (
-                <video src={item.url} controls preload="metadata" aria-label={item.alt || `Announcement video ${index + 1}`} />
-              ) : (
-                <img src={item.url} alt={item.alt} loading="lazy" decoding="async" />
-              )}
+            <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover" key={`${item.url}-${index}`}>
+              <img src={item.url} alt={item.alt} loading="lazy" decoding="async" />
             </figure>
           ))}
         </div>
@@ -405,7 +420,11 @@ export function AnnouncementCard({
           <span className="sr-only">{announcement.viewerHasLiked ? 'Liked' : 'Like'}</span>
           <span className="like-count min-w-[1.2em] tabular-nums" aria-hidden="true">{announcement.likeCount}</span>
         </Button>
-        <Button type="button" variant="quiet" onClick={() => setCommentsOpen((open) => !open)}>
+        <Button type="button" variant="quiet" onClick={() => {
+          const opening = !commentsOpen;
+          setCommentsOpen(opening);
+          if (opening) void loadComments();
+        }}>
           <MessageCircle aria-hidden="true" className="size-4" />
           {commentsOpen ? 'Hide comments' : 'Open comments'} ({commentCount})
         </Button>
@@ -421,9 +440,11 @@ export function AnnouncementCard({
             <textarea id={`comment-${announcement.id}`} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Keep comments respectful and specific." />
             <Button type="submit" variant="secondary" disabled={busy}>Add comment</Button>
           </form>
-          {announcement.comments.length ? (
+          {commentsLoading ? <p role="status">Loading comments…</p> : null}
+          {commentsError ? <div className="grid gap-2" role="alert"><p>{commentsError}</p><Button type="button" variant="secondary" onClick={() => void loadComments()}>Try again</Button></div> : null}
+          {!commentsLoading && !commentsError && comments.length ? (
             <ul className="m-0 grid list-none gap-2.5 p-0 text-[var(--muted-foreground)] [&_li]:flex [&_li]:items-start [&_li]:justify-between [&_li]:gap-3 [&_li]:border-t [&_li]:border-[color-mix(in_oklch,var(--color-border)_72%,transparent)] [&_li]:py-2.5 [&_li:first-child]:border-t-0 max-sm:[&_li]:flex-col">
-              {announcement.comments.map((item) => {
+              {comments.map((item) => {
                 const canEdit = item.viewerCanEdit || item.authorUid === session.uid;
                 const canDelete = item.viewerCanDelete || item.authorUid === session.uid;
                 return (
@@ -452,7 +473,7 @@ export function AnnouncementCard({
                 );
               })}
             </ul>
-          ) : <p className="text-xs text-[var(--muted-foreground)]">No comments yet.</p>}
+          ) : !commentsLoading && !commentsError ? <p className="text-xs text-[var(--muted-foreground)]">No comments yet.</p> : null}
         </section>
       ) : null}
       <ResultMessage result={result} />

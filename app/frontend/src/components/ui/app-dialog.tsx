@@ -23,6 +23,7 @@ interface ModalDialogProps {
   title: string;
   description?: ReactNode;
   dirty?: boolean;
+  busy?: boolean;
   confirmCloseMessage?: string;
   onClose(): void;
   children: ReactNode;
@@ -33,6 +34,7 @@ export const ModalDialog = ({
   title,
   description,
   dirty = false,
+  busy = false,
   confirmCloseMessage = 'Discard unsaved changes?',
   onClose,
   children,
@@ -44,6 +46,7 @@ export const ModalDialog = ({
     window.setTimeout(() => returnFocusRef.current?.focus(), 0);
   };
   const requestClose = () => {
+    if (busy) return;
     if (dirty) {
       setConfirmDiscardOpen(true);
       return;
@@ -75,7 +78,7 @@ export const ModalDialog = ({
               <DialogTitle className="text-xl font-extrabold tracking-[-0.02em] text-[var(--color-navy)]">{title}</DialogTitle>
               {description ? <DialogDescription className="mt-1 max-w-[58ch] text-[var(--muted-foreground)]">{description}</DialogDescription> : null}
             </div>
-            <Button type="button" variant="quiet" onClick={requestClose} aria-label={`Close ${title}`}>
+            <Button type="button" variant="quiet" disabled={busy} onClick={requestClose} aria-label={`Close ${title}`}>
               Close
             </Button>
           </DialogHeader>

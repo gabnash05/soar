@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SoarLogo } from '../../components/SoarLogo';
 import { Button, ButtonLink, Card, Field, Select as NativeSelect, TextInput } from '../../components/ui';
@@ -49,7 +49,7 @@ function DepartmentSelect({ value, onChange, error }: { value: string; onChange:
 }
 
 export const RegistrationIntentPage = () => {
-  const { startRegistrationPayment, error, clearError, gateway } = useAuth();
+  const { startRegistrationPayment, error, clearError, gateway } = useAuth('registration');
   const [role, setRole] = useState<RegistrationRoleIntent>('student');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
@@ -58,6 +58,11 @@ export const RegistrationIntentPage = () => {
   const [companyName, setCompanyName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    clearError();
+    return clearError;
+  }, [clearError]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();

@@ -2,6 +2,26 @@ import type { DecodedIdToken } from 'firebase-admin/auth';
 import { getAccessState, listApprovedOfficerGrants, syncVerifiedAuthEmail } from './access';
 
 export async function getUserSession(user: DecodedIdToken) {
+  if (user.soarAdmin === true) {
+    const email = typeof user.email === 'string' ? user.email : '';
+    return {
+      uid: user.uid,
+      email,
+      displayName: typeof user.name === 'string' ? user.name : email || 'Administrator',
+      accountKind: 'admin' as const,
+      emailVerified: user.email_verified === true,
+      access: {
+        status: 'missing' as const,
+        annualFeePhp: 10 as const,
+        feePhp: 10 as const,
+        periodMonths: 6,
+        periodLabel: '6 months',
+        renewalAvailable: true
+      },
+      officerGrants: []
+    };
+  }
+
   const [account, access, officerGrants] = await Promise.all([
     syncVerifiedAuthEmail(user.uid),
     getAccessState(user.uid),
