@@ -52,7 +52,7 @@ npm --workspace app/backend run emulators:seed
 
 The seed command refuses non-loopback hosts and refuses any project id other than `demo-soar-local`. It creates synthetic organizations, announcements, date entries, applications, meeting requests, officer grants and active entitlements labelled `emulator-simulated`. Those entitlements are a local MVP convenience only; they are not production payment evidence or a production bypass.
 
-Newly created demo sign-ins use password `SoarDemo123!`. Rerunning the seed does not reset existing Auth credentials or overwrite existing account and entitlement records; existing accounts may have a separately changed password:
+Newly created demo sign-ins use the credentials in the private local test-account handoff. Rerunning the seed does not reset existing Auth credentials or overwrite matching account and entitlement records; for fixed synthetic identities it repairs only missing records after validating their identity. Existing accounts may have a separately changed password:
 
 - `student@example.test` — student tracker/request flows.
 - `sponsor@example.test` — sponsor meeting request flows, no application tracker.
