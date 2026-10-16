@@ -141,20 +141,60 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByText('Computer Engineering Department')).not.toBeInTheDocument();
   });
 
-  it('keeps external application confirmation locked until the form link is activated', async () => {
+  it('keeps confirmation locked until the external form opens, then blocks a second application for that organization', async () => {
     const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
     const newStudentSession = { ...studentSession, uid: 'student-new', email: 'new.student@example.edu' };
-    renderInRouter(<OrganizationView organizationId="literary" session={newStudentSession} client={createFixtureWorkflowDataClient()} />, ['/app/organizations/literary?tab=apply']);
+    const view = <OrganizationView organizationId="literary" session={newStudentSession} client={client} />;
+    const { unmount } = renderInRouter(view, ['/app/organizations/literary?tab=apply']);
 
     const confirm = await screen.findByRole('button', { name: /I submitted the external form/i });
     expect(confirm).toBeDisabled();
 
     await user.click(screen.getByRole('link', { name: /open external form/i }));
     expect(confirm).toBeEnabled();
-    expect(screen.getByText(/SOAR cannot prove what happened in that external form/i)).toBeInTheDocument();
+    expect(screen.getByText(/SOAR cannot verify external submissions/i)).toBeInTheDocument();
 
     await user.click(confirm);
     expect(await screen.findByText(/External submission confirmation recorded/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Application already on file' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /I submitted the external form/i })).not.toBeInTheDocument();
+    unmount();
+
+    renderInRouter(view, ['/app/organizations/literary?tab=apply']);
+    expect(await screen.findByRole('heading', { name: 'Application already on file' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /open external form/i })).not.toBeInTheDocument();
+  });
+
+  it('shows existing applications instead of opening another application form', async () => {
+    renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={createFixtureWorkflowDataClient()} />, ['/app/organizations/robotics?tab=apply']);
+
+    expect(await screen.findByRole('heading', { name: 'Application already on file' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View application tracker' })).toHaveAttribute('href', '/app/applications?tab=mine');
+    expect(screen.queryByRole('link', { name: /open external form/i })).not.toBeInTheDocument();
+  });
+
+  it('shows closed intake and rejects a stale external form confirmation', async () => {
+    const user = userEvent.setup();
+    const closedClient = createFixtureWorkflowDataClient();
+    await closedClient.setApplicationsOpen('robotics', false, officerSession);
+    const { unmount } = renderInRouter(<OrganizationView organizationId="robotics" session={{ ...studentSession, uid: 'student-new' }} client={closedClient} />, ['/app/organizations/robotics?tab=apply']);
+
+    expect(await screen.findByRole('heading', { name: 'Applications are closed' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /I submitted the external form/i })).not.toBeInTheDocument();
+    unmount();
+
+    const staleClient = createFixtureWorkflowDataClient();
+    staleClient.confirmExternalApplication = vi.fn(async () => {
+      throw Object.assign(new Error('Applications are closed.'), { code: 'applications_closed' });
+    });
+    renderInRouter(<OrganizationView organizationId="literary" session={{ ...studentSession, uid: 'student-stale' }} client={staleClient} />, ['/app/organizations/literary?tab=apply']);
+    await user.click(await screen.findByRole('link', { name: /open external form/i }));
+    await user.click(screen.getByRole('button', { name: /I submitted the external form/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Applications are closed' })).toBeInTheDocument();
+    expect(await screen.findByText(/Applications closed before SOAR recorded your confirmation/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /I submitted the external form/i })).not.toBeInTheDocument();
   });
 
   it('excludes sponsors from application tools and tracker rows', async () => {
@@ -523,6 +563,29 @@ describe('SOAR workflow pages', () => {
     await user.selectOptions(organizationSelector, 'literary');
     await waitFor(() => expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Architecture Department'));
     expect(screen.queryByDisplayValue('Civil Engineering Department')).not.toBeInTheDocument();
+  });
+
+  it('lets an approved officer close and reopen only the selected organization intake', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const setApplicationsOpen = vi.fn(client.setApplicationsOpen.bind(client));
+    client.setApplicationsOpen = setApplicationsOpen;
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} />, ['/settings/organization?organizationId=robotics']);
+
+    const intake = await screen.findByRole('region', { name: 'Application intake' });
+    expect(within(intake).getByText('Open')).toBeInTheDocument();
+    await user.click(within(intake).getByRole('button', { name: 'Close applications' }));
+
+    expect(await screen.findByRole('button', { name: 'Open applications' })).toBeInTheDocument();
+    expect(await screen.findByText('Closed')).toBeInTheDocument();
+    expect(setApplicationsOpen).toHaveBeenCalledWith('robotics', false, officerSession);
+
+    const closedProfile = (await client.getOrganization('robotics', officerSession)).data;
+    expect(closedProfile?.applicationsOpen).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Open applications' }));
+    expect(await screen.findByRole('button', { name: 'Close applications' })).toBeInTheDocument();
+    expect(setApplicationsOpen).toHaveBeenLastCalledWith('robotics', true, officerSession);
+    expect((await client.getOrganization('robotics', officerSession)).data?.applicationsOpen).toBe(true);
   });
 
   it('scopes manage-organization announcement history and dates to the selected organization tab', async () => {

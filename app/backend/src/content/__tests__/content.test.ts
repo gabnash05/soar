@@ -27,6 +27,9 @@ describe('content validation', () => {
     expect(organizationProfileUpdateSchema.parse({ contactPhone: '+63 917 555 0101' }).contactPhone).toBe('+63 917 555 0101');
     expect(organizationProfileUpdateSchema.parse({ department: 'Computer Engineering Department' }).department).toBe('Computer Engineering Department');
     expect(organizationProfileUpdateSchema.parse({ department: '' }).department).toBe('');
+    expect(organizationProfileUpdateSchema.parse({ applicationsOpen: false }).applicationsOpen).toBe(false);
+    expect(organizationProfileUpdateSchema.parse({ applicationsOpen: true }).applicationsOpen).toBe(true);
+    expectParseFailure(() => organizationProfileUpdateSchema.parse({ applicationsOpen: 'false' }));
     expectParseFailure(() => organizationProfileUpdateSchema.parse({ recruitment: { applicationLink: 'javascript:alert(1)' } }));
     expectParseFailure(() => organizationProfileUpdateSchema.parse({ contactPhone: '<script>alert(1)</script>' }));
     expectParseFailure(() => organizationProfileUpdateSchema.parse({ department: 'Computer Science' }));

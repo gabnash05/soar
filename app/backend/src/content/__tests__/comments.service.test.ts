@@ -37,6 +37,7 @@ class FakeDocRef {
   collection(name: string) { return new FakeCollectionRef(this.db, `${this.path}/${name}`); }
   async get() { return this.db.getDoc(this); }
   async create(data: StoredDoc) { this.db.create(this.path, data); }
+  async update(patch: StoredDoc) { this.db.update(this.path, patch); }
 }
 
 class FakeTransaction {
@@ -250,6 +251,32 @@ describe('announcement comment ownership service behavior', () => {
     expect(fakeDb.docs.has('calendarEntries/unprivileged-key-1')).toBe(false);
     expect(fakeDb.docs.get('calendarEntries/save-key-123')).toEqual(afterFirst);
     reads.mockRestore();
+  });
+
+  it('defaults missing application intake to open and lets an approved scoped officer toggle it', async () => {
+    const { getOrganizationProfile, updateOrganizationProfile } = await import('../service');
+
+    await expect(getOrganizationProfile(user('student1'), 'org1')).resolves.toMatchObject({ applicationsOpen: true });
+    const updated = await updateOrganizationProfile(user('officer'), 'org1', { applicationsOpen: false });
+
+    expect(updated.applicationsOpen).toBe(false);
+    expect(fakeDb.docs.get('organizations/org1')?.applicationsOpen).toBe(false);
+  });
+
+  it('denies application-intake changes by ungranted, cross-organization, and revoked officers', async () => {
+    const { updateOrganizationProfile } = await import('../service');
+    const now = Timestamp.fromDate(new Date('2026-10-11T00:00:00.000Z'));
+    fakeDb.docs.set('organizations/org2', {
+      orgId: 'org2', name: 'Other Organization', ownerUid: 'owner', createdAt: now, updatedAt: now
+    });
+    fakeDb.docs.set('organizations/org1/officerGrants/revoked', { uid: 'revoked', status: 'revoked' });
+
+    await expect(updateOrganizationProfile(user('student1'), 'org1', { applicationsOpen: false })).rejects.toMatchObject({ code: 'organization_management_required' });
+    await expect(updateOrganizationProfile(user('sponsor1'), 'org1', { applicationsOpen: false })).rejects.toMatchObject({ code: 'organization_management_required' });
+    await expect(updateOrganizationProfile(user('officer'), 'org2', { applicationsOpen: false })).rejects.toMatchObject({ code: 'organization_management_required' });
+    await expect(updateOrganizationProfile(user('revoked'), 'org1', { applicationsOpen: false })).rejects.toMatchObject({ code: 'organization_management_required' });
+    expect(fakeDb.docs.get('organizations/org1')?.applicationsOpen).toBeUndefined();
+    expect(fakeDb.docs.get('organizations/org2')?.applicationsOpen).toBeUndefined();
   });
 
   it('returns only the authorized organization department registered-student count', async () => {

@@ -215,13 +215,17 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
         throw new AppError('student_required', 'Only student accounts can confirm external application submissions.', 403);
       }
 
+      if (organization.applicationsOpen === false) {
+        throw new AppError('applications_closed', 'Applications are closed for this organization.', 409);
+      }
+
       const opportunity = resolveRecruitmentOpportunity(organization);
       if (input.opportunityId !== opportunity.opportunityId) {
         throw new AppError('opportunity_mismatch', 'The selected recruitment opportunity is not currently posted by that organization.', 409);
       }
 
       const now = deps.now();
-      const applicationId = stableDocumentId('app', [user.uid, input.organizationId, input.opportunityId]);
+      const applicationId = stableDocumentId('app', [user.uid, input.organizationId]);
       const application: ApplicationDocument = {
         applicationId,
         studentUid: user.uid,
@@ -238,8 +242,14 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       };
 
       const result = await deps.store.createApplicationIfAbsent(applicationId, application);
+      if (result === 'organization_missing') {
+        throw new AppError('organization_missing', 'The organization was not found.', 404);
+      }
+      if (result === 'closed') {
+        throw new AppError('applications_closed', 'Applications are closed for this organization.', 409);
+      }
       if (result === 'exists') {
-        throw new AppError('duplicate_application', 'You already confirmed this external application in SOAR.', 409);
+        throw new AppError('duplicate_application', 'You already have an application for this organization.', 409);
       }
 
       return applicationResponse(application);

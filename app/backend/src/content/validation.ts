@@ -30,6 +30,7 @@ export const organizationListQuerySchema = paginationSchema.extend({
 });
 
 export const organizationProfileUpdateSchema = z.object({
+  applicationsOpen: z.boolean().optional(),
   name: optionalText(140),
   shortDescription: blankableText(180),
   description: blankableText(4000),

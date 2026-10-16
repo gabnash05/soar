@@ -205,6 +205,7 @@ async function mapOrganizationProfile(raw: unknown): Promise<OrganizationProfile
   return {
     ...summary,
     description: pickString(item.description),
+    applicationsOpen: item.applicationsOpen !== false,
     recruitment: {
       id: recruitmentOpportunityId(summary.id, title, pickString(recruitment.id || recruitment.opportunityId)),
       organizationId: summary.id,
@@ -503,6 +504,12 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       const payload = await profileInputToBackend(input);
       const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(input.organizationId)}`, await bodyInit(payload, 'PATCH'));
       return mutationResult('Organization profile saved.', await mapOrganizationProfile(response));
+    },
+
+    async setApplicationsOpen(organizationId, applicationsOpen, _session) {
+      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}`, await bodyInit({ applicationsOpen }, 'PATCH'));
+      const savedValue = pickBoolean(asRecord(response).applicationsOpen, applicationsOpen);
+      return mutationResult(savedValue ? 'Applications are open.' : 'Applications are closed.', { applicationsOpen: savedValue });
     },
 
     async publishAnnouncement(input: AnnouncementInput) {
