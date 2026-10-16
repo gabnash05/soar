@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { SoarLogo } from '../../components/SoarLogo';
 import { Button, ButtonLink, Card, Field, TextInput } from '../../components/ui';
@@ -8,13 +8,18 @@ import { hasActiveAccess } from '../../lib/contracts';
 type LocationState = { from?: string } | null;
 
 export const LoginPage = () => {
-  const { signIn, error, clearError, gateway } = useAuth();
+  const { signIn, error, clearError, gateway } = useAuth('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as LocationState)?.from;
+
+  useEffect(() => {
+    clearError();
+    return clearError;
+  }, [clearError]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();

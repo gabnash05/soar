@@ -9,7 +9,7 @@ const accountTabs = [
 ];
 
 export const AccountSettingsPage = () => {
-  const { session, updateDisplayName, requestEmailChange, error, clearError } = useAuth();
+  const { session, updateDisplayName, requestEmailChange, error, clearError } = useAuth('account-settings');
   const [displayName, setDisplayName] = useState(session?.displayName ?? '');
   const [newEmail, setNewEmail] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -17,6 +17,11 @@ export const AccountSettingsPage = () => {
   const [savingName, setSavingName] = useState(false);
   const [savingEmail, setSavingEmail] = useState(false);
   const { activeId, getTabTo } = useQueryTab(accountTabs.map((item) => item.id), 'profile');
+
+  useEffect(() => {
+    clearError();
+    return clearError;
+  }, [clearError]);
 
   useEffect(() => {
     if (activeId !== 'email') setCurrentPassword('');
