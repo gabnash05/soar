@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, ButtonLink, ConfirmDialog, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
-import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, WORKFLOW_VIDEO_MAX_BYTES, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
+import { safeErrorMessage } from '../../lib/safeErrors';
+import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
 import { createEmptyOfficerDateEntry } from './adapters';
 import type { AnnouncementInput, DateEntry, DateEntryInput, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
@@ -129,7 +130,7 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
               }}
             />
             {logoError ? <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{logoError}</span> : <span className="text-xs text-[var(--muted-foreground)]">PNG, JPEG, GIF, or WebP. Maximum 5 MB. Existing logo stays if no file is selected.</span>}
-            {form.logoUrl ? <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover [&_video]:block [&_video]:max-h-[340px] [&_video]:w-full [&_video]:bg-[var(--color-ink)] [&_video]:object-cover [&_img]:bg-[var(--color-white)] [&_img]:object-contain [&_img]:p-3"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
+            {form.logoUrl ? <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover [&_img]:bg-[var(--color-white)] [&_img]:object-contain [&_img]:p-3"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
           </div>
           <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="external-form">External form URL <span>Optional</span></label><input id="external-form" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="url" value={form.externalFormUrl ?? ''} onChange={(event) => setForm((current) => ({ ...current, externalFormUrl: event.target.value }))} /></div>
         </div>
@@ -245,7 +246,7 @@ export function AnnouncementComposer({
             className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
             type="file"
             multiple
-            accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
+            accept="image/png,image/jpeg,image/webp,image/gif"
             onChange={(event) => {
               const files = Array.from(event.target.files ?? []);
               setImageError('');
@@ -262,14 +263,14 @@ export function AnnouncementComposer({
           {imageError ? (
             <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{imageError}</span>
           ) : (
-            <span className="text-xs text-[var(--muted-foreground)]">Up to {ANNOUNCEMENT_MEDIA_MAX_ITEMS} total images or videos. Images can be PNG, JPEG, GIF, or WebP; one MP4/WebM video may be attached up to {formatBytes(WORKFLOW_VIDEO_MAX_BYTES)}. {formatBytes(ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES)} combined maximum.</span>
+            <span className="text-xs text-[var(--muted-foreground)]">Up to {ANNOUNCEMENT_MEDIA_MAX_ITEMS} images. Use PNG, JPEG, GIF, or WebP, up to {formatBytes(ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES)} combined.</span>
           )}
         </div>
         {media.length ? (
-          <ul className="m-0 grid list-none gap-2.5 p-0 [&_li]:grid [&_li]:grid-cols-[96px_minmax(0,1fr)] [&_li]:items-center [&_li]:gap-3 [&_li]:rounded-[var(--radius-md)] [&_li]:border [&_li]:border-[var(--color-border)] [&_li]:bg-[var(--color-white)] [&_li]:p-2.5 max-sm:[&_li]:grid-cols-1 [&_img]:size-auto [&_img]:h-[76px] [&_img]:w-24 [&_img]:rounded-[var(--radius-sm)] [&_img]:bg-[var(--color-ink)] [&_img]:object-cover [&_video]:h-[76px] [&_video]:w-24 [&_video]:rounded-[var(--radius-sm)] [&_video]:bg-[var(--color-ink)] [&_video]:object-cover max-sm:[&_img]:h-[150px] max-sm:[&_img]:w-full max-sm:[&_video]:h-[150px] max-sm:[&_video]:w-full [&_strong]:block [&_span]:block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]" aria-label="Selected announcement images">
+          <ul className="m-0 grid list-none gap-2.5 p-0 [&_li]:grid [&_li]:grid-cols-[96px_minmax(0,1fr)] [&_li]:items-center [&_li]:gap-3 [&_li]:rounded-[var(--radius-md)] [&_li]:border [&_li]:border-[var(--color-border)] [&_li]:bg-[var(--color-white)] [&_li]:p-2.5 max-sm:[&_li]:grid-cols-1 [&_img]:size-auto [&_img]:h-[76px] [&_img]:w-24 [&_img]:rounded-[var(--radius-sm)] [&_img]:bg-[var(--color-ink)] [&_img]:object-cover max-sm:[&_img]:h-[150px] max-sm:[&_img]:w-full [&_strong]:block [&_span]:block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]" aria-label="Selected announcement images">
             {media.map((item, index) => (
               <li key={`${item.alt}-${index}`}>
-                {item.contentType?.startsWith('video/') ? <video src={item.url} controls preload="metadata" aria-label={item.alt} /> : <img src={item.url} alt={item.alt} />}
+                <img src={item.url} alt={item.alt} />
                 <div>
                   <strong>{item.alt}</strong>
                   <span>{item.sizeBytes ? formatBytes(item.sizeBytes) : 'Ready to upload'}</span>
@@ -407,10 +408,63 @@ export function ApplicantsSection({ dashboard, session, client, onChanged }: { d
   );
 }
 
+export const DATE_ENTRY_SAVE_TIMEOUT_MS = 75_000;
+const DATE_ENTRY_RECONCILIATION_TIMEOUT_MS = 15_000;
+
+function createDateEntryDraft(organizationId: string): DateEntryInput {
+  const idempotencyKey = globalThis.crypto?.randomUUID?.()
+    ?? `date-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+  return { ...createEmptyOfficerDateEntry(organizationId), idempotencyKey };
+}
+
+class DateEntrySaveTimeoutError extends Error {
+  readonly code = 'date_entry_save_unconfirmed';
+
+  constructor() {
+    super('Dated-entry save timed out before the server confirmed the result.');
+    this.name = 'DateEntrySaveTimeoutError';
+  }
+}
+
+function withDeadline<T>(promise: Promise<T>, timeoutMs: number, onTimeout: () => Error): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(onTimeout()), timeoutMs);
+  });
+  return Promise.race([promise, deadline]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
+function dateEntryMatchesInput(entry: DateEntry, input: DateEntryInput): boolean {
+  return entry.organizationId === input.organizationId && entry.kind === input.kind &&
+    entry.title === input.title.trim() && entry.date === input.date &&
+    (entry.startTime ?? '') === (input.startTime ?? '') && (entry.endTime ?? '') === (input.endTime ?? '') &&
+    entry.details === input.details.trim();
+}
+
+function isDefiniteDateEntryFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const details = error as Error & { code?: unknown; status?: unknown };
+  return details.code === 'validation_problem' || details.status === 400 || details.status === 401 || details.status === 403 || details.status === 404;
+}
+
+function dateEntryFailureMessage(error: unknown): string {
+  const fallback = 'We could not save this dated entry. Your details are still here; check them and try again.';
+  if (error && typeof error === 'object') {
+    const details = error as Error & { code?: unknown };
+    if (details.code === 'validation_problem') return 'Check the title, date, times, and details, then try again.';
+    if (details.code === 'date_entry_conflict') return 'A previous save for this draft has different details. Refresh your organization dates before trying again.';
+    if (typeof details.code === 'string') return safeErrorMessage(error, fallback);
+  }
+  return fallback;
+}
+
 export function DateEntriesSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
-  const [form, setForm] = useState<DateEntryInput>(() => createEmptyOfficerDateEntry(dashboard.organization.id));
+  const [form, setForm] = useState<DateEntryInput>(() => createDateEntryDraft(dashboard.organization.id));
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checkingSavedState, setCheckingSavedState] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [deleteDateEntryId, setDeleteDateEntryId] = useState<string | null>(null);
@@ -418,7 +472,7 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
-    setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+    setForm(createDateEntryDraft(dashboard.organization.id));
     setDialogOpen(false);
     setDirty(false);
   }, [dashboard.organization.id]);
@@ -429,7 +483,7 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
   };
 
   const openCreate = () => {
-    setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+    setForm(createDateEntryDraft(dashboard.organization.id));
     setResult(null);
     setDirty(false);
     setDialogOpen(true);
@@ -442,17 +496,112 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
     setDialogOpen(true);
   };
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    const next = await client.saveDateEntry(form, session);
-    setResult(next);
-    setBusy(false);
-    if (next.ok) {
-      setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+  const reconcileSave = async (submitted: DateEntryInput): Promise<boolean> => {
+    const savedEntryId = submitted.id ?? submitted.idempotencyKey;
+    if (!savedEntryId) return false;
+
+    setCheckingSavedState(true);
+    try {
+      const refreshed = await withDeadline(
+        client.getOfficerDashboard(submitted.organizationId, session),
+        DATE_ENTRY_RECONCILIATION_TIMEOUT_MS,
+        () => new Error('The saved-entry check timed out.'),
+      );
+      const savedEntry = refreshed.data?.dateEntries.find((entry) => entry.id === savedEntryId);
+      if (!savedEntry) return false;
+      if (!dateEntryMatchesInput(savedEntry, submitted)) {
+        setResult({
+          ok: false,
+          persisted: false,
+          source: client.mode,
+          reason: 'duplicate',
+          message: 'A dated entry with this save key exists with different details. Your draft is preserved; refresh the organization dates before retrying.',
+        });
+        onChanged();
+        return true;
+      }
+
+      setResult({
+        ok: true,
+        persisted: true,
+        source: client.mode,
+        message: 'The dated entry is saved and confirmed in your organization dates.',
+        data: savedEntry,
+      });
+      setForm(createDateEntryDraft(dashboard.organization.id));
       setDirty(false);
       setDialogOpen(false);
       onChanged();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setCheckingSavedState(false);
+    }
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
+    const submitted = { ...form };
+    const controller = new AbortController();
+    setBusy(true);
+    setResult(null);
+    try {
+      const next = await withDeadline(
+        client.saveDateEntry(submitted, session, controller.signal),
+        DATE_ENTRY_SAVE_TIMEOUT_MS,
+        () => {
+          controller.abort();
+          return new DateEntrySaveTimeoutError();
+        },
+      );
+      if (!next.ok || next.persisted !== true) {
+        if (next.ok || next.reason === 'error' || next.reason === 'unavailable' || next.persisted === 'unconfirmed') {
+          const reconciled = await reconcileSave(submitted);
+          if (!reconciled) {
+            setResult({
+              ok: false,
+              persisted: 'unconfirmed',
+              source: client.mode,
+              reason: 'error',
+              message: 'The save status is unconfirmed. We checked your organization dates once but did not find this entry. Your details are still here; retrying this draft will not create a duplicate.',
+            });
+          }
+        } else {
+          setResult(next);
+        }
+        return;
+      }
+
+      setResult(next);
+      setForm(createDateEntryDraft(dashboard.organization.id));
+      setDirty(false);
+      setDialogOpen(false);
+      onChanged();
+    } catch (error) {
+      if (!isDefiniteDateEntryFailure(error)) {
+        const reconciled = await reconcileSave(submitted);
+        if (reconciled) return;
+        setResult({
+          ok: false,
+          persisted: 'unconfirmed',
+          source: client.mode,
+          reason: 'error',
+          message: 'The save status is unconfirmed. We checked your organization dates once but did not find this entry. Your details are still here; retrying this draft will not create a duplicate.',
+        });
+      } else {
+        setResult({
+          ok: false,
+          persisted: false,
+          source: client.mode,
+          reason: error && typeof error === 'object' && (error as { code?: unknown }).code === 'validation_problem' ? 'validation' : 'error',
+          message: dateEntryFailureMessage(error),
+        });
+      }
+    } finally {
+      setBusy(false);
+      setCheckingSavedState(false);
     }
   };
 
@@ -478,23 +627,23 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
         description="Post public events or meeting/interview availability for this organization."
         action={<Button type="button" onClick={openCreate}>Add dated entry</Button>}
       />
-      <ModalDialog open={dialogOpen} title={form.id ? 'Edit dated entry' : 'Add dated entry'} dirty={dirty} onClose={() => {
+      <ModalDialog open={dialogOpen} title={form.id ? 'Edit dated entry' : 'Add dated entry'} dirty={dirty} busy={busy} onClose={() => {
         setDialogOpen(false);
         setDirty(false);
-        setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+        setForm(createDateEntryDraft(dashboard.organization.id));
       }}>
         <form className="grid gap-4 grid gap-3.5" onSubmit={submit}>
           <div className="grid md:grid-cols-2">
-            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-kind">Entry type</label><select data-autofocus id="entry-kind" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.kind} onChange={(event) => patchForm({ kind: event.target.value as DateEntryInput['kind'] })}><option value="event">Public event</option><option value="availability">Meeting/interview availability</option></select></div>
-            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-title">Title</label><input id="entry-title" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.title} onChange={(event) => patchForm({ title: event.target.value })} /></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-kind">Entry type</label><select data-autofocus id="entry-kind" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.kind} disabled={busy} onChange={(event) => patchForm({ kind: event.target.value as DateEntryInput['kind'] })}><option value="event">Public event</option><option value="availability">Meeting/interview availability</option></select></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-title">Title</label><input id="entry-title" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.title} disabled={busy} onChange={(event) => patchForm({ title: event.target.value })} /></div>
           </div>
           <div className="grid md:grid-cols-3">
-            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-date">Date</label><input id="entry-date" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="date" value={form.date} onChange={(event) => patchForm({ date: event.target.value })} /></div>
-            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-start">Start time <span>Optional</span></label><input id="entry-start" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.startTime ?? ''} onChange={(event) => patchForm({ startTime: event.target.value })} /></div>
-            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-end">End time <span>Optional</span></label><input id="entry-end" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.endTime ?? ''} onChange={(event) => patchForm({ endTime: event.target.value })} /></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-date">Date</label><input id="entry-date" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="date" value={form.date} disabled={busy} onChange={(event) => patchForm({ date: event.target.value })} /></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-start">Start time <span>Optional</span></label><input id="entry-start" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.startTime ?? ''} disabled={busy} onChange={(event) => patchForm({ startTime: event.target.value })} /></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-end">End time <span>Optional</span></label><input id="entry-end" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.endTime ?? ''} disabled={busy} onChange={(event) => patchForm({ endTime: event.target.value })} /></div>
           </div>
-          <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-details">Short details</label><textarea id="entry-details" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.details} onChange={(event) => patchForm({ details: event.target.value })} /></div>
-          <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save dated entry'}</Button></div>
+          <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-details">Short details</label><textarea id="entry-details" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.details} disabled={busy} onChange={(event) => patchForm({ details: event.target.value })} /></div>
+          <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full"><Button type="submit" disabled={busy}>{busy ? checkingSavedState ? 'Checking…' : 'Saving…' : 'Save dated entry'}</Button></div>
           <ResultMessage result={result} />
         </form>
       </ModalDialog>

@@ -6,12 +6,8 @@ import { UserFacingError } from './safeErrors';
 export const WORKFLOW_IMAGE_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
 export const WORKFLOW_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
-export const WORKFLOW_VIDEO_CONTENT_TYPES = ['video/mp4', 'video/webm'] as const;
-export const WORKFLOW_VIDEO_MAX_BYTES = 25 * 1024 * 1024;
-
-export const ANNOUNCEMENT_MEDIA_CONTENT_TYPES = [...WORKFLOW_IMAGE_CONTENT_TYPES, ...WORKFLOW_VIDEO_CONTENT_TYPES] as const;
+export const ANNOUNCEMENT_MEDIA_CONTENT_TYPES = WORKFLOW_IMAGE_CONTENT_TYPES;
 export const ANNOUNCEMENT_MEDIA_MAX_ITEMS = 4;
-export const ANNOUNCEMENT_MEDIA_MAX_VIDEO_ITEMS = 1;
 export const ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES = 30 * 1024 * 1024;
 
 export const MEETING_DOCUMENT_CONTENT_TYPES = ['application/pdf'] as const;
@@ -63,9 +59,6 @@ export const formatBytes = (bytes: number): string => {
 const isImageType = (contentType: string): contentType is (typeof WORKFLOW_IMAGE_CONTENT_TYPES)[number] =>
   WORKFLOW_IMAGE_CONTENT_TYPES.includes(contentType as (typeof WORKFLOW_IMAGE_CONTENT_TYPES)[number]);
 
-const isVideoType = (contentType: string): contentType is (typeof WORKFLOW_VIDEO_CONTENT_TYPES)[number] =>
-  WORKFLOW_VIDEO_CONTENT_TYPES.includes(contentType as (typeof WORKFLOW_VIDEO_CONTENT_TYPES)[number]);
-
 export const validateWorkflowImageFile = (file: File): void => {
   if (!isImageType(file.type)) {
     throw new UserFacingError('Use a PNG, JPEG, GIF, or WebP image.');
@@ -76,34 +69,16 @@ export const validateWorkflowImageFile = (file: File): void => {
   }
 };
 
-export const validateAnnouncementMediaFile = (file: File): void => {
-  if (isImageType(file.type)) {
-    validateWorkflowImageFile(file);
-    return;
-  }
-
-  if (!isVideoType(file.type)) {
-    throw new UserFacingError('Use a PNG, JPEG, GIF, WebP, MP4, or WebM file.');
-  }
-
-  if (file.size > WORKFLOW_VIDEO_MAX_BYTES) {
-    throw new UserFacingError('Use a video smaller than 25 MB.');
-  }
-};
+export const validateAnnouncementMediaFile = validateWorkflowImageFile;
 
 export const validateAnnouncementMediaFiles = (files: File[]): void => {
   if (files.length > ANNOUNCEMENT_MEDIA_MAX_ITEMS) {
     throw new UserFacingError(`Choose up to ${ANNOUNCEMENT_MEDIA_MAX_ITEMS} media items.`);
   }
 
-  const videoCount = files.filter((file) => isVideoType(file.type)).length;
-  if (videoCount > ANNOUNCEMENT_MEDIA_MAX_VIDEO_ITEMS) {
-    throw new UserFacingError('Choose at most one video per announcement.');
-  }
-
   const aggregateSize = files.reduce((sum, file) => sum + file.size, 0);
   if (aggregateSize > ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES) {
-    throw new UserFacingError('Choose media with a combined size of 30 MB or less.');
+    throw new UserFacingError('Choose images with a combined size of 30 MB or less.');
   }
 
   files.forEach(validateAnnouncementMediaFile);
@@ -128,7 +103,7 @@ export const storageDownloadUrl = async (storagePath: string): Promise<string> =
 export const uploadToStorageTarget = async (target: ImageUploadTarget, file: File, alt = file.name): Promise<UploadedImageReference> => {
   validateAnnouncementMediaFile(file);
   if (file.type !== target.contentType || file.size !== target.sizeBytes) {
-    throw new UserFacingError('The selected media changed before upload. Choose the file again.');
+    throw new UserFacingError('The selected image changed before upload. Choose the file again.');
   }
 
   const { storage } = getFirebaseRuntime();

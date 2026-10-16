@@ -84,6 +84,45 @@ describe('production announcement media payloads', () => {
     mocks.storageDownloadUrl.mockResolvedValue('https://storage.test/announcement.png');
   });
 
+  it('requests announcement pages with a bounded size and forwards the server cursor', async () => {
+    mocks.apiFetch
+      .mockResolvedValueOnce({
+        items: [{ id: 'page-one', orgId: 'org-test', organizationName: 'Test Organization', body: 'First page', createdAt: '2026-10-15T00:00:00.000Z' }],
+        nextPageToken: 'cursor-15',
+      })
+      .mockResolvedValueOnce({
+        items: [{ id: 'page-two', orgId: 'org-test', organizationName: 'Test Organization', body: 'Second page', createdAt: '2026-10-14T00:00:00.000Z' }],
+      });
+    const client = createProductionWorkflowDataClient();
+
+    const first = await client.listAnnouncements(session, { limit: 15 });
+    const second = await client.listAnnouncements(session, { limit: 15, pageToken: first.data.nextPageToken });
+
+    expect(first.data.items.map((item) => item.id)).toEqual(['page-one']);
+    expect(first.data.nextPageToken).toBe('cursor-15');
+    expect(second.data.items.map((item) => item.id)).toEqual(['page-two']);
+    expect(mocks.apiFetch.mock.calls.map(([path]) => path)).toEqual([
+      '/announcements?limit=15',
+      '/announcements?limit=15&pageToken=cursor-15',
+    ]);
+  });
+
+  it('loads one announcement by id for a direct link and treats a server 404 as missing', async () => {
+    const client = createProductionWorkflowDataClient();
+    mocks.apiFetch.mockResolvedValueOnce({ id: 'linked-id', orgId: 'org-test', organizationName: 'Test Organization', body: 'Linked post', createdAt: '2026-10-15T00:00:00.000Z' });
+
+    const found = await client.getAnnouncement('linked-id', session);
+
+    expect(found.data?.id).toBe('linked-id');
+    expect(found.data?.body).toBe('Linked post');
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/announcements/linked-id', expect.anything());
+
+    const missingError = Object.assign(new Error('not found'), { status: 404 });
+    mocks.apiFetch.mockRejectedValueOnce(missingError);
+    await expect(client.getAnnouncement('missing-id', session)).resolves.toMatchObject({ data: undefined });
+    expect(mocks.apiFetch).toHaveBeenLastCalledWith('/announcements/missing-id', expect.anything());
+  });
+
   it('sends the uploaded Storage references once under media, not as both media and legacy image', async () => {
     mockAnnouncementApi();
     mocks.uploadToStorageTarget.mockImplementation(async (
@@ -172,5 +211,48 @@ describe('production announcement media payloads', () => {
 
     expect(mocks.apiFetch).not.toHaveBeenCalled();
     expect(mocks.uploadToStorageTarget).not.toHaveBeenCalled();
+  });
+});
+
+describe('production dated-entry saves', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.authHeaders.mockResolvedValue({ Authorization: 'Bearer synthetic-test-token' });
+  });
+
+  it('sends the stable create id with POST and forwards cancellation, but keeps edits on PATCH', async () => {
+    const client = createProductionWorkflowDataClient();
+    const controller = new AbortController();
+    const saved = {
+      id: 'entry-save-key-123', organizationId: 'org-test', organizationName: 'Test Organization',
+      kind: 'event', title: 'Design night', date: '2026-12-20', details: 'Synthetic test entry.',
+    };
+    mocks.apiFetch.mockResolvedValue(saved);
+
+    const created = await client.saveDateEntry({
+      organizationId: 'org-test', idempotencyKey: 'entry-save-key-123', kind: 'event',
+      title: 'Design night', date: '2026-12-20', details: 'Synthetic test entry.',
+    }, session, controller.signal);
+    expect(created.ok).toBe(true);
+    const createCall = mocks.apiFetch.mock.calls[0];
+    expect(createCall?.[0]).toBe('/organizations/org-test/date-entries');
+    expect(createCall?.[1]?.method).toBe('POST');
+    expect(createCall?.[1]?.signal).toBe(controller.signal);
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+      entryId: 'entry-save-key-123', kind: 'event', title: 'Design night',
+      date: '2026-12-20', details: 'Synthetic test entry.',
+    });
+
+    mocks.apiFetch.mockClear();
+    const updated = await client.saveDateEntry({
+      organizationId: 'org-test', id: 'entry-save-key-123', idempotencyKey: 'unused-for-edits', kind: 'event',
+      title: 'Design night updated', date: '2026-12-20', details: 'Synthetic edited entry.',
+    }, session, controller.signal);
+    expect(updated.ok).toBe(true);
+    const updateCall = mocks.apiFetch.mock.calls[0];
+    expect(updateCall?.[0]).toBe('/organizations/org-test/date-entries/entry-save-key-123');
+    expect(updateCall?.[1]?.method).toBe('PATCH');
+    expect(updateCall?.[1]?.signal).toBe(controller.signal);
+    expect(JSON.parse(String(updateCall?.[1]?.body))).not.toHaveProperty('entryId');
   });
 });

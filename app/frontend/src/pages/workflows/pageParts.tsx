@@ -393,14 +393,10 @@ export function AnnouncementCard({
         </div>
       </div>
       {media.length ? (
-        <div className={cn('grid gap-2 [&_img]:min-h-[180px] [&_img]:max-h-[420px] [&_video]:min-h-[180px] [&_video]:max-h-[420px]', media.length > 1 && 'md:grid-cols-2')}>
+        <div className={cn('grid gap-2 [&_img]:min-h-[180px] [&_img]:max-h-[420px]', media.length > 1 && 'md:grid-cols-2')>
           {media.map((item, index) => (
-            <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover [&_video]:block [&_video]:max-h-[340px] [&_video]:w-full [&_video]:bg-[var(--color-ink)] [&_video]:object-cover" key={`${item.url}-${index}`}>
-              {item.contentType?.startsWith('video/') ? (
-                <video src={item.url} controls preload="metadata" aria-label={item.alt || `Announcement video ${index + 1}`} />
-              ) : (
-                <img src={item.url} alt={item.alt} loading="lazy" decoding="async" />
-              )}
+            <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover" key={`${item.url}-${index}`}>
+              <img src={item.url} alt={item.alt} loading="lazy" decoding="async" />
             </figure>
           ))}
         </div>

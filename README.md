@@ -81,7 +81,7 @@ SOAR is successful when the delivered hosted website:
 
 ### 4. Announcements
 
-- Officers can publish text announcements with bounded optional media (up to four images or a supported MP4/WebM video within the existing limits) and can delete their own posts.
+- Officers can publish text announcements with up to four bounded images and can delete their own posts.
 - Posts show newest first with organization name, logo, and posting date.
 - Posts appear consistently in the main feed and on the organization profile.
 - Users can like/unlike a post, use Share to copy a direct post link, open comments, add a comment, and edit/delete their own comments.
@@ -133,7 +133,7 @@ SOAR is successful when the delivered hosted website:
 - Store images in the project file storage so they display after refresh and sign-in.
 - Display images without stretching or overflowing the page.
 - Only an approved officer for the organization can replace its logo or upload images to its posts.
-- Announcement media supports up to four bounded media items, including images and at most one small MP4/WebM video. It does not add transcoding, generated thumbnails, adaptive streaming, moderation, or public-CDN video infrastructure.
+- Announcement attachments support up to four bounded images. Media bytes remain in Firebase Storage; announcement records retain Storage references.
 
 ### 10. Six-month paid access
 

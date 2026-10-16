@@ -13,7 +13,7 @@ Implemented content services:
 - department-linked organization registered-student counts for approved managers;
 - announcement feed and organization-scoped posts;
 - announcement create/delete by approved organization managers;
-- multiple announcement images or one bounded native video through the existing Storage design;
+- up to four bounded announcement images through the existing Storage design;
 - direct announcement deep-link lookup by stable announcement id;
 - persisted like/unlike with consistent counts;
 - persisted comments with consistent counts, plus own-comment edit/delete;
@@ -168,7 +168,7 @@ Returns one accessible non-deleted announcement by stable id using the same DTO 
 ### `POST /organizations/:orgId/announcements`
 
 Approved managers publish a non-empty text post.
-Media is optional and must reference validated Storage paths. Legacy `image` remains supported; new clients should use `media` for up to four items. The current backend supports images plus at most one native video without new processing services.
+Media is optional and must reference validated Storage paths. Legacy `image` remains supported; new clients should use `media` for up to four images.
 When media is used, either provide `announcementId` or use the `announcementId` returned by the image/media-target helper.
 
 ```json
@@ -181,18 +181,12 @@ When media is used, either provide `announcementId` or use the `announcementId` 
       "contentType": "image/webp",
       "sizeBytes": 123456,
       "alt": "Students working in the robotics lab"
-    },
-    {
-      "storagePath": "announcement-images/robotics/post_abc123/clip.mp4",
-      "contentType": "video/mp4",
-      "sizeBytes": 5000000,
-      "alt": "Short demo clip"
     }
   ]
 }
 ```
 
-Media limits: images must be JPEG/PNG/WebP/GIF and at most 5 MiB each; videos must be MP4 or WebM and at most 25 MiB each; one video maximum; four media items maximum; aggregate declared media size at most 30 MiB.
+Image limits: JPEG/PNG/WebP/GIF, at most 5 MiB each, up to four images, and 30 MiB aggregate declared size.
 
 ### `DELETE /organizations/:orgId/announcements/:announcementId`
 
@@ -287,7 +281,7 @@ Allowed content types:
 - `image/gif`
 
 Maximum logo/image size: `5 MiB`.
-Announcement media additionally supports `video/mp4` and `video/webm` through `/announcements/media-targets` with one video up to `25 MiB`, four media items total, and `30 MiB` aggregate.
+Announcement images are limited to `5 MiB` each, four images total, and `30 MiB` aggregate.
 
 ### `POST /organizations/:orgId/logo-image-targets`
 
@@ -327,13 +321,12 @@ Request:
 {
   "announcementId": "post_abc123",
   "files": [
-    { "fileName": "photo.webp", "contentType": "image/webp", "sizeBytes": 123456 },
-    { "fileName": "clip.mp4", "contentType": "video/mp4", "sizeBytes": 5000000 }
+    { "fileName": "photo.webp", "contentType": "image/webp", "sizeBytes": 123456 }
   ]
 }
 ```
 
-Response includes `announcementId`, `items[]` with canonical Storage paths, `allowedContentTypes`, `maxItems`, `maxVideoItems`, per-type size limits, and `maxAggregateSizeBytes`.
+Response includes `announcementId`, `items[]` with canonical Storage paths, `allowedContentTypes`, `maxItems`, `maxSizeBytes`, and `maxAggregateSizeBytes`.
 
 ## Local validation
 

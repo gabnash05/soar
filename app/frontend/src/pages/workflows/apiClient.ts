@@ -11,6 +11,7 @@ import {
 import type {
   Announcement,
   AnnouncementComment,
+  AnnouncementPage,
   AnnouncementInput,
   ApplicationConfirmationInput,
   ApplicationRecord,
@@ -307,9 +308,6 @@ interface AnnouncementMediaTargetResponse {
   allowedContentTypes?: readonly string[];
   maxItems?: number;
   maxSizeBytes?: number;
-  maxImageSizeBytes?: number;
-  maxVideoSizeBytes?: number;
-  maxVideoItems?: number;
   maxAggregateSizeBytes?: number;
 }
 
@@ -377,6 +375,7 @@ async function profileInputToBackend(input: OrganizationProfileInput) {
 
 function dateInputToBackend(input: DateEntryInput) {
   return {
+    ...(input.id || !input.idempotencyKey ? {} : { entryId: input.idempotencyKey }),
     kind: input.kind,
     title: input.title,
     date: input.date,
@@ -391,9 +390,23 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     mode: 'production',
     label: 'Configured workflow services',
 
-    async listAnnouncements() {
-      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/announcements', await activeHeaders());
-      return queryResult(await Promise.all(listItems(response).map(mapAnnouncement)));
+    async listAnnouncements(_session, page = { limit: 15 }) {
+      const params = new URLSearchParams({ limit: String(page.limit) });
+      if (page.pageToken) params.set('pageToken', page.pageToken);
+      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>(`/announcements?${params.toString()}`, await activeHeaders());
+      const envelope = Array.isArray(response) ? undefined : response;
+      const items = await Promise.all(listItems(response).map(mapAnnouncement));
+      return queryResult<AnnouncementPage>({ items, nextPageToken: envelope?.nextPageToken });
+    },
+
+    async getAnnouncement(announcementId) {
+      try {
+        const response = await apiFetch<unknown>(`/announcements/${encodeURIComponent(announcementId)}`, await activeHeaders());
+        return queryResult(await mapAnnouncement(response));
+      } catch (error) {
+        if (error && typeof error === 'object' && (error as { status?: unknown }).status === 404) return queryResult<Announcement | undefined>(undefined);
+        throw error;
+      }
     },
 
     async listAnnouncementComments(announcementId) {
@@ -521,11 +534,12 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return mutationResult(`Application moved to ${stage}.`, mapApplication(response));
     },
 
-    async saveDateEntry(input: DateEntryInput) {
+    async saveDateEntry(input: DateEntryInput, _session: UserSession, signal?: AbortSignal) {
       const path = input.id
         ? `/organizations/${encodeURIComponent(input.organizationId)}/date-entries/${encodeURIComponent(input.id)}`
         : `/organizations/${encodeURIComponent(input.organizationId)}/date-entries`;
-      const response = await apiFetch<unknown>(path, await bodyInit(dateInputToBackend(input), input.id ? 'PATCH' : 'POST'));
+      const request = await bodyInit(dateInputToBackend(input), input.id ? 'PATCH' : 'POST');
+      const response = await apiFetch<unknown>(path, signal ? { ...request, signal } : request);
       return mutationResult(`${input.kind === 'event' ? 'Event' : 'Meeting availability'} saved.`, mapDateEntry(response));
     },
 

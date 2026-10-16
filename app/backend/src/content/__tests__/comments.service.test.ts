@@ -36,6 +36,7 @@ class FakeDocRef {
   get id() { return this.path.split('/').at(-1) ?? ''; }
   collection(name: string) { return new FakeCollectionRef(this.db, `${this.path}/${name}`); }
   async get() { return this.db.getDoc(this); }
+  async create(data: StoredDoc) { this.db.create(this.path, data); }
 }
 
 class FakeTransaction {
@@ -222,6 +223,33 @@ describe('announcement comment ownership service behavior', () => {
     const query = scopedDateEntryQuery('org1', { limit: '20', pageToken: '0' });
 
     expect(dateEntryQuerySchema.parse(query)).toMatchObject({ organizationId: 'org1', limit: 20, pageToken: 0 });
+  });
+
+  it('returns confirmed creates without a post-write read and safely replays the same entry key', async () => {
+    const { createDateEntry } = await import('../service');
+    const reads = vi.spyOn(fakeDb, 'getDoc');
+    const plainEntry = await createDateEntry(user('officer'), 'org1', {
+      kind: 'event', title: 'Synthetic event', date: '2026-12-20', details: 'Task-owned service test.'
+    });
+    expect(plainEntry).toMatchObject({ id: expect.any(String), kind: 'event', date: '2026-12-20' });
+    expect(reads.mock.calls.some(([ref]) => ref.path === `calendarEntries/${plainEntry.id}`)).toBe(false);
+
+    const input = {
+      entryId: 'save-key-123', kind: 'availability' as const, title: 'Synthetic window',
+      date: '2026-12-21', startTime: '14:00', endTime: '16:00', details: 'Task-owned idempotency test.'
+    };
+    const first = await createDateEntry(user('officer'), 'org1', input);
+    const afterFirst = fakeDb.docs.get('calendarEntries/save-key-123');
+    const replay = await createDateEntry(user('officer'), 'org1', input);
+    expect(first).toMatchObject({ id: 'save-key-123', kind: 'availability', date: input.date, startTime: input.startTime, endTime: input.endTime });
+    expect(replay).toEqual(first);
+    expect(fakeDb.docs.get('calendarEntries/save-key-123')).toEqual(afterFirst);
+    await expect(createDateEntry(user('officer'), 'org1', { ...input, title: 'Different payload' })).rejects.toMatchObject({ code: 'date_entry_conflict', status: 409 });
+    await expect(createDateEntry(user('owner'), 'org1', input)).rejects.toMatchObject({ code: 'date_entry_conflict', status: 409 });
+    await expect(createDateEntry(user('student1'), 'org1', { ...input, entryId: 'unprivileged-key-1' })).rejects.toMatchObject({ code: 'organization_management_required' });
+    expect(fakeDb.docs.has('calendarEntries/unprivileged-key-1')).toBe(false);
+    expect(fakeDb.docs.get('calendarEntries/save-key-123')).toEqual(afterFirst);
+    reads.mockRestore();
   });
 
   it('returns only the authorized organization department registered-student count', async () => {

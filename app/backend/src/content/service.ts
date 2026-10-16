@@ -8,13 +8,10 @@ import { AppError } from '../errors';
 import { db } from '../firebase';
 import { loadAccount, requireActiveAccess } from '../identity/access';
 import {
-  ALLOWED_ANNOUNCEMENT_MEDIA_CONTENT_TYPES,
   ALLOWED_IMAGE_CONTENT_TYPES,
   MAX_ANNOUNCEMENT_MEDIA_ITEMS,
   MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES,
-  MAX_ANNOUNCEMENT_VIDEO_ITEMS,
   MAX_IMAGE_SIZE_BYTES,
-  MAX_VIDEO_SIZE_BYTES,
   announcementCreateSchema,
   announcementImagePathMatch,
   announcementQuerySchema,
@@ -22,6 +19,7 @@ import {
   commentCreateSchema,
   commentQuerySchema,
   commentUpdateSchema,
+  dateEntryCreateSchema,
   dateEntryQuerySchema,
   dateEntryUpsertSchema,
   imageTargetRequestSchema,
@@ -74,9 +72,8 @@ function routeDocumentId(id: string, label: string): string {
 }
 
 async function assertCanManageOrganization(user: DecodedIdToken, orgId: string): Promise<OrganizationDocument> {
-  await requireActiveAccess(user);
   const orgRef = db.doc(organizationPath(orgId));
-  const orgSnap = await orgRef.get();
+  const [, orgSnap] = await Promise.all([requireActiveAccess(user), orgRef.get()]);
   if (!orgSnap.exists) {
     throw new AppError('organization_missing', 'The organization was not found.', 404);
   }
@@ -379,12 +376,9 @@ export async function createAnnouncementMediaTargets(user: DecodedIdToken, orgId
       contentType: file.contentType,
       sizeBytes: file.sizeBytes
     })),
-    allowedContentTypes: ALLOWED_ANNOUNCEMENT_MEDIA_CONTENT_TYPES,
+    allowedContentTypes: ALLOWED_IMAGE_CONTENT_TYPES,
     maxItems: MAX_ANNOUNCEMENT_MEDIA_ITEMS,
-    maxVideoItems: MAX_ANNOUNCEMENT_VIDEO_ITEMS,
-    maxImageSizeBytes: MAX_IMAGE_SIZE_BYTES,
-    maxVideoSizeBytes: MAX_VIDEO_SIZE_BYTES,
-    maxSizeBytes: MAX_VIDEO_SIZE_BYTES,
+    maxSizeBytes: MAX_IMAGE_SIZE_BYTES,
     maxAggregateSizeBytes: MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES
   };
 }
@@ -614,10 +608,12 @@ export async function listDateEntries(user: DecodedIdToken, rawQuery: unknown): 
 export async function createDateEntry(user: DecodedIdToken, orgIdParam: string, rawBody: unknown) {
   const orgId = routeOrgId(orgIdParam);
   const organization = await assertCanManageOrganization(user, orgId);
-  const input = dateEntryUpsertSchema.parse(rawBody);
-  const ref = db.collection(COLLECTIONS.calendarEntries).doc();
+  const input = dateEntryCreateSchema.parse(rawBody);
+  const ref = input.entryId
+    ? db.collection(COLLECTIONS.calendarEntries).doc(input.entryId)
+    : db.collection(COLLECTIONS.calendarEntries).doc();
   const now = Timestamp.now();
-  await ref.create({
+  const entry = {
     entryId: ref.id,
     orgId,
     organizationName: organization.name,
@@ -630,9 +626,30 @@ export async function createDateEntry(user: DecodedIdToken, orgIdParam: string, 
     createdByUid: user.uid,
     createdAt: now,
     updatedAt: now
-  });
-  const snap = await ref.get();
-  return dateEntryFromDoc(snap.data() ?? {});
+  };
+
+  if (input.entryId) {
+    const saved = await db.runTransaction(async (tx) => {
+      const existing = await tx.get(ref);
+      if (existing.exists) {
+        const savedEntry = existing.data() ?? {};
+        const sameRequest = savedEntry.orgId === orgId && savedEntry.createdByUid === user.uid &&
+          savedEntry.kind === input.kind && savedEntry.title === input.title && savedEntry.date === input.date &&
+          (savedEntry.startTime ?? '') === (input.startTime ?? '') && (savedEntry.endTime ?? '') === (input.endTime ?? '') &&
+          savedEntry.details === input.details;
+        if (!sameRequest) {
+          throw new AppError('date_entry_conflict', 'A dated entry with this save key already has different details. Refresh your organization dates before trying again.', 409);
+        }
+        return savedEntry;
+      }
+      tx.create(ref, entry);
+      return entry;
+    });
+    return dateEntryFromDoc(saved);
+  }
+
+  await ref.create(entry);
+  return dateEntryFromDoc(entry);
 }
 
 export async function updateDateEntry(user: DecodedIdToken, orgIdParam: string, entryIdParam: string, rawBody: unknown) {

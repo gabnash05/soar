@@ -49,7 +49,7 @@ describe('AccountSettingsPage', () => {
     });
     renderAccountSettings(gateway);
 
-    const nameInput = screen.getByRole('textbox', { name: 'Full name' });
+    const nameInput = await screen.findByRole('textbox', { name: 'Full name' });
     await user.clear(nameInput);
     await user.type(nameInput, '  Mara New Santos  ');
     await user.click(screen.getByRole('button', { name: 'Save name' }));
@@ -71,7 +71,7 @@ describe('AccountSettingsPage', () => {
     ));
     const { container } = renderAccountSettings(gateway);
 
-    const nameInput = screen.getByRole('textbox', { name: 'Full name' });
+    const nameInput = await screen.findByRole('textbox', { name: 'Full name' });
     await user.clear(nameInput);
     await user.type(nameInput, 'X');
     await user.click(screen.getByRole('button', { name: 'Save name' }));
@@ -93,7 +93,7 @@ describe('AccountSettingsPage', () => {
     ));
     renderAccountSettings(gateway);
 
-    const nameInput = screen.getByRole('textbox', { name: 'Full name' });
+    const nameInput = await screen.findByRole('textbox', { name: 'Full name' });
     await user.clear(nameInput);
     await user.type(nameInput, 'Mara New Santos');
     await user.click(screen.getByRole('button', { name: 'Save name' }));
@@ -116,7 +116,7 @@ describe('AccountSettingsPage', () => {
     const { container } = renderAccountSettings(gateway);
 
     const attemptedName = '<img src=x onerror=alert(1)>';
-    const nameInput = screen.getByRole('textbox', { name: 'Full name' });
+    const nameInput = await screen.findByRole('textbox', { name: 'Full name' });
     await user.clear(nameInput);
     await user.type(nameInput, attemptedName);
     await user.click(screen.getByRole('button', { name: 'Save name' }));

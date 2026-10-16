@@ -6,7 +6,7 @@ This backend is the Firebase Functions/Express foundation for identity, paid acc
 
 The API derives the provisioning-only Admin session type from the server-verified Firebase Auth `soarAdmin: true` custom claim.
 Public registration continues to accept only student and sponsor roles, and no account is promoted automatically.
-An initial Admin identity requires explicit trusted Firebase Admin setup; never set the claim from a browser or client-supplied request.
+The Admin UI is intentionally reached through separate, trusted local Admin setup rather than the general seed or public registration flow. A trusted operator must use Firebase Admin SDK credentials scoped to the Auth emulator at `127.0.0.1:19099` and project `demo-soar-local`, and must verify both endpoints before creating a synthetic tester identity and assigning `soarAdmin: true`. Refuse any non-loopback host, different project ID, or existing identity not specifically created for this local test; do not reset its password, change its claims, or elevate an unknown account. Hand the test credentials to the authorized tester privately; never put them in tracked files or frontend configuration. The general seed does not create, modify, or promote Admin identities.
 Admin-only routes are `GET /admin/organizations`, `GET /admin/students`, `POST /admin/organizations`, and `POST /admin/organizations/:orgId/officer-grants`.
 Student lookup searches saved student account names and the existing `studentId` field in bounded pages and returns only the account UID, name, and an honestly optional student ID.
 Organization creation uses the existing organization schema and requires a saved student as the initial owner/officer, while later grants remain scoped to a single organization and are idempotent.
@@ -52,7 +52,7 @@ npm --workspace app/backend run emulators:seed
 
 The seed command refuses non-loopback hosts and refuses any project id other than `demo-soar-local`. It creates synthetic organizations, announcements, date entries, applications, meeting requests, officer grants and active entitlements labelled `emulator-simulated`. Those entitlements are a local MVP convenience only; they are not production payment evidence or a production bypass.
 
-Seeded demo sign-ins all use password `SoarDemo123!`:
+Newly created demo sign-ins use password `SoarDemo123!`. Rerunning the seed does not reset existing Auth credentials or overwrite existing account and entitlement records; existing accounts may have a separately changed password:
 
 - `student@example.test` — student tracker/request flows.
 - `sponsor@example.test` — sponsor meeting request flows, no application tracker.

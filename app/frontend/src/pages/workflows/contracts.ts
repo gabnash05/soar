@@ -10,7 +10,7 @@ export interface WorkflowQueryResult<T> {
 
 export interface WorkflowMutationResult<T = undefined> {
   ok: boolean;
-  persisted: boolean;
+  persisted: boolean | 'unconfirmed';
   source: WorkflowDataMode;
   message: string;
   data?: T;
@@ -184,6 +184,7 @@ export interface AnnouncementInput {
 
 export interface DateEntryInput {
   id?: string;
+  idempotencyKey?: string;
   organizationId: string;
   kind: DateEntryKind;
   title: string;
@@ -211,10 +212,16 @@ export interface OrganizationDepartmentStudentCount {
   generatedAt: string;
 }
 
+export interface AnnouncementPage {
+  items: Announcement[];
+  nextPageToken?: string;
+}
+
 export interface WorkflowDataClient {
   readonly mode: WorkflowDataMode;
   readonly label: string;
-  listAnnouncements(session: UserSession): Promise<WorkflowQueryResult<Announcement[]>>;
+  listAnnouncements(session: UserSession, page?: { limit: number; pageToken?: string }): Promise<WorkflowQueryResult<AnnouncementPage>>;
+  getAnnouncement(announcementId: string, session: UserSession): Promise<WorkflowQueryResult<Announcement | undefined>>;
   listAnnouncementComments(announcementId: string, session: UserSession): Promise<WorkflowQueryResult<AnnouncementComment[]>>;
   toggleAnnouncementLike(announcementId: string, liked: boolean, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   addAnnouncementComment(announcementId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<AnnouncementComment>>;
@@ -237,7 +244,7 @@ export interface WorkflowDataClient {
   deleteAnnouncement(announcementId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
   getOrganizationDepartmentStudentCount(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OrganizationDepartmentStudentCount | undefined>>;
   updateApplicationStage(applicationId: string, stage: ApplicationStage, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<ApplicationRecord>>;
-  saveDateEntry(input: DateEntryInput, session: UserSession): Promise<WorkflowMutationResult<DateEntry>>;
+  saveDateEntry(input: DateEntryInput, session: UserSession, signal?: AbortSignal): Promise<WorkflowMutationResult<DateEntry>>;
   deleteDateEntry(dateEntryId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
   decideMeetingRequest(meetingRequestId: string, status: Exclude<MeetingStatus, 'Pending'>, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<MeetingRequest>>;
 }

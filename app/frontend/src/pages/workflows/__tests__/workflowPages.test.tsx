@@ -1,10 +1,10 @@
 import type { ReactElement } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
-import type { WorkflowDataClient } from '../contracts';
+import type { AnnouncementPage, DateEntry, DateEntryInput, OfficerDashboard, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
 import { DirectoryView } from '../DirectoryPage';
@@ -12,7 +12,7 @@ import { FeedView } from '../FeedPage';
 import { MeetingsView } from '../MeetingsPage';
 import { EntryPage } from '../../access/EntryPage';
 import { OrganizationSettingsView } from '../../settings/OrganizationSettingsPage';
-import { OfficerView } from '../OfficerPage';
+import { DATE_ENTRY_SAVE_TIMEOUT_MS, DateEntriesSection, OfficerView } from '../OfficerPage';
 import { OrganizationView } from '../OrganizationPage';
 
 const activeAccess: UserSession['access'] = {
@@ -59,6 +59,38 @@ beforeAll(() => {
 });
 
 const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => render(<MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>);
+
+function saveDateEntryResult(input: DateEntryInput, source: WorkflowDataClient['mode']): WorkflowMutationResult<DateEntry> {
+  return {
+    ok: true,
+    persisted: true,
+    source,
+    message: 'Dated entry saved.',
+    data: {
+      id: input.id ?? input.idempotencyKey ?? 'saved-date-entry',
+      organizationId: input.organizationId,
+      organizationName: 'Computer Engineering Department',
+      kind: input.kind,
+      title: input.title.trim(),
+      date: input.date,
+      startTime: input.startTime,
+      endTime: input.endTime,
+      details: input.details.trim(),
+    },
+  };
+}
+
+function enterDatedEntry(user: ReturnType<typeof userEvent.setup>, title = 'Portfolio orientation') {
+  return (async () => {
+    await user.type(screen.getByLabelText(/^Title$/i), title);
+    fireEvent.change(screen.getByLabelText(/^Date$/i), { target: { value: '2026-12-20' } });
+    await user.type(screen.getByLabelText(/Short details/i), 'Meet at the engineering hall.');
+  })();
+}
+
+function renderDatedEntrySection(dashboard: OfficerDashboard, client: WorkflowDataClient, onChanged: () => void) {
+  renderInRouter(<DateEntriesSection dashboard={dashboard} session={officerSession} client={client} onChanged={onChanged} />);
+}
 
 describe('SOAR workflow pages', () => {
   it('keeps landing capability cards equivalent instead of one broken oversized lower card', () => {
@@ -280,6 +312,129 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByText(/Open organization profile/i)).not.toBeInTheDocument();
   });
 
+  it('loads announcement pages on demand with the server cursor and de-duplicates appended posts', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+    const first = Array.from({ length: 15 }, (_, index) => post(`post-${index}`, `Post body ${index}`));
+    const second = [post('post-14', 'Duplicate'), post('post-15', 'Post body 15')];
+    const listAnnouncements = vi.fn()
+      .mockResolvedValueOnce({ data: { items: first, nextPageToken: 'cursor-15' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: second }, source: 'fixture' });
+    const client = { ...base, listAnnouncements };
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+
+    expect(await screen.findByText('Post body 14')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(1);
+    expect(listAnnouncements).toHaveBeenNthCalledWith(1, studentSession, { limit: 15 });
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Post body 15')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenNthCalledWith(2, studentSession, { limit: 15, pageToken: 'cursor-15' });
+    expect(screen.queryAllByText('Duplicate')).toHaveLength(0);
+    expect(screen.getByText('You’re all caught up.')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads a direct-linked announcement outside page one with one bounded lookup', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+    const listAnnouncements = vi.fn().mockResolvedValue({ data: { items: Array.from({ length: 15 }, (_, index) => post(`page-${index}`, `Page post ${index}`)), nextPageToken: 'cursor-15' }, source: 'fixture' });
+    const getAnnouncement = vi.fn().mockResolvedValue({ data: post('outside-page', 'Linked announcement on page two'), source: 'fixture' });
+    renderInRouter(<FeedView session={studentSession} client={{ ...base, listAnnouncements, getAnnouncement }} />, ['/app?announcementId=outside-page']);
+
+    expect(await screen.findByText('Linked announcement on page two')).toBeInTheDocument();
+    expect(getAnnouncement).toHaveBeenCalledTimes(1);
+    expect(getAnnouncement).toHaveBeenCalledWith('outside-page', studentSession);
+    expect(listAnnouncements).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+  });
+
+  it('ignores a late page response after the feed session changes', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+    let resolveNextPage: (result: WorkflowQueryResult<AnnouncementPage>) => void = () => undefined;
+    const pendingNextPage = new Promise<WorkflowQueryResult<AnnouncementPage>>((resolve) => { resolveNextPage = resolve; });
+    const oldList = vi.fn()
+      .mockResolvedValueOnce({ data: { items: [post('old-context', 'Old context post')], nextPageToken: 'old-cursor' }, source: 'fixture' })
+      .mockReturnValueOnce(pendingNextPage);
+    const newList = vi.fn().mockResolvedValue({ data: { items: [post('new-context', 'New context post')] }, source: 'fixture' });
+    const oldClient = { ...base, listAnnouncements: oldList };
+    const newClient = { ...base, listAnnouncements: newList };
+    const rendered = renderInRouter(<FeedView session={studentSession} client={oldClient} />);
+
+    expect(await screen.findByText('Old context post')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(oldList).toHaveBeenCalledTimes(2);
+    rendered.rerender(<MemoryRouter><FeedView session={{ ...studentSession, uid: 'student-next' }} client={newClient} /></MemoryRouter>);
+    expect(await screen.findByText('New context post')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveNextPage({ data: { items: [post('stale-page', 'Stale page item')] }, source: 'fixture' });
+      await pendingNextPage;
+    });
+    expect(screen.queryByText('Stale page item')).not.toBeInTheDocument();
+    expect(screen.getByText('New context post')).toBeInTheDocument();
+  });
+
+  it('loads the next page when the announcement sentinel intersects', async () => {
+    const previousObserver = globalThis.IntersectionObserver;
+    const observers: Array<{ trigger: () => void }> = [];
+    class ObserverMock {
+      root: Element | Document | null = null;
+      rootMargin: string;
+      thresholds: number[] = [];
+      target?: Element;
+      constructor(private readonly callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        this.rootMargin = options?.rootMargin ?? '0px';
+        observers.push(this);
+      }
+      observe(target: Element) { this.target = target; }
+      unobserve() {}
+      disconnect() {}
+      takeRecords(): IntersectionObserverEntry[] { return []; }
+      trigger() {
+        this.callback([{ isIntersecting: true, target: this.target } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+      }
+    }
+    Object.defineProperty(globalThis, 'IntersectionObserver', { configurable: true, value: ObserverMock });
+    try {
+      const base = createFixtureWorkflowDataClient();
+      const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+      const listAnnouncements = vi.fn()
+        .mockResolvedValueOnce({ data: { items: [post('first-page', 'First page post')], nextPageToken: 'cursor-next' }, source: 'fixture' })
+        .mockResolvedValueOnce({ data: { items: [post('second-page', 'Observer loaded post')] }, source: 'fixture' });
+      renderInRouter(<FeedView session={studentSession} client={{ ...base, listAnnouncements }} />);
+      expect(await screen.findByText('First page post')).toBeInTheDocument();
+      expect(observers.length).toBeGreaterThan(0);
+      await act(async () => { observers[0].trigger(); });
+      expect(await screen.findByText('Observer loaded post')).toBeInTheDocument();
+      expect(listAnnouncements).toHaveBeenCalledTimes(2);
+    } finally {
+      if (previousObserver) Object.defineProperty(globalThis, 'IntersectionObserver', { configurable: true, value: previousObserver });
+      else Reflect.deleteProperty(globalThis, 'IntersectionObserver');
+    }
+  });
+
+  it('preserves loaded announcements when a next-page request fails and retries that cursor', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const post = (id: string, body: string) => ({ id, organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-01T00:00:00.000Z', body, likeCount: 0, viewerHasLiked: false, comments: [] });
+    const original = { data: { items: [post('kept-post', 'Keep this loaded announcement')], nextPageToken: 'cursor-next' }, source: 'fixture' as const };
+    const listAnnouncements = vi.fn()
+      .mockResolvedValueOnce(original)
+      .mockRejectedValueOnce(new Error('Temporary network issue'))
+      .mockResolvedValueOnce({ data: { items: [], nextPageToken: undefined }, source: 'fixture' });
+    const client = { ...base, listAnnouncements };
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+    expect(await screen.findByText('Keep this loaded announcement')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Temporary network issue/i);
+    expect(screen.getByText('Keep this loaded announcement')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry loading announcements' }));
+    await waitFor(() => expect(screen.getByText('You’re all caught up.')).toBeInTheDocument());
+    expect(listAnnouncements).toHaveBeenNthCalledWith(2, studentSession, { limit: 15, pageToken: 'cursor-next' });
+    expect(listAnnouncements).toHaveBeenNthCalledWith(3, studentSession, { limit: 15, pageToken: 'cursor-next' });
+  });
+
   it('keeps public organization profiles public-facing even for managers', async () => {
     renderInRouter(<OrganizationView organizationId="robotics" session={officerSession} client={createFixtureWorkflowDataClient()} />);
 
@@ -395,6 +550,175 @@ describe('SOAR workflow pages', () => {
     expect(screen.getByRole('dialog', { name: /Add dated entry/i })).toBeInTheDocument();
   });
 
+  it('keeps the draft pending until persistence confirms, then refreshes once', async () => {
+    const client = createFixtureWorkflowDataClient();
+    const dashboard = (await client.getOfficerDashboard('robotics', officerSession)).data;
+    expect(dashboard).toBeDefined();
+    let resolveSave!: (result: WorkflowMutationResult<DateEntry>) => void;
+    const pendingSave = new Promise<WorkflowMutationResult<DateEntry>>((resolve) => { resolveSave = resolve; });
+    const saveDateEntry = vi.fn<WorkflowDataClient['saveDateEntry']>(() => pendingSave);
+    client.saveDateEntry = saveDateEntry;
+    const onChanged = vi.fn();
+    renderDatedEntrySection(dashboard!, client, onChanged);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
+    await enterDatedEntry(user);
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    expect(screen.getByLabelText(/^Title$/i)).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /Close Add dated entry/i }));
+    expect(screen.getByRole('dialog', { name: /Add dated entry/i })).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog', { name: /Discard unsaved changes/i })).not.toBeInTheDocument();
+    const submitted = saveDateEntry.mock.calls[0]![0];
+    resolveSave(saveDateEntryResult(submitted, client.mode));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Add dated entry/i })).not.toBeInTheDocument());
+    expect(saveDateEntry).toHaveBeenCalledTimes(1);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Dated entry saved.');
+  });
+
+  it('keeps typed values after validation failure and safely retries the corrected draft', async () => {
+    const client = createFixtureWorkflowDataClient();
+    const dashboard = (await client.getOfficerDashboard('robotics', officerSession)).data;
+    expect(dashboard).toBeDefined();
+    const validationError = Object.assign(new Error('The date entry was invalid.'), { code: 'validation_problem' });
+    const saveDateEntry = vi.fn<WorkflowDataClient['saveDateEntry']>();
+    saveDateEntry.mockRejectedValueOnce(validationError);
+    saveDateEntry.mockImplementationOnce(async (input) => saveDateEntryResult(input, client.mode));
+    client.saveDateEntry = saveDateEntry;
+    const onChanged = vi.fn();
+    renderDatedEntrySection(dashboard!, client, onChanged);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
+    await enterDatedEntry(user);
+    fireEvent.change(screen.getByLabelText(/Start time/i), { target: { value: '16:00' } });
+    fireEvent.change(screen.getByLabelText(/End time/i), { target: { value: '14:00' } });
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/Check the title, date, times, and details/i);
+    expect(screen.getByLabelText(/^Title$/i)).toHaveValue('Portfolio orientation');
+    expect(screen.getByLabelText(/^Date$/i)).toHaveValue('2026-12-20');
+    expect(screen.getByLabelText(/Short details/i)).toHaveValue('Meet at the engineering hall.');
+    expect(screen.getByLabelText(/Start time/i)).toHaveValue('16:00');
+    expect(screen.getByLabelText(/End time/i)).toHaveValue('14:00');
+    expect(screen.getByRole('button', { name: 'Save dated entry' })).toBeEnabled();
+
+    const firstKey = saveDateEntry.mock.calls[0]![0].idempotencyKey;
+    fireEvent.change(screen.getByLabelText(/End time/i), { target: { value: '17:00' } });
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Add dated entry/i })).not.toBeInTheDocument());
+    expect(saveDateEntry).toHaveBeenCalledTimes(2);
+    expect(saveDateEntry.mock.calls[1]![0].idempotencyKey).toBe(firstKey);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks saved state after a provider error and retries with the same idempotency key', async () => {
+    const client = createFixtureWorkflowDataClient();
+    const dashboard = (await client.getOfficerDashboard('robotics', officerSession)).data;
+    expect(dashboard).toBeDefined();
+    const error = Object.assign(new Error('private internal detail'), { code: 'internal', status: 500 });
+    const saveDateEntry = vi.fn<WorkflowDataClient['saveDateEntry']>();
+    saveDateEntry.mockRejectedValueOnce(error);
+    saveDateEntry.mockImplementationOnce(async (input) => saveDateEntryResult(input, client.mode));
+    client.saveDateEntry = saveDateEntry;
+    const checkSavedState = vi.fn(async () => ({ data: { ...dashboard!, dateEntries: [] }, source: client.mode }));
+    client.getOfficerDashboard = checkSavedState;
+    const onChanged = vi.fn();
+    renderDatedEntrySection(dashboard!, client, onChanged);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
+    await enterDatedEntry(user);
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/save status is unconfirmed/i);
+    expect(screen.getByRole('status')).not.toHaveTextContent('private internal detail');
+    expect(screen.getByLabelText(/^Title$/i)).toHaveValue('Portfolio orientation');
+    expect(checkSavedState).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Save dated entry' })).toBeEnabled();
+
+    const firstKey = saveDateEntry.mock.calls[0]![0].idempotencyKey;
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Add dated entry/i })).not.toBeInTheDocument());
+    expect(saveDateEntry).toHaveBeenCalledTimes(2);
+    expect(saveDateEntry.mock.calls[1]![0].idempotencyKey).toBe(firstKey);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms a persisted entry after a lost response without submitting it twice', async () => {
+    const client = createFixtureWorkflowDataClient();
+    const dashboard = (await client.getOfficerDashboard('robotics', officerSession)).data;
+    expect(dashboard).toBeDefined();
+    const saveDateEntry = vi.fn<WorkflowDataClient['saveDateEntry']>();
+    saveDateEntry.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    client.saveDateEntry = saveDateEntry;
+    const checkSavedState = vi.fn(async () => {
+      const submitted = saveDateEntry.mock.calls[0]![0];
+      const saved = saveDateEntryResult(submitted, client.mode).data!;
+      return { data: { ...dashboard!, dateEntries: [...dashboard!.dateEntries, saved] }, source: client.mode };
+    });
+    client.getOfficerDashboard = checkSavedState;
+    const onChanged = vi.fn();
+    renderDatedEntrySection(dashboard!, client, onChanged);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
+    await enterDatedEntry(user);
+    await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Add dated entry/i })).not.toBeInTheDocument());
+    expect(await screen.findByRole('status')).toHaveTextContent(/saved and confirmed/i);
+    expect(checkSavedState).toHaveBeenCalledTimes(1);
+    expect(saveDateEntry).toHaveBeenCalledTimes(1);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds a stalled save, aborts the request and preserves a safe retry key', async () => {
+    const client = createFixtureWorkflowDataClient();
+    const dashboard = (await client.getOfficerDashboard('robotics', officerSession)).data;
+    expect(dashboard).toBeDefined();
+    const neverSettles = new Promise<WorkflowMutationResult<DateEntry>>(() => undefined);
+    const saveDateEntry = vi.fn<WorkflowDataClient['saveDateEntry']>();
+    saveDateEntry.mockImplementationOnce(() => neverSettles);
+    saveDateEntry.mockImplementationOnce(async (input) => saveDateEntryResult(input, client.mode));
+    client.saveDateEntry = saveDateEntry;
+    const checkSavedState = vi.fn(async () => ({ data: { ...dashboard!, dateEntries: [] }, source: client.mode }));
+    client.getOfficerDashboard = checkSavedState;
+    const onChanged = vi.fn();
+    renderDatedEntrySection(dashboard!, client, onChanged);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
+    await enterDatedEntry(user);
+    vi.useFakeTimers();
+    try {
+      fireEvent.submit(screen.getByLabelText(/^Title$/i).closest('form')!);
+      expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(DATE_ENTRY_SAVE_TIMEOUT_MS); });
+      vi.useRealTimers();
+
+      expect(saveDateEntry.mock.calls[0]![2]?.aborted).toBe(true);
+      expect(checkSavedState).toHaveBeenCalledTimes(1);
+      expect(await screen.findByRole('status')).toHaveTextContent(/save status is unconfirmed/i);
+      expect(screen.getByLabelText(/^Title$/i)).toHaveValue('Portfolio orientation');
+      expect(screen.getByLabelText(/Short details/i)).toHaveValue('Meet at the engineering hall.');
+      expect(screen.getByRole('button', { name: 'Save dated entry' })).toBeEnabled();
+
+      const firstKey = saveDateEntry.mock.calls[0]![0].idempotencyKey;
+      await user.click(screen.getByRole('button', { name: 'Save dated entry' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: /Add dated entry/i })).not.toBeInTheDocument());
+      expect(saveDateEntry).toHaveBeenCalledTimes(2);
+      expect(saveDateEntry.mock.calls[1]![0].idempotencyKey).toBe(firstKey);
+      expect(onChanged).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps one profile save action and confirms before persisting organization profile edits', async () => {
     const user = userEvent.setup();
     const client = createFixtureWorkflowDataClient();
@@ -474,7 +798,7 @@ describe('SOAR workflow pages', () => {
     const client: WorkflowDataClient = {
       ...fixtureClient,
       listAnnouncements: async () => ({
-        data: [{
+        data: { items: [{
           id: 'persisted-comment-post',
           organizationId: 'robotics',
           organizationName: 'Computer Engineering Department',
@@ -484,7 +808,7 @@ describe('SOAR workflow pages', () => {
           viewerHasLiked: false,
           commentCount: 1,
           comments: [],
-        }],
+        }] },
         source: 'production',
       }),
       listAnnouncementComments: vi.fn(async () => ({
@@ -576,7 +900,7 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByText(/Announcement link copied/i)).toBeInTheDocument();
   });
 
-  it('publishes bounded announcement images and native videos with previews and documented limits', async () => {
+  it('publishes bounded announcement images and rejects unsupported videos', async () => {
     const user = userEvent.setup();
     renderInRouter(<FeedView session={officerSession} client={createFixtureWorkflowDataClient()} />);
 
@@ -584,20 +908,20 @@ describe('SOAR workflow pages', () => {
     await user.type(screen.getByLabelText(/Post text/i), 'Two image update for the build team.');
     const permissiveUser = userEvent.setup({ applyAccept: false });
     await permissiveUser.upload(screen.getByLabelText(/Optional media/i), new File(['not an image'], 'notes.txt', { type: 'text/plain' }));
-    expect(await screen.findByText(/Use a PNG, JPEG, GIF, WebP, MP4, or WebM file/i)).toBeInTheDocument();
-    await user.upload(screen.getByLabelText(/Optional media/i), [
+    expect(await screen.findByText(/Use a PNG, JPEG, GIF, or WebP image/i)).toBeInTheDocument();
+    await permissiveUser.upload(screen.getByLabelText(/Optional media/i), [
       new File(['a'], 'robot-a.png', { type: 'image/png' }),
       new File(['video'], 'robot-demo.mp4', { type: 'video/mp4' }),
     ]);
+    expect(await screen.findByText(/Use a PNG, JPEG, GIF, or WebP image/i)).toBeInTheDocument();
+    expect(screen.queryByText('robot-a.png')).not.toBeInTheDocument();
+    await user.upload(screen.getByLabelText(/Optional media/i), new File(['a'], 'robot-a.png', { type: 'image/png' }));
     expect(screen.getByText(/30 MB combined maximum/i)).toBeInTheDocument();
-    expect(screen.getByText(/MP4\/WebM video/i)).toBeInTheDocument();
     expect(screen.getByText('robot-a.png')).toBeInTheDocument();
-    expect(screen.getByText('robot-demo.mp4')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));
     expect(await screen.findByText(/Two image update for the build team/i)).toBeInTheDocument();
     expect(await screen.findByAltText('robot-a.png')).toBeInTheDocument();
-    expect(await screen.findByLabelText('robot-demo.mp4')).toBeInTheDocument();
   });
 
   it('accepts optional private PDF meeting documents and rejects unsupported files', async () => {

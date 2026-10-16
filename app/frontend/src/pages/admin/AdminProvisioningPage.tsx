@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Button, Card, CardBody, CardHeader, Field, LoadingBlock, Select, SubtabNav, SubtabPanel, TextInput, useQueryTab } from '../../components/ui';
 import { CANONICAL_DEPARTMENTS } from '../../lib/departments';
 import {
@@ -35,10 +35,12 @@ function StudentPicker({
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const searchGeneration = useRef(0);
 
-  const runSearch = async (pageToken?: string) => {
+  const runSearch = async (pageToken?: string, generation = searchGeneration.current) => {
     const trimmed = query.trim();
     if (trimmed.length < 2) {
+      setLoading(false);
       setError('Enter at least two characters from the student’s name or ID.');
       setItems([]);
       setNextPageToken(undefined);
@@ -51,23 +53,26 @@ function StudentPicker({
     setSearched(true);
     try {
       const result = await searchAdminStudents(trimmed, pageToken);
+      if (generation !== searchGeneration.current) return;
       setItems((current) => {
         const combined = pageToken ? [...current, ...result.items] : result.items;
         return [...new Map(combined.map((student) => [student.uid, student])).values()];
       });
       setNextPageToken(result.nextPageToken);
     } catch (caught) {
-      setError(messageFor(caught, 'Student accounts could not be searched. Try again.'));
+      if (generation === searchGeneration.current) setError(messageFor(caught, 'Student accounts could not be searched. Try again.'));
     } finally {
-      setLoading(false);
+      if (generation === searchGeneration.current) setLoading(false);
     }
   };
 
   const startSearch = () => {
+    searchGeneration.current += 1;
+    const generation = searchGeneration.current;
     setItems([]);
     setNextPageToken(undefined);
     onSelect(null);
-    void runSearch();
+    void runSearch(undefined, generation);
   };
 
   const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -87,6 +92,8 @@ function StudentPicker({
             autoComplete="off"
             value={query}
             onChange={(event) => {
+              searchGeneration.current += 1;
+              setLoading(false);
               setQuery(event.target.value);
               setItems([]);
               setNextPageToken(undefined);
@@ -373,6 +380,7 @@ export function AdminProvisioningPage() {
                     value={selectedOrganizationId}
                     onChange={(event) => {
                       setSelectedOrganizationId(event.target.value);
+                      setAssignmentStudent(null);
                       setAssignmentMessage(null);
                       setAssignmentError(null);
                     }}
@@ -391,7 +399,7 @@ export function AdminProvisioningPage() {
                 </div>
               ) : null}
               {organizations.length ? (
-                <StudentPicker idPrefix="officer-search" selected={assignmentStudent} onSelect={(student) => { setAssignmentStudent(student); setAssignmentMessage(null); setAssignmentError(null); }} />
+                <StudentPicker key={selectedOrganizationId} idPrefix="officer-search" selected={assignmentStudent} onSelect={(student) => { setAssignmentStudent(student); setAssignmentMessage(null); setAssignmentError(null); }} />
               ) : null}
               {assignmentError ? <p className="m-0 text-sm font-bold text-[var(--color-orange-deep)]" role="alert">{assignmentError}</p> : null}
               {assignmentMessage ? <p className="m-0 text-sm font-bold text-[var(--color-blue-deep)]" role="status" aria-live="polite">{assignmentMessage}</p> : null}
