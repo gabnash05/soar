@@ -744,14 +744,14 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
   );
 }
 
-export function OfficerOrganizationPicker({ selectedOrganizationId, onChange, session }: { selectedOrganizationId: string; onChange: (value: string) => void; session: UserSession }) {
+export function OfficerOrganizationPicker({ selectedOrganizationId, onChange, session, disabled = false, id = 'managed-organization' }: { selectedOrganizationId: string; onChange: (value: string) => void; session: UserSession; disabled?: boolean; id?: string }) {
   const grants = getApprovedOfficerGrants(session);
   if (grants.length <= 1) return null;
   return (
     <section className="max-w-[480px] py-3" aria-label="Managed organization">
       <div className="grid min-w-0 gap-1.5">
-        <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="managed-organization">Organization</label>
-        <select id="managed-organization" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={selectedOrganizationId} onChange={(event) => onChange(event.target.value)}>
+        <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor={id}>Organization</label>
+        <select id={id} disabled={disabled} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={selectedOrganizationId} onChange={(event) => onChange(event.target.value)}>
           {grants.map((grant) => <option key={grant.organizationId} value={grant.organizationId}>{grant.organizationName}</option>)}
         </select>
       </div>
@@ -786,7 +786,7 @@ export function OfficerOrganizationManagement({ organizationId, session, client 
   return (
     <aside className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-blue)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] [&_p]:m-0" role="note">
       <strong>Organization management</strong>
-      <p>Edit profile details, announcements, and dated entries from the dedicated Manage Organization sidebar tab.</p>
+      <p>Edit profile details, application intake, announcements, and dated entries from Manage Organization.</p>
       <ButtonLink to={`/settings/organization?organizationId=${encodeURIComponent(organizationId)}`} variant="primary">Manage organization</ButtonLink>
     </aside>
   );
