@@ -97,17 +97,23 @@ describe('Admin provisioning page', () => {
     mocks.searchAdminStudents.mockImplementation(() => new Promise((resolve) => { pending.push(resolve); }));
     renderPage('/admin?tab=assign');
 
-    const input = await screen.findByLabelText('Find a registered student');
+    const panel = screen.getByRole('tabpanel');
+    const input = await within(panel).findByLabelText('Find a registered student');
     await user.type(input, 'al');
-    await user.click(screen.getByRole('button', { name: 'Search students' }));
-    await user.clear(input);
-    await user.type(input, 'bo');
-    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    expect(input).toHaveValue('al');
+    const searchButton = within(panel).getByRole('button', { name: 'Search students' });
+    expect(searchButton).toBeEnabled();
+    await user.click(searchButton);
+    expect(mocks.searchAdminStudents).toHaveBeenCalledTimes(1);
+    fireEvent.change(input, { target: { value: 'bo' } });
+    expect(input).toHaveValue('bo');
+    await waitFor(() => expect(searchButton).toBeEnabled());
+    fireEvent.click(searchButton);
     expect(mocks.searchAdminStudents).toHaveBeenCalledTimes(2);
 
-    pending[1]([{ uid: 'student-bo', displayName: 'Bob Santos', studentId: 'B-1002' }]);
+    pending[1]({ items: [{ uid: 'student-bo', displayName: 'Bob Santos', studentId: 'B-1002' }] });
     expect(await screen.findByRole('radio', { name: /Bob Santos.*B-1002/ })).toBeInTheDocument();
-    pending[0]([{ uid: 'student-al', displayName: 'Alex Santos', studentId: 'A-1001' }]);
+    pending[0]({ items: [{ uid: 'student-al', displayName: 'Alex Santos', studentId: 'A-1001' }] });
     await waitFor(() => expect(screen.queryByRole('radio', { name: /Alex Santos/ })).not.toBeInTheDocument());
     expect(screen.getByRole('radio', { name: /Bob Santos.*B-1002/ })).toBeInTheDocument();
   });

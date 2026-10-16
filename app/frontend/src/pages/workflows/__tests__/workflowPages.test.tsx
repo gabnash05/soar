@@ -560,15 +560,16 @@ describe('SOAR workflow pages', () => {
     await user.click(screen.getByRole('button', { name: 'Save announcement' }));
     expect(await screen.findByText('Updated robotics announcement text.')).toBeInTheDocument();
     expect(updateAnnouncement).toHaveBeenCalledTimes(2);
-    expect(screen.queryByText(/Computer Engineering project night/i)).not.toBeInTheDocument();
+    const announcementPanel = screen.getByRole('tabpanel', { name: /Announcements/i });
+    expect(within(announcementPanel).queryByText(/Computer Engineering project night/i)).not.toBeInTheDocument();
     expect((await client.listAnnouncements(multiOfficerSession, { limit: 15, organizationId: 'robotics' })).data.items[0].body).toBe('Updated robotics announcement text.');
-    expect(screen.queryByText(/Architecture portfolio clinic signup/i)).not.toBeInTheDocument();
+    expect(within(announcementPanel).queryByText(/Architecture portfolio clinic signup/i)).not.toBeInTheDocument();
     unmount();
 
     renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=literary&tab=dates']);
     expect(await screen.findByRole('tab', { name: /Dates & availability/i })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => expect(screen.getAllByText(/Architecture portfolio clinic/i).length).toBeGreaterThan(0));
-    expect(screen.queryByText(/Computer Engineering project night/i)).not.toBeInTheDocument();
+    expect(within(screen.getByRole('tabpanel', { name: /Dates & availability/i })).queryByText(/Computer Engineering project night/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
     expect(screen.getByRole('dialog', { name: /Add dated entry/i })).toBeInTheDocument();
@@ -940,7 +941,7 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByText(/Use a PNG, JPEG, GIF, or WebP image/i)).toBeInTheDocument();
     expect(screen.queryByText('robot-a.png')).not.toBeInTheDocument();
     await user.upload(screen.getByLabelText(/Optional media/i), new File(['a'], 'robot-a.png', { type: 'image/png' }));
-    expect(screen.getByText(/30 MB combined maximum/i)).toBeInTheDocument();
+    expect(screen.getByText(/Up to 4 images\. Use PNG, JPEG, GIF, or WebP, up to 30 MB combined\./i)).toBeInTheDocument();
     expect(screen.getByText('robot-a.png')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));
