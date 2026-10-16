@@ -393,6 +393,7 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     async listAnnouncements(_session, page = { limit: 15 }) {
       const params = new URLSearchParams({ limit: String(page.limit) });
       if (page.pageToken) params.set('pageToken', page.pageToken);
+      if (page.organizationId) params.set('orgId', page.organizationId);
       const response = await apiFetch<ListEnvelope<unknown> | unknown[]>(`/announcements?${params.toString()}`, await activeHeaders());
       const envelope = Array.isArray(response) ? undefined : response;
       const items = await Promise.all(listItems(response).map(mapAnnouncement));

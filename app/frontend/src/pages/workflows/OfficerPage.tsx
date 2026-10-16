@@ -1,11 +1,12 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, ButtonLink, ConfirmDialog, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
 import { safeErrorMessage } from '../../lib/safeErrors';
 import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
 import { createEmptyOfficerDateEntry } from './adapters';
-import type { AnnouncementInput, DateEntry, DateEntryInput, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
+import type { Announcement, AnnouncementInput, DateEntry, DateEntryInput, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
+  AnnouncementCard,
   ErrorState,
   MeetingStatusChip,
   OrganizationAvatar,
@@ -291,6 +292,86 @@ export function AnnouncementComposer({
   );
 }
 
+function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onDelete: (id: string) => void }) {
+  const [items, setItems] = useState<Announcement[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const busy = useRef(false);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const organizationId = dashboard.organization.id;
+
+  const loadFirst = useCallback(async () => {
+    const current = ++generation.current;
+    busy.current = true;
+    setLoading(true);
+    setError(null);
+    setPageError(null);
+    setItems([]);
+    setCursor(undefined);
+    try {
+      const result = await client.listAnnouncements(session, { limit: 15, organizationId });
+      if (generation.current !== current) return;
+      setItems(result.data.items);
+      setCursor(result.data.nextPageToken);
+    } catch (caught) {
+      if (generation.current === current) setError(caught instanceof Error ? caught.message : 'Unable to load announcements.');
+    } finally {
+      if (generation.current === current) { busy.current = false; setLoading(false); }
+    }
+  }, [client, organizationId, session]);
+
+  const loadNext = useCallback(async () => {
+    if (!cursor || busy.current || loading || loadingMore) return;
+    const current = generation.current;
+    busy.current = true;
+    setLoadingMore(true);
+    setPageError(null);
+    try {
+      const result = await client.listAnnouncements(session, { limit: 15, pageToken: cursor, organizationId });
+      if (generation.current !== current) return;
+      setItems((previous) => {
+        const ids = new Set(previous.map((item) => item.id));
+        return [...previous, ...result.data.items.filter((item) => !ids.has(item.id))];
+      });
+      setCursor(result.data.nextPageToken);
+    } catch (caught) {
+      if (generation.current === current) setPageError(caught instanceof Error ? caught.message : 'Unable to load more announcements.');
+    } finally {
+      if (generation.current === current) { busy.current = false; setLoadingMore(false); }
+    }
+  }, [client, cursor, loading, loadingMore, organizationId, session]);
+
+  useEffect(() => {
+    void loadFirst();
+    return () => { generation.current += 1; busy.current = false; };
+  }, [loadFirst]);
+
+  useEffect(() => {
+    const target = sentinel.current;
+    if (!target || !cursor || loading || loadingMore || pageError || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) void loadNext(); }, { root: null, rootMargin: '0px', threshold: 0 });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [cursor, loadNext, loading, loadingMore, pageError]);
+
+  return <div className="mx-auto grid w-[min(720px,100%)] min-w-0 gap-4" aria-label="Managed announcements">
+    {loading ? <LoadingBlock label="Loading organization announcements" /> : null}
+    {error ? <ErrorState onRetry={loadFirst}>{error}</ErrorState> : null}
+    {!loading && !error && items.length === 0 ? <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p> : null}
+    {items.map((item) => {
+      const images = (item.media?.length ? item.media : item.image ? [item.image] : []).filter((media) => !media.contentType?.startsWith('video/'));
+      return <div key={item.id} className="grid gap-2"><AnnouncementCard announcement={{ ...item, image: images[0], media: images.length ? images : undefined }} session={session} client={client} onChanged={loadFirst} /><div className="flex justify-end"><Button type="button" variant="danger" onClick={() => onDelete(item.id)}>Delete announcement</Button></div></div>;
+    })}
+    {pageError ? <div role="alert" className="py-4 text-center text-sm">Could not load more announcements: {pageError} <Button type="button" variant="secondary" onClick={loadNext}>Retry loading announcements</Button></div> : null}
+    {cursor && !pageError ? <div ref={sentinel} className="flex min-h-12 items-center justify-center py-3" aria-live="polite">{loadingMore ? <span role="status">Loading more announcements…</span> : <Button type="button" variant="secondary" onClick={loadNext}>Load more announcements</Button>}</div> : null}
+    {!loading && items.length > 0 && !cursor ? <p className="py-5 text-center text-sm text-[var(--muted-foreground)]" role="status">You’re all caught up.</p> : null}
+  </div>;
+}
+
 export function AnnouncementSection({ dashboard, session, client, onChanged, allowPosting = true }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; allowPosting?: boolean }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [composerResult, setComposerResult] = useState<WorkflowMutationResult<unknown> | null>(null);
@@ -299,6 +380,11 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
   const [deleteAnnouncementId, setDeleteAnnouncementId] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refreshAnnouncements = useCallback(() => {
+    onChanged();
+    setRefreshKey((key) => key + 1);
+  }, [onChanged]);
 
   const confirmDeleteAnnouncement = async () => {
     if (!deleteAnnouncementId) return;
@@ -309,7 +395,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
     setDeleteBusy(false);
     if (next.ok) {
       setDeleteAnnouncementId(null);
-      onChanged();
+      refreshAnnouncements();
     } else {
       setDeleteError(next.message);
     }
@@ -331,7 +417,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
                 organizationName={dashboard.organization.name}
                 session={session}
                 client={client}
-                onChanged={onChanged}
+                onChanged={refreshAnnouncements}
                 onDirtyChange={setComposerDirty}
                 onResult={setComposerResult}
                 onSubmitted={() => setComposerOpen(false)}
@@ -341,16 +427,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
           <ResultMessage result={composerResult} />
         </>
       ) : null}
-      {dashboard.announcements.length ? (
-        <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
-          {dashboard.announcements.map((announcement) => (
-            <li key={announcement.id}>
-              <div className="min-w-0 flex-1 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:mt-0.5 [&_span]:block [&_span]:[overflow-wrap:anywhere] [&_span]:text-[0.88rem] [&_span]:text-[var(--muted-foreground)]"><strong>{announcement.body}</strong><span>{new Date(announcement.createdAt).toLocaleDateString()}</span></div>
-              <Button type="button" variant="danger" onClick={() => { setDeleteError(null); setDeleteAnnouncementId(announcement.id); }}>Delete</Button>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p>}
+      <ManagedAnnouncementList key={`${dashboard.organization.id}-${refreshKey}`} dashboard={dashboard} session={session} client={client} onDelete={(id) => { setDeleteError(null); setDeleteAnnouncementId(id); }} />
       <ResultMessage result={result} />
       <ConfirmDialog
         open={Boolean(deleteAnnouncementId)}
