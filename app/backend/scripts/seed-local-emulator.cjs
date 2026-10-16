@@ -75,16 +75,10 @@ function nowAndExpiry() {
   return { now, expires };
 }
 
-async function upsertAuthUser(auth, user) {
+async function createAuthFixtureIfMissing(auth, user) {
   try {
     await auth.getUser(user.uid);
-    await auth.updateUser(user.uid, {
-      email: user.email,
-      password: DEMO_PASSWORD,
-      displayName: user.displayName,
-      emailVerified: true,
-      disabled: false
-    });
+    return false;
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
     if (code !== 'auth/user-not-found') throw error;
@@ -96,15 +90,23 @@ async function upsertAuthUser(auth, user) {
       emailVerified: true,
       disabled: false
     });
+    return true;
   }
 }
 
 async function seedAccounts(db, auth, users) {
   const { now, expires } = nowAndExpiry();
+  const createdUserIds = [];
   for (const user of users) {
-    await upsertAuthUser(auth, user);
-    await auth.setCustomUserClaims(user.uid, null);
-    await db.doc(`accounts/${user.uid}`).set({
+    const accountRef = db.doc(`accounts/${user.uid}`);
+    const entitlementRef = db.doc(`entitlements/${user.uid}`);
+    const [account, entitlement] = await Promise.all([accountRef.get(), entitlementRef.get()]);
+    if (account.exists || entitlement.exists) continue;
+    const isNewFixture = await createAuthFixtureIfMissing(auth, user);
+    if (!isNewFixture) continue;
+    createdUserIds.push(user.uid);
+
+    await accountRef.set({
       uid: user.uid,
       role: user.role,
       displayName: user.displayName,
@@ -115,9 +117,9 @@ async function seedAccounts(db, auth, users) {
       ...(user.companyName ? { companyName: user.companyName } : {}),
       createdAt: now,
       updatedAt: now
-    }, { merge: true });
+    });
 
-    await db.doc(`entitlements/${user.uid}`).set({
+    await entitlementRef.set({
       uid: user.uid,
       status: 'active',
       accessExpiresAt: expires,
@@ -131,11 +133,10 @@ async function seedAccounts(db, auth, users) {
         amount: { currency: 'PHP', minor: 1000 },
         recordedAt: now,
         note: 'LOCAL EMULATOR ONLY: simulated paid six-month access; not valid for production.'
-      }],
-      createdAt: now,
-      updatedAt: now
-    }, { merge: true });
+      }]
+    });
   }
+  return createdUserIds;
 }
 
 async function seedOrganizations(db) {
@@ -403,19 +404,26 @@ async function main() {
     { uid: 'demo-officer-robotics', email: 'officer@example.test', displayName: 'Leo Tan', role: 'student', studentId: 'S-2002', department: 'Computer Engineering Department' }
   ];
 
-  await seedAccounts(db, auth, users);
+  const createdUserIds = new Set(await seedAccounts(db, auth, users));
   await seedOrganizations(db);
   await seedContent(db);
   await seedRequests(db);
 
   console.log('Seeded demo-soar-local Auth and Firestore with emulator-only SOAR demo data.');
-  console.log('These accounts use simulated six-month access records and are not valid production payment evidence.');
+  console.log('New fixture accounts use simulated six-month access records, not valid production payment evidence.');
   for (const user of users) {
-    console.log(`- ${user.email} / ${DEMO_PASSWORD} (${user.role}${user.uid.includes('officer') || user.uid.includes('owner') ? ', organization manager demo' : ''})`);
+    const label = `${user.role}${user.uid.includes('officer') || user.uid.includes('owner') ? ', organization manager demo' : ''}`;
+    console.log(createdUserIds.has(user.uid)
+      ? `- ${user.email} / ${DEMO_PASSWORD} (${label}; newly created)`
+      : `- ${user.email} (${label}; existing account preserved, password unchanged)`);
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+module.exports = { createAuthFixtureIfMissing, seedAccounts };
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

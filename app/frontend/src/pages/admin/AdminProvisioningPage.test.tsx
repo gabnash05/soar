@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -89,6 +89,47 @@ describe('Admin provisioning page', () => {
 
     await user.click(screen.getByRole('button', { name: 'Assign officer' }));
     await waitFor(() => expect(mocks.assignAdminOfficer).toHaveBeenCalledTimes(2));
+  });
+
+  it('ignores superseded student-search responses after the query changes', async () => {
+    const user = userEvent.setup();
+    const pending: Array<(value: { items: typeof student[] }) => void> = [];
+    mocks.searchAdminStudents.mockImplementation(() => new Promise((resolve) => { pending.push(resolve); }));
+    renderPage('/admin?tab=assign');
+
+    const input = await screen.findByLabelText('Find a registered student');
+    await user.type(input, 'al');
+    await user.click(screen.getByRole('button', { name: 'Search students' }));
+    await user.clear(input);
+    await user.type(input, 'bo');
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    expect(mocks.searchAdminStudents).toHaveBeenCalledTimes(2);
+
+    pending[1]([{ uid: 'student-bo', displayName: 'Bob Santos', studentId: 'B-1002' }]);
+    expect(await screen.findByRole('radio', { name: /Bob Santos.*B-1002/ })).toBeInTheDocument();
+    pending[0]([{ uid: 'student-al', displayName: 'Alex Santos', studentId: 'A-1001' }]);
+    await waitFor(() => expect(screen.queryByRole('radio', { name: /Alex Santos/ })).not.toBeInTheDocument());
+    expect(screen.getByRole('radio', { name: /Bob Santos.*B-1002/ })).toBeInTheDocument();
+  });
+
+  it('clears the selected student and search results when the organization context changes', async () => {
+    const user = userEvent.setup();
+    mocks.listAdminOrganizations.mockResolvedValue({ items: [...organizations, { id: 'engineering', name: 'Engineering Club' }] });
+    renderPage('/admin?tab=assign');
+
+    const panel = screen.getByRole('tabpanel');
+    const organization = await within(panel).findByLabelText('Organization');
+    await user.selectOptions(organization, 'robotics');
+    await user.type(within(panel).getByLabelText('Find a registered student'), 'Mara');
+    await user.click(screen.getByRole('button', { name: 'Search students' }));
+    await user.click(await within(panel).findByRole('radio', { name: /Mara Santos.*2026-0001/ }));
+    await user.selectOptions(organization, 'engineering');
+
+    expect(within(panel).getByLabelText('Find a registered student')).toHaveValue('');
+    expect(within(panel).queryByRole('radio', { name: /Mara Santos/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Assign officer' }));
+    expect(await screen.findByText(/Choose an organization and a registered student/i)).toBeInTheDocument();
+    expect(mocks.assignAdminOfficer).not.toHaveBeenCalled();
   });
 
   it('keeps empty and loading search states understandable without showing unneeded student fields', async () => {
