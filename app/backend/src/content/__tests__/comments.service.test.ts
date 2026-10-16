@@ -138,7 +138,7 @@ function seedComments() {
     orgId: 'org1',
     body: 'Announcement',
     deletedAt: null,
-    commentCount: 2,
+    commentCount: 4,
     createdAt: now,
     updatedAt: now
   });
@@ -221,7 +221,7 @@ describe('announcement comment ownership service behavior', () => {
     expect(updated).toMatchObject({ id: 'comment1', body: 'Updated body', viewerCanEdit: true, viewerCanDelete: true });
     expect(updated.updatedAt).toBeDefined();
     expect(fakeDb.docs.get('announcements/post1/comments/comment1')?.editedAt).toBeDefined();
-    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(2);
+    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(4);
   });
 
   it('blocks second-author edits and deletes', async () => {
@@ -229,7 +229,7 @@ describe('announcement comment ownership service behavior', () => {
 
     await expect(updateAnnouncementComment(user('other'), 'post1', 'comment1', { body: 'Nope' })).rejects.toMatchObject({ code: 'comment_owner_required' });
     await expect(deleteAnnouncementComment(user('other'), 'post1', 'comment1')).rejects.toMatchObject({ code: 'comment_owner_required' });
-    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(2);
+    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(4);
   });
 
   it('returns trusted author roles from saved accounts and only the comment organization grant', async () => {
@@ -384,7 +384,7 @@ describe('announcement comment ownership service behavior', () => {
 
     await expect(deleteAnnouncementComment(user('author'), 'post1', 'comment1')).resolves.toMatchObject({ deleted: true });
     expect(fakeDb.docs.has('announcements/post1/comments/comment1')).toBe(false);
-    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(1);
+    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(3);
     await expect(deleteAnnouncementComment(user('author'), 'post1', 'comment1')).rejects.toMatchObject({ code: 'comment_missing' });
   });
 });
