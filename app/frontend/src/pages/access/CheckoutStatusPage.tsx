@@ -9,7 +9,7 @@ import { markFixturePaymentConfirmedFromUrl } from '../../lib/fixtures';
 import { readRegistrationDraft } from './RegistrationIntentPage';
 
 export const CheckoutStatusPage = () => {
-  const { gateway, registerAccount, error, clearError } = useAuth();
+  const { gateway, registerAccount, error, clearError } = useAuth('registration');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const intentId = searchParams.get('intentId') || searchParams.get('intent_id') || readRegistrationDraft()?.intentId || '';
@@ -22,6 +22,11 @@ export const CheckoutStatusPage = () => {
   const [localError, setLocalError] = useState<string | null>(null);
 
   const draft = useMemo(() => readRegistrationDraft(), []);
+
+  useEffect(() => {
+    clearError();
+    return clearError;
+  }, [clearError]);
 
   useEffect(() => {
     if (!intentId) return;
