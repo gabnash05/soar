@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageCircle, Share2 } from 'lucide-react';
-import { Button, ButtonLink, ConfirmDialog, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
+import { Button, ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip } from '../../components/ui';
 import { useAuth, useBackendGateway } from '../../context/AuthContext';
 import type { ApplicationStage, MeetingStatus, UserSession } from '../../lib/contracts';
 import { getWorkflowDataClientForGatewayMode, unavailableWorkflowDataClient } from './adapters';
-import type { Announcement, DateEntry, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from './contracts';
+import type { Announcement, AnnouncementComment, DateEntry, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from './contracts';
 import { formatDateEntry, getMeetingTone, getStageTone, getUnavailableCopy } from './workflowUtils';
 import { cn } from '../../lib/utils';
 import { safeErrorMessage } from '../../lib/safeErrors';
@@ -256,6 +256,12 @@ export function MeetingStatusChip({ status }: { status: MeetingStatus }) {
   return <StatusChip tone={getMeetingTone(status)}>{status}</StatusChip>;
 }
 
+function CommentAuthorBadge({ comment }: { comment: AnnouncementComment }) {
+  if (comment.authorAccountKind !== 'student') return null;
+  const isOfficer = comment.authorOrganizationRole === 'approved_officer';
+  return <RoleBadge kind={isOfficer ? 'officer' : 'student'}>{isOfficer ? 'Officer' : 'Student'}</RoleBadge>;
+}
+
 function LikeIcon({ filled }: { filled: boolean }) {
   return (
     <svg className="like-icon size-[21px] shrink-0" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -460,7 +466,14 @@ export function AnnouncementCard({
                       </form>
                     ) : (
                       <>
-                        <div className="min-w-0 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_p]:mt-0.5 [&_p]:mb-0 [&_p]:[overflow-wrap:anywhere] [&_p]:text-[var(--color-ink)] [&_span]:mt-1 [&_span]:inline-block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]"><strong>{item.authorName}</strong><p>{item.body}</p>{item.updatedAt ? <span>Edited</span> : null}</div>
+                        <div className="min-w-0 [&_p]:mt-0.5 [&_p]:mb-0 [&_p]:[overflow-wrap:anywhere] [&_p]:text-[var(--color-ink)]">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <strong className="block text-[var(--color-navy)]">{item.authorName}</strong>
+                            <CommentAuthorBadge comment={item} />
+                          </div>
+                          <p>{item.body}</p>
+                          {item.updatedAt ? <span className="mt-1 inline-block text-xs text-[var(--muted-foreground)]">Edited</span> : null}
+                        </div>
                         {(canEdit || canDelete) ? (
                           <div className="flex flex-wrap items-center gap-2 shrink-0">
                             {canEdit ? <Button type="button" variant="quiet" onClick={() => startEditing(item.id, item.body)}>Edit</Button> : null}

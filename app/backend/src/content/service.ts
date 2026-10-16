@@ -176,8 +176,10 @@ async function commentFromDoc(data: DocumentData, viewerUid?: string, organizati
   const ownsComment = Boolean(viewerUid && data.authorUid === viewerUid);
   const authorUid = typeof data.authorUid === 'string' ? data.authorUid : '';
   const authorAccount = authorUid ? await db.doc(`accounts/${authorUid}`).get() : undefined;
-  const savedRole = authorAccount?.data()?.role;
-  const authorAccountKind: 'student' | 'sponsor' | undefined = savedRole === 'student' || savedRole === 'sponsor' ? savedRole : undefined;
+  const authorProfile = authorAccount?.data();
+  const authorAccountKind: 'student' | undefined = authorProfile?.role === 'student' && authorProfile?.emailVerified === true
+    ? 'student'
+    : undefined;
   const officerGrant = authorAccountKind === 'student' && organizationId
     ? await db.doc(officerGrantPath(organizationId, authorUid)).get()
     : undefined;
