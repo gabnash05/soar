@@ -149,10 +149,16 @@ async function mapAnnouncement(raw: unknown): Promise<Announcement> {
 
 function mapComment(raw: unknown): AnnouncementComment {
   const item = asRecord(raw);
+  const authorAccountKind = item.authorAccountKind === 'student' ? 'student' : undefined;
+  const authorOrganizationRole = authorAccountKind === 'student' && item.authorOrganizationRole === 'approved_officer'
+    ? 'approved_officer'
+    : undefined;
   return {
     id: pickString(item.id || item.commentId),
     authorUid: pickString(item.authorUid || item.uid) || undefined,
     authorName: pickString(item.authorName || item.displayName, 'SOAR user'),
+    ...(authorAccountKind ? { authorAccountKind } : {}),
+    ...(authorOrganizationRole ? { authorOrganizationRole } : {}),
     body: pickString(item.body || item.text),
     createdAt: pickString(item.createdAt, new Date().toISOString()),
     updatedAt: pickString(item.updatedAt) || undefined,

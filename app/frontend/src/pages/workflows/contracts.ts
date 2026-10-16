@@ -30,6 +30,8 @@ export interface AnnouncementComment {
   id: string;
   authorUid?: string;
   authorName: string;
+  authorAccountKind?: 'student';
+  authorOrganizationRole?: 'approved_officer';
   body: string;
   createdAt: string;
   updatedAt?: string;

@@ -121,14 +121,17 @@ function seedComments() {
     createdAt: now,
     updatedAt: now
   });
-  fakeDb.docs.set('accounts/student1', { uid: 'student1', role: 'student', displayName: 'Student One', department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
+  fakeDb.docs.set('accounts/student1', { uid: 'student1', role: 'student', displayName: 'Student One', emailVerified: true, department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
   fakeDb.docs.set('accounts/student2', { uid: 'student2', role: 'student', displayName: 'Student Two', department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
   fakeDb.docs.set('accounts/student3', { uid: 'student3', role: 'student', displayName: 'Student Three', department: 'Civil Engineering Department', departmentKey: 'civil engineering department' });
   fakeDb.docs.set('accounts/student4', { uid: 'student4', role: 'student', displayName: 'Legacy Student' });
   fakeDb.docs.set('accounts/sponsor1', { uid: 'sponsor1', role: 'sponsor', displayName: 'Sponsor', companyName: 'Sponsor Co' });
-  fakeDb.docs.set('accounts/author', { uid: 'author', role: 'student', displayName: 'Author User', email: 'author@example.test' });
-  fakeDb.docs.set('accounts/other', { uid: 'other', role: 'sponsor', displayName: 'Other User', email: 'other@example.test', companyName: 'Private Co' });
+  fakeDb.docs.set('accounts/author', { uid: 'author', role: 'student', displayName: 'Author User', emailVerified: true, email: 'author@example.test' });
+  fakeDb.docs.set('accounts/other', { uid: 'other', role: 'sponsor', displayName: 'Other User', emailVerified: true, email: 'other@example.test', companyName: 'Private Co' });
+  fakeDb.docs.set('accounts/unverified-student', { uid: 'unverified-student', role: 'student', displayName: 'Unverified Student', emailVerified: false });
+  fakeDb.docs.set('accounts/admin-author', { uid: 'admin-author', role: 'admin', displayName: 'Admin Author', emailVerified: true });
   fakeDb.docs.set('organizations/org1/officerGrants/author', { uid: 'author', status: 'active' });
+  fakeDb.docs.set('organizations/org1/officerGrants/unverified-student', { uid: 'unverified-student', status: 'active' });
   fakeDb.docs.set('announcements/post1', {
     announcementId: 'post1',
     orgId: 'org1',
@@ -153,6 +156,24 @@ function seedComments() {
     authorUid: 'other',
     authorName: 'Other User',
     body: 'Second',
+    createdAt: now,
+    updatedAt: now
+  });
+  fakeDb.docs.set('announcements/post1/comments/comment4', {
+    commentId: 'comment4',
+    announcementId: 'post1',
+    authorUid: 'unverified-student',
+    authorName: 'Unverified Student',
+    body: 'Unverified account',
+    createdAt: now,
+    updatedAt: now
+  });
+  fakeDb.docs.set('announcements/post1/comments/comment5', {
+    commentId: 'comment5',
+    announcementId: 'post1',
+    authorUid: 'admin-author',
+    authorName: 'Admin Author',
+    body: 'Other account kind',
     createdAt: now,
     updatedAt: now
   });
@@ -195,9 +216,15 @@ describe('announcement comment ownership service behavior', () => {
     const comments = await listAnnouncementComments(user('viewer'), 'post1', {});
     expect(comments.items[0]).toMatchObject({ authorAccountKind: 'student', authorOrganizationRole: 'approved_officer' });
     expect(comments.items[0]).not.toHaveProperty('email');
-    expect(comments.items[1]).toMatchObject({ authorAccountKind: 'sponsor' });
+    expect(comments.items[1]).not.toHaveProperty('authorAccountKind');
     expect(comments.items[1]).not.toHaveProperty('authorOrganizationRole');
     expect(comments.items[1]).not.toHaveProperty('companyName');
+    const unverifiedStudent = comments.items.find((item) => item.id === 'comment4');
+    expect(unverifiedStudent).not.toHaveProperty('authorAccountKind');
+    expect(unverifiedStudent).not.toHaveProperty('authorOrganizationRole');
+    const otherAccountKind = comments.items.find((item) => item.id === 'comment5');
+    expect(otherAccountKind).not.toHaveProperty('authorAccountKind');
+    expect(otherAccountKind).not.toHaveProperty('authorOrganizationRole');
 
     const otherOrganizationComments = await listAnnouncementComments(user('viewer'), 'post2', {});
     expect(otherOrganizationComments.items[0]).toMatchObject({ authorAccountKind: 'student' });
