@@ -546,7 +546,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
     label: 'Workflow fixture data',
 
     async listAnnouncements(session, page = { limit: 15 }) {
-      const sorted = announcements.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const sorted = announcements.filter((item) => !page.organizationId || item.organizationId === page.organizationId).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const offset = Number(page.pageToken ?? 0);
       const selected = sorted.slice(offset, offset + page.limit);
       return {

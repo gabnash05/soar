@@ -352,10 +352,18 @@ describe('SOAR workflow pages', () => {
         { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' as const },
       ],
     };
-    const { unmount } = renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics&tab=announcements']);
+    const client = createFixtureWorkflowDataClient();
+    const listAnnouncements = vi.spyOn(client, 'listAnnouncements');
+    const { unmount } = renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={client} />, ['/settings/organization?organizationId=robotics&tab=announcements']);
 
     expect(await screen.findByRole('tab', { name: /Announcements/i })).toHaveAttribute('aria-selected', 'true');
     expect((await screen.findAllByText(/Computer Engineering project night/i)).length).toBeGreaterThan(0);
+    expect(await screen.findByRole('img', { name: 'Electronics workbench with small robotics parts' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Like announcement from Computer Engineering Department/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Open comments/i }));
+    expect(await screen.findByText('Is the consultation window open to first-year students?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete announcement' })).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledWith(multiOfficerSession, { limit: 15, organizationId: 'robotics' });
     expect(screen.queryByText(/Architecture portfolio clinic signup/i)).not.toBeInTheDocument();
     unmount();
 
