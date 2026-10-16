@@ -94,6 +94,17 @@ async function createAuthFixtureIfMissing(auth, user) {
   }
 }
 
+async function createFixtureIfAbsent(db, path, data) {
+  try {
+    await db.doc(path).create(data);
+    return true;
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    if (code === 6 || code === '6' || code === 'already-exists' || code === 'firestore/already-exists') return false;
+    throw error;
+  }
+}
+
 async function seedAccounts(db, auth, users) {
   const { now, expires } = nowAndExpiry();
   const createdUserIds = [];
@@ -247,7 +258,7 @@ async function seedOrganizations(db) {
   ];
 
   for (const org of orgs) {
-    await db.doc(`organizations/${org.orgId}`).set({
+    await createFixtureIfAbsent(db, `organizations/${org.orgId}`, {
       ...org,
       searchName: org.name.toLowerCase(),
       departmentKey: org.department.toLowerCase(),
@@ -255,24 +266,24 @@ async function seedOrganizations(db) {
       createdAt: now,
       updatedAt: now,
       createdByUid: 'local-emulator-seed'
-    }, { merge: true });
+    });
 
-    await db.doc(`organizations/${org.orgId}/officerGrants/${org.ownerUid}`).set({
+    await createFixtureIfAbsent(db, `organizations/${org.orgId}/officerGrants/${org.ownerUid}`, {
       uid: org.ownerUid,
       status: 'active',
       grantedByUid: 'local-emulator-seed',
       createdAt: now,
       updatedAt: now
-    }, { merge: true });
+    });
   }
 
-  await db.doc('organizations/computer-engineering/officerGrants/demo-officer-robotics').set({
+  await createFixtureIfAbsent(db, 'organizations/computer-engineering/officerGrants/demo-officer-robotics', {
     uid: 'demo-officer-robotics',
     status: 'active',
     grantedByUid: 'demo-owner-robotics',
     createdAt: now,
     updatedAt: now
-  }, { merge: true });
+  });
 }
 
 async function seedContent(db) {
@@ -309,7 +320,7 @@ async function seedContent(db) {
   ];
 
   for (const [id, data] of announcements) {
-    await db.doc(`announcements/${id}`).set(data, { merge: true });
+    await createFixtureIfAbsent(db, `announcements/${id}`, data);
   }
 
   const entries = [
@@ -320,19 +331,19 @@ async function seedContent(db) {
   ];
 
   for (const [entryId, data] of entries) {
-    await db.doc(`calendarEntries/${entryId}`).set({
+    await createFixtureIfAbsent(db, `calendarEntries/${entryId}`, {
       entryId,
       ...data,
       createdAt: now,
       updatedAt: now
-    }, { merge: true });
+    });
   }
 }
 
 async function seedRequests(db) {
   const { now } = nowAndExpiry();
   const applicationId = stableId('app', ['demo-student-1', 'computer-engineering', 'computer-engineering-build-team-2026']);
-  await db.doc(`applications/${applicationId}`).set({
+  await createFixtureIfAbsent(db, `applications/${applicationId}`, {
     applicationId,
     studentUid: 'demo-student-1',
     studentName: 'Mara Santos',
@@ -345,10 +356,10 @@ async function seedRequests(db) {
     externalSubmissionConfirmedAt: now,
     createdAt: now,
     updatedAt: now
-  }, { merge: true });
+  });
 
   const studentMeetingId = stableId('meeting', ['demo-student-1', 'computer-engineering', 'date-computer-engineering-interview', '2026-11-12', '14:00']);
-  await db.doc(`meetingRequests/${studentMeetingId}`).set({
+  await createFixtureIfAbsent(db, `meetingRequests/${studentMeetingId}`, {
     meetingRequestId: studentMeetingId,
     requesterUid: 'demo-student-1',
     requesterName: 'Mara Santos',
@@ -363,10 +374,10 @@ async function seedRequests(db) {
     note: 'Application submitted externally.',
     createdAt: now,
     updatedAt: now
-  }, { merge: true });
+  });
 
   const sponsorMeetingId = stableId('meeting', ['demo-sponsor-1', 'civil-engineering', 'date-civil-engineering-partner-meeting', '2026-11-14', '09:30']);
-  await db.doc(`meetingRequests/${sponsorMeetingId}`).set({
+  await createFixtureIfAbsent(db, `meetingRequests/${sponsorMeetingId}`, {
     meetingRequestId: sponsorMeetingId,
     requesterUid: 'demo-sponsor-1',
     requesterName: 'Ari Reyes',
@@ -383,7 +394,7 @@ async function seedRequests(db) {
     updatedAt: now,
     decidedByUid: 'demo-owner-robotics',
     decidedAt: now
-  }, { merge: true });
+  });
 }
 
 async function main() {
@@ -419,7 +430,7 @@ async function main() {
   }
 }
 
-module.exports = { createAuthFixtureIfMissing, seedAccounts };
+module.exports = { createAuthFixtureIfMissing, createFixtureIfAbsent, seedAccounts, seedOrganizations, seedContent, seedRequests };
 
 if (require.main === module) {
   main().catch((error) => {

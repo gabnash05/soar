@@ -168,6 +168,8 @@ describe('announcement comment ownership service behavior', () => {
     const updated = await updateAnnouncementComment(user('author'), 'post1', 'comment1', { body: 'Updated body' });
 
     expect(updated).toMatchObject({ id: 'comment1', body: 'Updated body', viewerCanEdit: true, viewerCanDelete: true });
+    expect(updated.updatedAt).toBeDefined();
+    expect(fakeDb.docs.get('announcements/post1/comments/comment1')?.editedAt).toBeDefined();
     expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(2);
   });
 
@@ -213,8 +215,32 @@ describe('announcement comment ownership service behavior', () => {
     const created = await addAnnouncementComment(user('student1'), 'post1', { body: 'A saved-account comment.' });
 
     expect(created).toMatchObject({ authorAccountKind: 'student', viewerCanEdit: true, viewerCanDelete: true });
+    expect(created).not.toHaveProperty('updatedAt');
     expect(created).not.toHaveProperty('email');
     expect(created).not.toHaveProperty('department');
+
+    const listed = await (await import('../service')).listAnnouncementComments(user('student1'), 'post1', {});
+    expect(listed.items.find((comment) => comment.id === created.id)).not.toHaveProperty('updatedAt');
+  });
+
+  it('keeps Edited absent for unchanged or missing legacy timestamps but preserves real legacy edits', async () => {
+    const { listAnnouncementComments } = await import('../service');
+    const createdAt = Timestamp.fromDate(new Date('2026-10-10T00:00:00.000Z'));
+    const updatedAt = Timestamp.fromDate(new Date('2026-10-11T00:00:00.000Z'));
+    fakeDb.docs.set('announcements/post1/comments/unchanged', {
+      commentId: 'unchanged', announcementId: 'post1', authorUid: 'other', authorName: 'Other User', body: 'New comment', createdAt, updatedAt: createdAt
+    });
+    fakeDb.docs.set('announcements/post1/comments/missing-timestamps', {
+      commentId: 'missing-timestamps', announcementId: 'post1', authorUid: 'other', authorName: 'Other User', body: 'Legacy comment'
+    });
+    fakeDb.docs.set('announcements/post1/comments/legacy-edited', {
+      commentId: 'legacy-edited', announcementId: 'post1', authorUid: 'other', authorName: 'Other User', body: 'Edited legacy comment', createdAt, updatedAt
+    });
+
+    const listed = await listAnnouncementComments(user('student1'), 'post1', {});
+    expect(listed.items.find((comment) => comment.id === 'unchanged')).not.toHaveProperty('updatedAt');
+    expect(listed.items.find((comment) => comment.id === 'missing-timestamps')).not.toHaveProperty('updatedAt');
+    expect(listed.items.find((comment) => comment.id === 'legacy-edited')?.updatedAt).toBe(updatedAt.toDate().toISOString());
   });
 
   it('keeps raw pagination values when scoping date-entry queries for the service parser', async () => {

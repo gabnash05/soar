@@ -183,6 +183,9 @@ async function commentFromDoc(data: DocumentData, viewerUid?: string, organizati
   const authorOrganizationRole: 'approved_officer' | undefined = officerGrant?.exists && officerGrant.data()?.status === 'active'
     ? 'approved_officer'
     : undefined;
+  const createdAt = iso(data.createdAt);
+  const updatedAt = iso(data.updatedAt);
+  const hasActualEdit = Boolean(iso(data.editedAt) || (createdAt && updatedAt && updatedAt !== createdAt));
   return {
     id: data.commentId,
     commentId: data.commentId,
@@ -193,8 +196,8 @@ async function commentFromDoc(data: DocumentData, viewerUid?: string, organizati
     body: data.body,
     viewerCanEdit: ownsComment,
     viewerCanDelete: ownsComment,
-    createdAt: iso(data.createdAt),
-    updatedAt: iso(data.updatedAt) ?? iso(data.createdAt)
+    createdAt,
+    ...(hasActualEdit && updatedAt ? { updatedAt } : {})
   };
 }
 
@@ -552,7 +555,7 @@ export async function updateAnnouncementComment(user: DecodedIdToken, announceme
     if (comment.data()?.authorUid !== user.uid) {
       throw new AppError('comment_owner_required', 'You can edit only your own comments.', 403);
     }
-    tx.update(commentRef, { body: input.body, updatedAt: now });
+    tx.update(commentRef, { body: input.body, updatedAt: now, editedAt: now });
     tx.update(announcementRef, { updatedAt: FieldValue.serverTimestamp() });
   });
 

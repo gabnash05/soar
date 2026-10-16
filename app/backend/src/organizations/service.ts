@@ -223,9 +223,9 @@ export async function assignAdminOfficerGrant(orgId: string, rawBody: unknown, a
       uid: input.uid,
       status: 'active',
       grantedByUid: actorUid,
-      createdAt: now,
+      ...(!grant.exists ? { createdAt: now } : {}),
       updatedAt: now
-    });
+    }, { merge: true });
   });
 
   return { orgId, uid: input.uid, status: 'approved', alreadyAssigned };
