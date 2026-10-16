@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
-import type { AnnouncementPage, DateEntry, DateEntryInput, OfficerDashboard, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
+import type { AnnouncementPage, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
 import { DirectoryView } from '../DirectoryPage';
@@ -215,9 +215,14 @@ describe('SOAR workflow pages', () => {
     renderInRouter(<MeetingsView session={studentSession} client={client} />);
     await screen.findAllByText(/Computer Engineering consultation window/i);
     await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    await user.type(screen.getByLabelText(/Short note/i), 'Please keep this note with my request.');
+    await user.upload(screen.getByLabelText(/Formal request document/i), new File(['private pdf'], 'formal-request.pdf', { type: 'application/pdf' }));
     await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
 
     expect(await screen.findByText(/We could not send your meeting request\. It was not confirmed\./i)).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /Request a meeting\/interview/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Short note/i)).toHaveValue('Please keep this note with my request.');
+    expect(screen.getByText(/Selected formal-request\.pdf/i)).toBeInTheDocument();
     expect(screen.queryByText(/Internal Functions details/i)).not.toBeInTheDocument();
   });
 
@@ -249,6 +254,131 @@ describe('SOAR workflow pages', () => {
     expect(table).toHaveAttribute('tabindex', '0');
     expect(table.querySelector('table')).toHaveClass('min-w-[640px]');
     expect(within(table).getAllByText(/Not a confirmed booking/i).length).toBeGreaterThan(0);
+  });
+
+  it('keeps a confirmed meeting request visible when an older list response arrives late', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const createdRequest: MeetingRequest = {
+      id: 'meeting-student-1-confirmed-refresh',
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      dateEntryId: 'date-robotics-interview',
+      meetingTitle: 'Computer Engineering consultation window',
+      requesterUid: studentSession.uid,
+      requesterName: studentSession.displayName,
+      requestedDate: '2026-11-12',
+      requestedTime: '14:30',
+      status: 'Pending',
+      updatedAt: '2026-10-16T06:00:00.000Z',
+    };
+    let resolveInitialList: (result: WorkflowQueryResult<MeetingRequest[]>) => void = () => undefined;
+    const initialList = new Promise<WorkflowQueryResult<MeetingRequest[]>>((resolve) => { resolveInitialList = resolve; });
+    const listMyMeetingRequests = vi.fn()
+      .mockReturnValueOnce(initialList)
+      .mockResolvedValueOnce({ data: [createdRequest], source: 'fixture' });
+    const requestMeeting = vi.fn().mockResolvedValue({
+      ok: true,
+      persisted: true,
+      source: 'fixture' as const,
+      message: 'Meeting request created as Pending.',
+      data: createdRequest,
+    });
+    const client: WorkflowDataClient = { ...base, listMyMeetingRequests, requestMeeting };
+    renderInRouter(<MeetingsView session={studentSession} client={client} />);
+
+    await screen.findAllByText(/Computer Engineering consultation window/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    await user.clear(screen.getByLabelText(/Requested time/i));
+    await user.type(screen.getByLabelText(/Requested time/i), '14:30');
+    await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
+    expect(await screen.findByText(/Meeting request created as Pending/i)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Request a meeting\/interview/i })).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveInitialList({ data: [], source: 'fixture' });
+      await initialList;
+    });
+    await user.click(screen.getByRole('tab', { name: 'My requests' }));
+
+    const table = await screen.findByRole('region', { name: 'My meeting request statuses' });
+    expect(within(table).getAllByText('Computer Engineering consultation window')).toHaveLength(1);
+    expect(within(table).getByText('2026-11-12, 14:30')).toBeInTheDocument();
+    expect(requestMeeting).toHaveBeenCalledTimes(1);
+    expect(listMyMeetingRequests).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows an officer own-request result in both relevant tabs without review actions', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const createdRequest: MeetingRequest = {
+      id: 'meeting-officer-1-confirmed-refresh',
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      dateEntryId: 'date-robotics-interview',
+      meetingTitle: 'Computer Engineering consultation window',
+      requesterUid: officerSession.uid,
+      requesterName: officerSession.displayName,
+      requestedDate: '2026-11-12',
+      requestedTime: '14:30',
+      status: 'Pending',
+      updatedAt: '2026-10-16T06:01:00.000Z',
+    };
+    const requestMeeting = vi.fn().mockResolvedValue({
+      ok: true,
+      persisted: true,
+      source: 'fixture' as const,
+      message: 'Meeting request created as Pending.',
+      data: createdRequest,
+    });
+    const client: WorkflowDataClient = { ...base, requestMeeting };
+    renderInRouter(<MeetingsView session={officerSession} client={client} />);
+
+    await screen.findByRole('region', { name: 'Meeting requests to review' });
+    await user.click(screen.getByRole('tab', { name: 'Availability' }));
+    await screen.findAllByText(/Computer Engineering consultation window/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    await user.clear(screen.getByLabelText(/Requested time/i));
+    await user.type(screen.getByLabelText(/Requested time/i), '14:30');
+    await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
+    expect(await screen.findByText(/Meeting request created as Pending/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'My requests' }));
+    const myRequests = await screen.findByRole('region', { name: 'My meeting request statuses' });
+    expect(within(myRequests).getAllByText('2026-11-12, 14:30')).toHaveLength(1);
+
+    await user.click(screen.getByRole('tab', { name: 'Review requests' }));
+    const reviewRequests = await screen.findByRole('region', { name: 'Meeting requests for this organization' });
+    const ownRequestRow = within(reviewRequests).getByText('Lia Cruz').closest('tr');
+    expect(ownRequestRow).not.toBeNull();
+    expect(within(ownRequestRow as HTMLElement).getByText(/Your request · check My requests for status/i)).toBeInTheDocument();
+    expect(within(ownRequestRow as HTMLElement).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(within(ownRequestRow as HTMLElement).queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+    expect(within(reviewRequests).getAllByRole('button', { name: 'Approve' }).length).toBeGreaterThan(0);
+    expect(requestMeeting).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not present an unconfirmed meeting submission as saved', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const requestMeeting = vi.fn().mockResolvedValue({
+      ok: true,
+      persisted: 'unconfirmed' as const,
+      source: 'production' as const,
+      message: 'Internal persistence details must not appear.',
+    });
+    const client: WorkflowDataClient = { ...base, requestMeeting };
+    renderInRouter(<MeetingsView session={studentSession} client={client} />);
+
+    await screen.findAllByText(/Computer Engineering consultation window/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
+
+    expect(await screen.findByText(/We could not confirm that your meeting request was saved/i)).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /Request a meeting\/interview/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Internal persistence details/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Meeting request created as Pending/i)).not.toBeInTheDocument();
+    expect(requestMeeting).toHaveBeenCalledTimes(1);
   });
 
   it('contains the requests table on direct mobile-tab entry without modal state', async () => {
