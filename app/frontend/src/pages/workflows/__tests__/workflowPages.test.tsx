@@ -198,14 +198,107 @@ describe('SOAR workflow pages', () => {
   });
 
   it('excludes sponsors from application tools and tracker rows', async () => {
-    renderInRouter(<OrganizationView organizationId="robotics" session={sponsorSession} client={createFixtureWorkflowDataClient()} />);
+    const organizationView = renderInRouter(<OrganizationView organizationId="robotics" session={sponsorSession} client={createFixtureWorkflowDataClient()} />);
 
     expect(await screen.findByRole('heading', { name: /Computer Engineering Department/i, level: 1 })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /Apply|Meetings/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /I submitted the external form/i })).not.toBeInTheDocument();
+    organizationView.unmount();
 
-    renderInRouter(<ApplicationsView session={sponsorSession} client={createFixtureWorkflowDataClient()} />);
+    const sponsorApplications = renderInRouter(<ApplicationsView session={sponsorSession} client={createFixtureWorkflowDataClient()} />);
     expect(screen.getByText(/No sponsor application tracker/i)).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Application intake' })).not.toBeInTheDocument();
+    sponsorApplications.unmount();
+
+    const sponsorWithGrant: UserSession = { ...sponsorSession, officerGrants: officerSession.officerGrants };
+    renderInRouter(<OrganizationSettingsView session={sponsorWithGrant} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByRole('heading', { name: 'No managed organization yet.' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Application intake' })).not.toBeInTheDocument();
+  });
+
+  it('does not expose Applications intake to students or revoked officers', async () => {
+    const studentView = renderInRouter(<ApplicationsView session={studentSession} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByRole('heading', { name: 'Track each recruitment opportunity once.' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Application intake' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Close applications/i })).not.toBeInTheDocument();
+    studentView.unmount();
+
+    const revokedSession: UserSession = {
+      ...officerSession,
+      officerGrants: officerSession.officerGrants.map((grant) => ({ ...grant, status: 'revoked' })),
+    };
+    const revokedView = renderInRouter(<ApplicationsView session={revokedSession} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByRole('heading', { name: 'Track each recruitment opportunity once.' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Review applicants' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Application intake' })).not.toBeInTheDocument();
+    revokedView.unmount();
+
+    const expiredOfficer: UserSession = { ...officerSession, access: { ...activeAccess, status: 'expired' } };
+    renderInRouter(<ApplicationsView session={expiredOfficer} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByRole('heading', { name: 'Track each recruitment opportunity once.' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Review applicants' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Application intake' })).not.toBeInTheDocument();
+  });
+
+  it('scopes the Applications intake tab to approved grants and preserves confirmed organization state across switches', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveIntake = client.setApplicationsOpen.bind(client);
+    const setApplicationsOpen = vi.fn<WorkflowDataClient['setApplicationsOpen']>();
+    setApplicationsOpen.mockRejectedValueOnce(Object.assign(new Error('private server details'), { code: 'internal' }));
+    setApplicationsOpen.mockImplementation((organizationId, applicationsOpen, session) => saveIntake(organizationId, applicationsOpen, session));
+    client.setApplicationsOpen = setApplicationsOpen;
+    const multiOfficerSession: UserSession = {
+      ...officerSession,
+      officerGrants: [
+        ...officerSession.officerGrants,
+        { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' },
+        { organizationId: 'health', organizationName: 'Civil Engineering Department', status: 'revoked' },
+      ],
+    };
+
+    renderInRouter(<ApplicationsView session={multiOfficerSession} client={client} />, ['/app/applications?tab=intake&organizationId=health']);
+    expect(await screen.findByRole('tab', { name: 'Review applicants' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'My applications' })).toBeInTheDocument();
+
+    const organizationPicker = await screen.findByLabelText(/^Organization$/i, { selector: '#application-intake-organization' });
+    expect(organizationPicker).toHaveValue('robotics');
+    expect(Array.from((organizationPicker as HTMLSelectElement).options).map((option) => option.value)).toEqual(['robotics', 'literary']);
+    let intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Open')).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Application intake for Computer Engineering Department' })).getByRole('heading', { name: 'Computer Engineering Department' })).toBeInTheDocument();
+
+    await user.click(within(intake).getByRole('button', { name: 'Close applications' }));
+    expect(await screen.findByText('SOAR could not update application intake. Check your connection and try again.')).toBeInTheDocument();
+    expect(within(intake).getByText('Open')).toBeInTheDocument();
+    expect(within(intake).getByRole('button', { name: 'Close applications' })).toBeEnabled();
+    expect(screen.queryByText('private server details')).not.toBeInTheDocument();
+
+    await user.selectOptions(organizationPicker, 'literary');
+    intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(await screen.findByRole('group', { name: 'Application intake for Architecture Department' })).toBeInTheDocument();
+    expect(within(intake).getByText('Open')).toBeInTheDocument();
+    await user.click(within(intake).getByRole('button', { name: 'Close applications' }));
+    expect(await screen.findByRole('button', { name: 'Open applications' })).toBeInTheDocument();
+    expect(setApplicationsOpen).toHaveBeenLastCalledWith('literary', false, multiOfficerSession);
+    expect((await client.getOrganization('literary', multiOfficerSession)).data?.applicationsOpen).toBe(false);
+
+    await user.click(screen.getByRole('tab', { name: 'Review applicants' }));
+    await user.click(screen.getByRole('tab', { name: 'Application intake' }));
+    const reenteredPicker = await screen.findByLabelText(/^Organization$/i, { selector: '#application-intake-organization' });
+    expect(reenteredPicker).toHaveValue('literary');
+    intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Closed')).toBeInTheDocument();
+
+    await user.selectOptions(reenteredPicker, 'robotics');
+    expect(await screen.findByRole('group', { name: 'Application intake for Computer Engineering Department' })).toBeInTheDocument();
+    intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Open')).toBeInTheDocument();
+    await user.selectOptions(reenteredPicker, 'literary');
+    expect(await screen.findByRole('group', { name: 'Application intake for Architecture Department' })).toBeInTheDocument();
+    intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Closed')).toBeInTheDocument();
+    expect(within(intake).getByRole('button', { name: 'Open applications' })).toBeEnabled();
   });
 
   it('defaults organization profiles to the feed with role-appropriate profile tabs', async () => {
@@ -684,6 +777,8 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByRole('heading', { name: /Organization settings/i, level: 1 })).toBeInTheDocument();
     expect(screen.getByText(/Selected organization: Computer Engineering Department/i)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^Details$/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Application intake' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Application intake' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: /View public profile/i })).toHaveLength(1);
     expect(screen.queryByLabelText(/Post text/i)).not.toBeInTheDocument();
     const organizationSelector = screen.getByLabelText(/^Organization$/i);
@@ -693,6 +788,12 @@ describe('SOAR workflow pages', () => {
     await user.selectOptions(organizationSelector, 'literary');
     await waitFor(() => expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Architecture Department'));
     expect(screen.queryByDisplayValue('Civil Engineering Department')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Application intake' }));
+    expect(await screen.findByRole('group', { name: 'Application intake' })).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Application intake for Architecture Department' })).getByRole('heading', { name: 'Architecture Department' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /^Details$/i }));
+    await user.click(screen.getByRole('tab', { name: 'Application intake' }));
+    expect(await screen.findByRole('group', { name: 'Application intake for Architecture Department' })).toBeInTheDocument();
   });
 
   it('lets an approved officer close and reopen only the selected organization intake', async () => {
@@ -702,17 +803,23 @@ describe('SOAR workflow pages', () => {
     client.setApplicationsOpen = setApplicationsOpen;
     renderInRouter(<OrganizationSettingsView session={officerSession} client={client} />, ['/settings/organization?organizationId=robotics']);
 
-    const intake = await screen.findByRole('region', { name: 'Application intake' });
+    expect(await screen.findByRole('tab', { name: /^Details$/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('group', { name: 'Application intake' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Application intake' }));
+    let intake = await screen.findByRole('group', { name: 'Application intake' });
     expect(within(intake).getByText('Open')).toBeInTheDocument();
     await user.click(within(intake).getByRole('button', { name: 'Close applications' }));
 
     expect(await screen.findByRole('button', { name: 'Open applications' })).toBeInTheDocument();
     expect(await screen.findByText('Closed')).toBeInTheDocument();
     expect(setApplicationsOpen).toHaveBeenCalledWith('robotics', false, officerSession);
+    expect((await client.getOrganization('robotics', officerSession)).data?.applicationsOpen).toBe(false);
 
-    const closedProfile = (await client.getOrganization('robotics', officerSession)).data;
-    expect(closedProfile?.applicationsOpen).toBe(false);
-    await user.click(screen.getByRole('button', { name: 'Open applications' }));
+    await user.click(screen.getByRole('tab', { name: /^Details$/i }));
+    await user.click(screen.getByRole('tab', { name: 'Application intake' }));
+    intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Closed')).toBeInTheDocument();
+    await user.click(within(intake).getByRole('button', { name: 'Open applications' }));
     expect(await screen.findByRole('button', { name: 'Close applications' })).toBeInTheDocument();
     expect(setApplicationsOpen).toHaveBeenLastCalledWith('robotics', true, officerSession);
     expect((await client.getOrganization('robotics', officerSession)).data?.applicationsOpen).toBe(true);

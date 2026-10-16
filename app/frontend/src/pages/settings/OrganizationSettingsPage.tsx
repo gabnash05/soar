@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
-import { safeErrorMessage } from '../../lib/safeErrors';
+import { ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
-import type { OrganizationProfile, WorkflowDataClient, WorkflowMutationResult } from '../workflows/contracts';
+import type { OrganizationProfile, WorkflowDataClient } from '../workflows/contracts';
+import { OrganizationApplicationIntakePanel } from '../workflows/ApplicationIntakeControl';
 import {
   AnnouncementSection,
   DateEntriesSection,
@@ -13,17 +13,17 @@ import {
 } from '../workflows/OfficerPage';
 import {
   OrganizationAvatar,
-  ResultMessage,
   RouteUnavailableState,
   SourceNotice,
   useWorkflowQuery,
   useWorkflowSession,
   WorkflowPageFrame,
 } from '../workflows/pageParts';
-import { getApprovedOfficerGrants } from '../workflows/workflowUtils';
+import { getApprovedOfficerGrants, isStudent } from '../workflows/workflowUtils';
 
 const managementTabs = [
   { id: 'details', label: 'Details' },
+  { id: 'intake', label: 'Application intake' },
   { id: 'announcements', label: 'Announcements' },
   { id: 'dates', label: 'Dates & availability' },
 ];
@@ -59,63 +59,8 @@ function DepartmentStudentCountPanel({ organization, session, client }: { organi
   );
 }
 
-export function ApplicationIntakeControl({ organization, session, client, onChanged }: { organization: OrganizationProfile; session: UserSession; client: WorkflowDataClient; onChanged: () => Promise<void> }) {
-  const [applicationsOpen, setApplicationsOpen] = useState(organization.applicationsOpen !== false);
-  const [saving, setSaving] = useState(false);
-  const [result, setResult] = useState<WorkflowMutationResult<{ applicationsOpen: boolean }> | null>(null);
-
-  useEffect(() => {
-    setApplicationsOpen(organization.applicationsOpen !== false);
-    setResult(null);
-  }, [organization.id, organization.applicationsOpen]);
-
-  const toggleIntake = async () => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const next = await client.setApplicationsOpen(organization.id, !applicationsOpen, session);
-      setResult(next);
-      if (next.ok && next.data) {
-        setApplicationsOpen(next.data.applicationsOpen);
-        if (next.persisted) void onChanged();
-      }
-    } catch (error) {
-      setResult({
-        ok: false,
-        persisted: false,
-        source: client.mode,
-        reason: 'error',
-        message: safeErrorMessage(error, 'SOAR could not update application intake. Check your connection and try again.'),
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <section className="grid min-w-0 gap-3 border-y border-[var(--color-border)] py-4" aria-labelledby="application-intake-heading" aria-busy={saving}>
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-        <div className="grid min-w-0 gap-1">
-          <h3 id="application-intake-heading" className="m-0 font-[var(--font-display)] text-base font-bold text-[var(--color-navy)]">Application intake</h3>
-          <p className="m-0 max-w-[68ch] text-sm text-[var(--muted-foreground)]" aria-live="polite">
-            {applicationsOpen ? 'Students can confirm one application for this organization.' : 'New application confirmations are paused; existing tracker records stay available.'}
-          </p>
-        </div>
-        <StatusChip tone={applicationsOpen ? 'approved' : 'attention'}>{applicationsOpen ? 'Open' : 'Closed'}</StatusChip>
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-3">
-        <Button type="button" variant={applicationsOpen ? 'danger' : 'primary'} disabled={saving} onClick={toggleIntake}>
-          {saving ? 'Saving intake…' : applicationsOpen ? 'Close applications' : 'Open applications'}
-        </Button>
-        <p className="m-0 max-w-[68ch] text-xs text-[var(--muted-foreground)]">Closing intake blocks new confirmations, including students who opened a form earlier.</p>
-      </div>
-      <ResultMessage result={result} />
-    </section>
-  );
-}
-
 export function OrganizationSettingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
-  const grants = useMemo(() => getApprovedOfficerGrants(session), [session]);
+  const grants = useMemo(() => isStudent(session) ? getApprovedOfficerGrants(session) : [], [session]);
   const [searchParams, setSearchParams] = useSearchParams();
   const { activeId, getTabTo } = useQueryTab(managementTabs.map((item) => item.id), 'details');
   const requestedOrganizationId = searchParams.get('organizationId') ?? '';
@@ -125,6 +70,7 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
   );
   const [selectedOrganizationId, setSelectedOrganizationId] = useState(initialOrganizationId);
   const [profileDirty, setProfileDirty] = useState(false);
+  const [intakeSaving, setIntakeSaving] = useState(false);
   const [pendingOrganizationId, setPendingOrganizationId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -185,8 +131,8 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
       actions={selectedGrant ? <ButtonLink to={`/app/organizations/${selectedGrant.organizationId}`} variant="secondary">View public profile</ButtonLink> : undefined}
     >
       <SourceNotice client={client} />
-      <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={changeOrganization} session={session} />
-      <OfficerDashboardBlock organizationId={selectedOrganizationId} session={session} client={client}>
+      <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={changeOrganization} session={session} disabled={intakeSaving} />
+      <OfficerDashboardBlock key={`${session.uid}:${selectedOrganizationId}`} organizationId={selectedOrganizationId} session={session} client={client}>
         {(dashboard, reload) => {
           const tabsWithCounts = managementTabs.map((tab) => {
             if (tab.id === 'announcements') return { ...tab, count: dashboard.announcements.length };
@@ -213,10 +159,12 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
 
               <SubtabPanel baseId="organization-management" tabId="details" activeId={activeId}>
                 <div className="grid min-w-0 gap-4">
-                  <ApplicationIntakeControl organization={dashboard.organization} session={session} client={client} onChanged={reload} />
                   <DepartmentStudentCountPanel organization={dashboard.organization} session={session} client={client} />
                   <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} formId={profileFormId} onDirtyChange={handleProfileDirtyChange} />
                 </div>
+              </SubtabPanel>
+              <SubtabPanel baseId="organization-management" tabId="intake" activeId={activeId}>
+                <OrganizationApplicationIntakePanel key={`${session.uid}:${selectedOrganizationId}`} organizationId={selectedOrganizationId} session={session} client={client} onSavingChange={setIntakeSaving} />
               </SubtabPanel>
               <SubtabPanel baseId="organization-management" tabId="announcements" activeId={activeId}>
                 <AnnouncementSection dashboard={dashboard} session={session} client={client} onChanged={reload} allowPosting />
