@@ -4,7 +4,7 @@ import type { ApplicationStage, UserSession } from '../../lib/contracts';
 import { safeErrorMessage } from '../../lib/safeErrors';
 import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
 import { createEmptyOfficerDateEntry } from './adapters';
-import type { AnnouncementInput, DateEntry, DateEntryInput, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
+import type { AnnouncementInput, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
   ErrorState,
   MeetingStatusChip,
@@ -722,18 +722,22 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
               <td><MeetingStatusChip status={request.status} /></td>
               <td><FormalRequestDocumentButton request={request} /></td>
               <td>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="secondary" disabled={request.status === 'Approved'} onClick={async () => {
-                    const next = await client.decideMeetingRequest(request.id, 'Approved', dashboard.organization.id, session);
-                    setResult(next);
-                    if (next.ok) onChanged();
-                  }}>Approve</Button>
-                  <Button type="button" variant="danger" disabled={request.status === 'Declined'} onClick={async () => {
-                    const next = await client.decideMeetingRequest(request.id, 'Declined', dashboard.organization.id, session);
-                    setResult(next);
-                    if (next.ok) onChanged();
-                  }}>Decline</Button>
-                </div>
+                {request.requesterUid === session.uid ? (
+                  <span className="text-xs text-[var(--muted-foreground)]">Your request · check My requests for status.</span>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="secondary" disabled={request.status === 'Approved'} onClick={async () => {
+                      const next = await client.decideMeetingRequest(request.id, 'Approved', dashboard.organization.id, session);
+                      setResult(next);
+                      if (next.ok) onChanged();
+                    }}>Approve</Button>
+                    <Button type="button" variant="danger" disabled={request.status === 'Declined'} onClick={async () => {
+                      const next = await client.decideMeetingRequest(request.id, 'Declined', dashboard.organization.id, session);
+                      setResult(next);
+                      if (next.ok) onChanged();
+                    }}>Decline</Button>
+                  </div>
+                )}
               </td>
             </tr>
           ))}
@@ -816,7 +820,7 @@ export function OfficerApplicationsReview({ session, client }: { session: UserSe
   );
 }
 
-export function OfficerMeetingReview({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
+export function OfficerMeetingReview({ session, client, confirmedRequests = [] }: { session: UserSession; client: WorkflowDataClient; confirmedRequests?: MeetingRequest[] }) {
   const grants = getApprovedOfficerGrants(session);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState(grants[0]?.organizationId ?? '');
 
@@ -834,7 +838,15 @@ export function OfficerMeetingReview({ session, client }: { session: UserSession
       </header>
       <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={setSelectedOrganizationId} session={session} />
       <OfficerDashboardBlock organizationId={selectedOrganizationId} session={session} client={client}>
-        {(dashboard, reload) => <MeetingDecisionsSection dashboard={dashboard} session={session} client={client} onChanged={reload} />}
+        {(dashboard, reload) => {
+          const requestsById = new Map<string, MeetingRequest>();
+          confirmedRequests
+            .filter((request) => request.requesterUid === session.uid && request.organizationId === dashboard.organization.id)
+            .forEach((request) => requestsById.set(request.id, request));
+          dashboard.meetingRequests.forEach((request) => requestsById.set(request.id, request));
+          const reconciledDashboard = { ...dashboard, meetingRequests: Array.from(requestsById.values()) };
+          return <MeetingDecisionsSection dashboard={reconciledDashboard} session={session} client={client} onChanged={reload} />;
+        }}
       </OfficerDashboardBlock>
     </section>
   );
