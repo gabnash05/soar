@@ -98,7 +98,7 @@ export interface RequestStore {
   getOrganization(orgId: string): Promise<OrganizationDocument | undefined>;
   getOfficerGrant(orgId: string, uid: string): Promise<{ status?: string } | undefined>;
   getCalendarEntry(dateEntryId: string): Promise<CalendarEntryDocument | undefined>;
-  createApplicationIfAbsent(applicationId: string, application: ApplicationDocument): Promise<'created' | 'exists'>;
+  createApplicationIfAbsent(applicationId: string, application: ApplicationDocument): Promise<'created' | 'exists' | 'closed' | 'organization_missing'>;
   getApplication(applicationId: string): Promise<ApplicationDocument | undefined>;
   listApplicationsByStudent(studentUid: string): Promise<ApplicationDocument[]>;
   listApplicationsByOrganization(orgId: string): Promise<ApplicationDocument[]>;

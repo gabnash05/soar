@@ -19,7 +19,7 @@
     "test:payments": "node --test src/payments/__tests__/payments.test.js",
     "test:seed": "node --test scripts/seed-local-emulator.test.cjs",
     "test:content": "vitest run src/content/__tests__/*.test.ts",
-    "test:requests": "vitest run test/requests.service.test.ts",
+    "test:requests": "vitest run test/requests.service.test.ts src/requests/firestoreStore.test.ts",
     "test:http": "vitest run test/http.routes.test.ts",
     "test:rules": "vitest run --no-file-parallelism test/firestore.rules.test.ts test/storage.rules.test.ts",
     "test:rules:firestore": "vitest run test/firestore.rules.test.ts",

@@ -261,6 +261,25 @@ describe('SOAR HTTP route contracts', () => {
     );
   });
 
+  it('uses the existing organization profile patch contract for intake changes', async () => {
+    const user = { uid: 'approved-officer', email_verified: true };
+    const updatedProfile = { id: 'robotics', applicationsOpen: false };
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.updateOrganizationProfile.mockResolvedValue(updatedProfile);
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/organizations/robotics`, {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ applicationsOpen: false }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual(updatedProfile);
+    });
+
+    expect(mocks.updateOrganizationProfile).toHaveBeenCalledWith(user, 'robotics', { applicationsOpen: false });
+  });
+
   it('mounts department counts and revised announcement routes without exposing student lists', async () => {
     mocks.getStudentDepartmentCounts.mockResolvedValue({ organizationId: 'computer-engineering', department: 'Computer Engineering Department', departmentKey: 'computer engineering department', registeredStudentCount: 2 });
     mocks.createAnnouncementMediaTargets.mockResolvedValue({ announcementId: 'post1', items: [] });

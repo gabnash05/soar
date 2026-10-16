@@ -95,6 +95,7 @@ export interface OrganizationDocument {
   department?: string;
   departmentKey?: string;
   logoPath?: string;
+  applicationsOpen?: boolean;
   recruitment?: OrganizationRecruitment;
   createdAt: Timestamp;
   updatedAt: Timestamp;

@@ -74,6 +74,7 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   requestMeeting: () => unavailableMutation<MeetingRequest>(),
   getOfficerDashboard: () => unavailableQuery<OfficerDashboard | undefined>(undefined),
   saveOrganizationProfile: () => unavailableMutation<OrganizationProfile>(),
+  setApplicationsOpen: () => unavailableMutation<{ applicationsOpen: boolean }>(),
   publishAnnouncement: () => unavailableMutation<Announcement>(),
   updateAnnouncement: () => unavailableMutation<Announcement>(),
   deleteAnnouncement: () => unavailableMutation(),
@@ -516,6 +517,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
   function hydrateOrganization(profile: OrganizationProfile, session: UserSession): OrganizationProfile {
     return {
       ...clone(profile),
+      applicationsOpen: profile.applicationsOpen !== false,
       posts: announcements.filter((announcement) => announcement.organizationId === profile.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((announcement) => hydrateAnnouncement(announcement, session)),
       dateEntries: dateEntries.filter((entry) => entry.organizationId === profile.id).sort(compareDateEntries),
     };
@@ -656,12 +658,13 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       if (!input.confirmedExternalSubmission) return failure('validation', 'Confirm the external form was submitted before adding a tracker entry.');
       const organization = getOrganizationById(input.organizationId);
       if (!organization || organization.recruitment.id !== input.opportunityId) return failure('not-found', 'Recruitment opportunity not found.');
-      if (hasDuplicateApplication(applications, session.uid, input.opportunityId)) {
-        return failure('duplicate', 'This student already has a tracker entry for this recruitment opportunity.');
+      if (organization.applicationsOpen === false) return failure('closed', 'Applications are closed for this organization.');
+      if (hasDuplicateApplication(applications, session.uid, input.organizationId)) {
+        return failure('duplicate', 'You already have an application for this organization.');
       }
       const now = new Date().toISOString();
       const application: ApplicationRecord = {
-        id: `app-${session.uid}-${input.opportunityId}`,
+        id: `app-${session.uid}-${input.organizationId}`,
         organizationId: organization.id,
         organizationName: organization.name,
         opportunityId: organization.recruitment.id,
@@ -782,6 +785,15 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       organization.recruitment.instructions = input.recruitmentInstructions.trim();
       organization.recruitment.externalFormUrl = input.externalFormUrl?.trim();
       return success('Organization profile saved in demo mode.', hydrateOrganization(organization, session));
+    },
+
+    async setApplicationsOpen(organizationId, applicationsOpen, session) {
+      const permission = assertOfficer<{ applicationsOpen: boolean }>(organizationId, session);
+      if (permission) return permission;
+      const organization = getOrganizationById(organizationId);
+      if (!organization) return failure('not-found', 'Organization not found.');
+      organization.applicationsOpen = applicationsOpen;
+      return success(applicationsOpen ? 'Applications are open in demo mode.' : 'Applications are closed in demo mode.', { applicationsOpen });
     },
 
     async publishAnnouncement(input, session) {
