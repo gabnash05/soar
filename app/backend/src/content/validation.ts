@@ -22,7 +22,7 @@ const httpUrl = trimmedString.url().max(2048).refine((value) => {
 
 export const paginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
-  pageToken: z.string().regex(/^\d+$/).optional().transform((value) => value ? Number(value) : 0)
+  pageToken: z.string().min(1).max(2048).optional()
 });
 
 export const organizationListQuerySchema = paginationSchema.extend({

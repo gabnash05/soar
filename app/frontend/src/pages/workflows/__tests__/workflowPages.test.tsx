@@ -1,10 +1,10 @@
 import type { ReactElement } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
-import type { Announcement, AnnouncementPage, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
+import type { Announcement, AnnouncementPage, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, OrganizationSummary, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
 import { DirectoryView } from '../DirectoryPage';
@@ -58,7 +58,10 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => render(<MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>);
+const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => {
+  const router = createMemoryRouter([{ path: '*', element: ui }], { initialEntries });
+  return render(<RouterProvider router={router} />);
+};
 
 function saveDateEntryResult(input: DateEntryInput, source: WorkflowDataClient['mode']): WorkflowMutationResult<DateEntry> {
   return {
@@ -124,6 +127,41 @@ describe('SOAR workflow pages', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it('loads organization directory pages beyond the first set with the opaque cursor', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const summary = (id: string, name: string) => ({ id, slug: id, name, shortDescription: `${name} description`, contactEmail: `${id}@example.edu`, recruitmentTitle: 'Recruitment' });
+    const firstItems = Array.from({ length: 20 }, (_, index) => summary(`saved-${index}`, `Saved organization ${index}`));
+    const listOrganizations = vi.fn()
+      .mockResolvedValueOnce({ data: { items: firstItems, nextPageToken: 'cursor-after-twenty' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [summary('admin-created', 'Admin-created organization')] }, source: 'fixture' });
+    renderInRouter(<DirectoryView session={studentSession} client={{ ...base, listOrganizations }} />);
+
+    expect(await screen.findByText('Saved organization 19')).toBeInTheDocument();
+    expect(listOrganizations).toHaveBeenCalledWith(studentSession, { limit: 20, query: '' });
+    await userEvent.click(screen.getByRole('button', { name: 'Load more organizations' }));
+    expect(await screen.findByText('Admin-created organization')).toBeInTheDocument();
+    expect(listOrganizations).toHaveBeenNthCalledWith(2, studentSession, { limit: 20, pageToken: 'cursor-after-twenty', query: '' });
+  });
+
+  it('ignores stale organization search responses when the query changes', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const summary = (id: string, name: string) => ({ id, slug: id, name, shortDescription: '', contactEmail: '', recruitmentTitle: '' });
+    const pending = new Map<string, (result: { data: { items: OrganizationSummary[] }; source: 'fixture' }) => void>();
+    const listOrganizations = vi.fn((_session: UserSession, page?: { limit?: number; pageToken?: string; query?: string }) => {
+      if (page?.query === 'la' || page?.query === 'late') return new Promise<{ data: { items: OrganizationSummary[] }; source: 'fixture' }>((resolve) => pending.set(page.query!, resolve));
+      return Promise.resolve({ data: { items: [], nextPageToken: undefined }, source: 'fixture' as const });
+    });
+    renderInRouter(<DirectoryView session={studentSession} client={{ ...base, listOrganizations }} />);
+    const input = await screen.findByLabelText(/Search by organization name/i);
+    await userEvent.type(input, 'late');
+    await waitFor(() => expect(pending.has('la') && pending.has('late')).toBe(true));
+    pending.get('late')?.({ data: { items: [summary('late-org', 'Late match')] }, source: 'fixture' });
+    expect(await screen.findByText('Late match')).toBeInTheDocument();
+    pending.get('la')?.({ data: { items: [summary('stale-org', 'Stale match')] }, source: 'fixture' });
+    await waitFor(() => expect(screen.queryByText('Stale match')).not.toBeInTheDocument());
+    expect(screen.getByText('Late match')).toBeInTheDocument();
   });
 
   it('filters the organization directory by name and shows no-results copy', async () => {
@@ -871,6 +909,25 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByText(/Architecture portfolio orientation starts Friday/i)).toBeInTheDocument();
   });
 
+  it('maps announcement upload failures safely and keeps the draft available to retry', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const providerError = Object.assign(new Error('Firebase Storage denied object gs://private-bucket/secret/path'), { code: 'storage/unauthorized' });
+    const publishAnnouncement = vi.spyOn(client, 'publishAnnouncement').mockRejectedValueOnce(providerError);
+    renderInRouter(<FeedView session={officerSession} client={client} />);
+
+    await user.click(await screen.findByRole('button', { name: /Post announcement/i }));
+    await user.type(screen.getByLabelText(/Post text/i), 'Draft that should survive an upload failure.');
+    await user.upload(screen.getByLabelText(/Optional media/i), new File(['image'], 'campus.png', { type: 'image/png' }));
+    await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('You do not have permission to upload this file.');
+    expect(screen.queryByText(/private-bucket|secret\/path|Firebase Storage denied/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Post text/i)).toHaveValue('Draft that should survive an upload failure.');
+    expect(screen.getByRole('img', { name: 'campus.png' })).toBeInTheDocument();
+    expect(publishAnnouncement).toHaveBeenCalledOnce();
+  });
+
   it('guards organization settings to approved officer grants and supports managed organization context', async () => {
     const user = userEvent.setup();
     const multiOfficerSession = {
@@ -1264,12 +1321,14 @@ describe('SOAR workflow pages', () => {
     }
   });
 
-  it('keeps one profile save action and confirms before persisting organization profile edits', async () => {
+  it('requires transient password approval before one organization profile save', async () => {
     const user = userEvent.setup();
     const client = createFixtureWorkflowDataClient();
     const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    let completeReauthentication: (() => void) | undefined;
+    const reauthenticate = vi.fn((_password: string, _expectedUid: string) => new Promise<void>((resolve) => { completeReauthentication = resolve; }));
     client.saveOrganizationProfile = saveProfile;
-    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} />, ['/settings/organization?organizationId=robotics']);
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
 
     const nameInput = await screen.findByLabelText(/^Organization name$/i);
     const saveButton = screen.getByRole('button', { name: /^Save profile$/i });
@@ -1284,12 +1343,71 @@ describe('SOAR workflow pages', () => {
     await user.type(nameInput, ' Updated');
     await user.click(saveButton);
 
-    const dialog = screen.getByRole('alertdialog', { name: /Save profile changes/i });
-    expect(dialog).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
+    expect(saveProfile).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/^Password$/i)).toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText(/^Password$/i)).toHaveAttribute('autocomplete', 'current-password');
+
+    await user.type(screen.getByLabelText(/^Password$/i), 'correct-demo-password');
+    await user.click(within(dialog).getByRole('button', { name: /^Approve and save changes$/i }));
+    expect(screen.getByLabelText(/^Password$/i)).toHaveValue('');
+    expect(saveProfile).not.toHaveBeenCalled();
+    completeReauthentication?.();
+    await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+    expect(reauthenticate).toHaveBeenCalledWith('correct-demo-password', officerSession.uid);
+    expect(reauthenticate.mock.invocationCallOrder[0]).toBeLessThan(saveProfile.mock.invocationCallOrder[0]);
+    expect(saveProfile.mock.calls[0]?.[0]).not.toHaveProperty('password');
+    expect(screen.queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps profile drafts after rejected password approval and clears the transient input', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    const reauthenticate = vi.fn().mockRejectedValueOnce(Object.assign(new Error('invalid credential details'), { code: 'auth/invalid-credential' }));
+    client.saveOrganizationProfile = saveProfile;
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
+
+    const nameInput = await screen.findByLabelText(/^Organization name$/i);
+    await user.type(nameInput, ' Draft');
+    await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+    await user.type(screen.getByLabelText(/^Password$/i), 'wrong-password');
+    await user.click(screen.getByRole('button', { name: /^Approve and save changes$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/password could not be verified/i);
+    expect(nameInput).toHaveValue('Computer Engineering Department Draft');
+    expect(screen.getByLabelText(/^Password$/i)).toHaveValue('');
     expect(saveProfile).not.toHaveBeenCalled();
 
-    await user.click(within(dialog).getByRole('button', { name: /^Save profile$/i }));
-    await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: /^Cancel$/i }));
+    expect(screen.queryByRole('dialog', { name: /Approve organization changes/i })).not.toBeInTheDocument();
+    expect(nameInput).toHaveValue('Computer Engineering Department Draft');
+  });
+
+  it('uses password-free synthetic approval only for the labelled fixture build', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    const reauthenticate = vi.fn(async (_password: string, _expectedUid: string) => undefined);
+    client.saveOrganizationProfile = saveProfile;
+    vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'true');
+    try {
+      renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
+      const nameInput = await screen.findByLabelText(/^Organization name$/i);
+      await user.type(nameInput, ' Preview');
+      await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+
+      const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
+      expect(dialog).toHaveTextContent(/simulated preview uses local approval only/i);
+      expect(within(dialog).queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: /^Approve simulated changes$/i }));
+
+      await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+      expect(reauthenticate).not.toHaveBeenCalled();
+      expect(saveProfile.mock.calls[0]?.[0]).not.toHaveProperty('password');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('protects dirty profile edits before switching managed organizations', async () => {

@@ -77,6 +77,35 @@ function mockAnnouncementApi() {
   });
 }
 
+describe('production comment author role projection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.authHeaders.mockResolvedValue({ Authorization: 'Bearer synthetic-test-token' });
+  });
+
+  it('maps only supported student and parent-organization officer projections', async () => {
+    mocks.apiFetch.mockResolvedValueOnce({ items: [
+      { id: 'student-comment', authorName: 'Student One', authorAccountKind: 'student', body: 'Student comment', createdAt: '2026-10-15T00:00:00.000Z' },
+      { id: 'officer-comment', authorName: 'Officer One', authorAccountKind: 'student', authorOrganizationRole: 'approved_officer', body: 'Officer comment', createdAt: '2026-10-15T00:01:00.000Z' },
+      { id: 'sponsor-comment', authorName: 'Sponsor One', authorAccountKind: 'sponsor', authorOrganizationRole: 'approved_officer', companyName: 'Private Co', body: 'Sponsor comment', createdAt: '2026-10-15T00:02:00.000Z' },
+      { id: 'unknown-comment', authorName: 'Unknown One', authorAccountKind: 'admin', authorOrganizationRole: 'global_officer', email: 'private@example.test', body: 'Unknown account comment', createdAt: '2026-10-15T00:03:00.000Z' },
+    ] });
+    const client = createProductionWorkflowDataClient();
+
+    const { data } = await client.listAnnouncementComments('role-post', session);
+
+    expect(data[0]).toMatchObject({ authorAccountKind: 'student' });
+    expect(data[0]).not.toHaveProperty('authorOrganizationRole');
+    expect(data[1]).toMatchObject({ authorAccountKind: 'student', authorOrganizationRole: 'approved_officer' });
+    expect(data[2]).not.toHaveProperty('authorAccountKind');
+    expect(data[2]).not.toHaveProperty('authorOrganizationRole');
+    expect(data[3]).not.toHaveProperty('authorAccountKind');
+    expect(data[3]).not.toHaveProperty('authorOrganizationRole');
+    expect(data[3]).not.toHaveProperty('email');
+    expect(data[3]).not.toHaveProperty('companyName');
+  });
+});
+
 describe('production announcement media payloads', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -104,6 +133,23 @@ describe('production announcement media payloads', () => {
     expect(mocks.apiFetch.mock.calls.map(([path]) => path)).toEqual([
       '/announcements?limit=15',
       '/announcements?limit=15&pageToken=cursor-15',
+    ]);
+  });
+
+  it('forwards bounded organization search pages and opaque server cursors', async () => {
+    mocks.apiFetch
+      .mockResolvedValueOnce({ items: [{ id: 'org-late', name: 'Later Organization' }], nextPageToken: 'opaque-stable-cursor' })
+      .mockResolvedValueOnce({ items: [{ id: 'org-latest', name: 'Latest Organization' }] });
+    const client = createProductionWorkflowDataClient();
+
+    const first = await client.listOrganizations(session, { limit: 20, query: 'Later' });
+    const second = await client.listOrganizations(session, { limit: 20, query: 'Later', pageToken: first.data.nextPageToken });
+
+    expect(first.data.items.map((item) => item.id)).toEqual(['org-late']);
+    expect(second.data.items.map((item) => item.id)).toEqual(['org-latest']);
+    expect(mocks.apiFetch.mock.calls.map(([path]) => path)).toEqual([
+      '/organizations?limit=20&q=Later',
+      '/organizations?limit=20&pageToken=opaque-stable-cursor&q=Later',
     ]);
   });
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, ButtonLink, ConfirmDialog, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
+import { reauthenticateCurrentUser } from '../../lib/backendGateway';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
 import { safeErrorMessage } from '../../lib/safeErrors';
 import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
@@ -56,13 +57,18 @@ function profileInputDirty(form: OrganizationProfileInput, dashboard: OfficerDas
   );
 }
 
-export function ProfileRecruitmentSection({ dashboard, session, client, onChanged, formId = `profile-recruitment-form-${dashboard.organization.id}`, onDirtyChange }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; formId?: string; onDirtyChange?: (dirty: boolean) => void }) {
+export type PasswordReauthenticator = (password: string, expectedUid: string) => Promise<void>;
+
+export function ProfileRecruitmentSection({ dashboard, session, client, onChanged, formId = `profile-recruitment-form-${dashboard.organization.id}`, onDirtyChange, reauthenticate = reauthenticateCurrentUser }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; formId?: string; onDirtyChange?: (dirty: boolean) => void; reauthenticate?: PasswordReauthenticator }) {
   const [form, setForm] = useState<OrganizationProfileInput>(() => toProfileInput(dashboard));
   const [logoError, setLogoError] = useState('');
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
   const [confirmSaveError, setConfirmSaveError] = useState<string | null>(null);
+  const [approvalPassword, setApprovalPassword] = useState('');
+  const savingRef = useRef(false);
+  const fixtureApproval = import.meta.env.VITE_SOAR_USE_FIXTURES === 'true' && client.mode === 'fixture';
   const dirty = profileInputDirty(form, dashboard);
 
   useEffect(() => {
@@ -78,21 +84,51 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setConfirmSaveError(null);
+    setApprovalPassword('');
     setConfirmSaveOpen(true);
   };
 
-  const confirmSave = async () => {
+  const cancelApproval = () => {
+    if (savingRef.current) return;
+    setApprovalPassword('');
+    setConfirmSaveError(null);
+    setConfirmSaveOpen(false);
+  };
+
+  const confirmSave = async (event: FormEvent) => {
+    event.preventDefault();
+    if (savingRef.current || (!fixtureApproval && !approvalPassword)) return;
+    savingRef.current = true;
     setBusy(true);
     setConfirmSaveError(null);
-    const next = await client.saveOrganizationProfile(form, session);
-    setResult(next);
-    setBusy(false);
-    if (next.ok) {
-      setConfirmSaveOpen(false);
-      onDirtyChange?.(false);
-      onChanged();
-    } else {
-      setConfirmSaveError(next.message);
+    try {
+      if (fixtureApproval) {
+        setApprovalPassword('');
+      } else {
+        const verification = reauthenticate(approvalPassword, session.uid);
+        setApprovalPassword('');
+        await verification;
+      }
+      const next = await client.saveOrganizationProfile(form, session);
+      setResult(next);
+      if (next.ok) {
+        setConfirmSaveOpen(false);
+        onDirtyChange?.(false);
+        onChanged();
+      } else {
+        setConfirmSaveError(next.message);
+      }
+    } catch (error) {
+      setApprovalPassword('');
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+      setConfirmSaveError(
+        ['auth/wrong-password', 'auth/invalid-credential', 'auth/invalid-login-credentials'].includes(code)
+          ? 'That password could not be verified. Check it and try again. Your draft is unchanged.'
+          : `${safeErrorMessage(error, 'Could not verify your password or save changes.')} Your draft is unchanged.`,
+      );
+    } finally {
+      setBusy(false);
+      savingRef.current = false;
     }
   };
 
@@ -145,17 +181,37 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
           <Button type="submit" disabled={busy}>Save profile</Button>
         </div>
       </form>
-      <ConfirmDialog
+      <ModalDialog
         open={confirmSaveOpen}
-        title="Save profile changes?"
-        description={`These changes update the public profile for ${dashboard.organization.name}. Review the fields before saving.`}
-        confirmLabel="Save profile"
-        cancelLabel="Review changes"
-        busy={busy}
-        error={confirmSaveError}
-        onOpenChange={setConfirmSaveOpen}
-        onConfirm={confirmSave}
-      />
+        title="Approve organization changes"
+        description={fixtureApproval
+          ? 'This simulated preview uses local approval only. It does not request a real password or contact Firebase, account, or payment services.'
+          : `Enter your sign-in password to approve and save changes to ${dashboard.organization.name}. Your password is used only to reauthenticate your account and is never sent with the organization update.`}
+        onClose={cancelApproval}
+      >
+        <form className="grid gap-4" onSubmit={confirmSave}>
+          {!fixtureApproval ? (
+            <div className="grid min-w-0 gap-1.5">
+              <label className="text-[13px] font-bold text-[var(--color-navy)]" htmlFor="organization-approval-password">Password</label>
+              <input
+                id="organization-approval-password"
+                className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={approvalPassword}
+                onChange={(event) => { setApprovalPassword(event.target.value); setConfirmSaveError(null); }}
+                disabled={busy}
+              />
+            </div>
+          ) : null}
+          {confirmSaveError ? <p className="m-0 text-sm font-bold text-[var(--color-orange-deep)]" role="alert">{confirmSaveError}</p> : null}
+          <div className="flex flex-wrap justify-end gap-2 max-sm:[&>button]:w-full">
+            <Button type="button" variant="secondary" disabled={busy} onClick={cancelApproval}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={busy || (!fixtureApproval && !approvalPassword)}>{busy ? (fixtureApproval ? 'Saving simulated changes…' : 'Verifying…') : fixtureApproval ? 'Approve simulated changes' : 'Approve and save changes'}</Button>
+          </div>
+        </form>
+      </ModalDialog>
     </section>
   );
 }
@@ -223,7 +279,7 @@ export function AnnouncementComposer({
         onSubmitted?.();
       }
     } catch (error) {
-      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: error instanceof Error ? error.message : 'Announcement upload failed.' };
+      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: safeErrorMessage(error, 'Announcement upload failed. Please try again.') };
       setResult(failure);
       onResult?.(failure);
     } finally {

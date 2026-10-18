@@ -29,6 +29,10 @@ export interface WorkflowImage {
 export interface AnnouncementComment {
   id: string;
   authorUid?: string;
+  /** Trusted verified account role supplied by the API or the local fixture adapter. */
+  authorAccountKind?: 'student';
+  /** Trusted approved role scoped to this comment's organization. */
+  authorOrganizationRole?: 'approved_officer';
   authorName: string;
   body: string;
   createdAt: string;
@@ -218,6 +222,11 @@ export interface AnnouncementPage {
   nextPageToken?: string;
 }
 
+export interface OrganizationPage {
+  items: OrganizationSummary[];
+  nextPageToken?: string;
+}
+
 export interface WorkflowDataClient {
   readonly mode: WorkflowDataMode;
   readonly label: string;
@@ -229,7 +238,7 @@ export interface WorkflowDataClient {
   updateAnnouncementComment(announcementId: string, commentId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<AnnouncementComment>>;
   deleteAnnouncementComment(announcementId: string, commentId: string, session: UserSession): Promise<WorkflowMutationResult>;
 
-  listOrganizations(session: UserSession): Promise<WorkflowQueryResult<OrganizationSummary[]>>;
+  listOrganizations(session: UserSession, page?: { limit?: number; pageToken?: string; query?: string }): Promise<WorkflowQueryResult<OrganizationPage>>;
   getOrganization(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OrganizationProfile | undefined>>;
 
   confirmExternalApplication(input: ApplicationConfirmationInput, session: UserSession): Promise<WorkflowMutationResult<ApplicationRecord>>;

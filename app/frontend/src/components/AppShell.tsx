@@ -92,7 +92,9 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
   };
 
   const accessTone = activeAccess ? 'approved' : session.access.status === 'expired' ? 'attention' : 'danger';
-  const accessLabel = activeAccess ? 'Active access' : session.access.status === 'expired' ? 'Expired access' : 'Access locked';
+  const accessLabel = activeAccess
+    ? session.access.provenance === 'unpaid-preview' ? 'Unpaid preview' : 'Active access'
+    : session.access.status === 'expired' ? 'Expired access' : 'Access locked';
   const sidebarRole = admin ? 'Admin' : session.accountKind === 'sponsor' ? 'Sponsor' : officer ? 'Officer' : 'Student';
 
   return (
@@ -146,7 +148,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
             <div className="rounded-[var(--radius-md)] bg-white/10 p-3 text-[13px] text-white/80">Verify your email before using the main app.</div>
           ) : null}
           {!admin && !activeAccess ? (
-            <div className="rounded-[var(--radius-md)] bg-white/10 p-3 text-[13px] text-white/80">Main SOAR pages are locked until PHP10 six-month access is active.</div>
+            <div className="rounded-[var(--radius-md)] bg-white/10 p-3 text-[13px] text-white/80">Main SOAR pages are locked until access is active.</div>
           ) : null}
           <nav className="grid gap-1 [&_a]:flex [&_a]:min-h-11 [&_a]:items-center [&_a]:rounded-lg [&_a]:border-l-2 [&_a]:border-transparent [&_a]:px-3 [&_a]:font-bold [&_a]:text-white/70 [&_a]:no-underline" aria-label="SOAR sections">
             {navRoutes.map((route) => {

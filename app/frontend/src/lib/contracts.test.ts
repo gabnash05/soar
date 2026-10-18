@@ -18,6 +18,22 @@ describe('trusted session helpers', () => {
     expect(hasActiveAccess(session)).toBe(true);
   });
 
+  it('accepts explicitly unpaid preview access without inventing a paid expiry', () => {
+    const session = makeSession({
+      access: {
+        status: 'active',
+        provenance: 'unpaid-preview',
+        annualFeePhp: 10,
+        feePhp: 0,
+        periodLabel: 'Unpaid preview',
+        renewalAvailable: false,
+      },
+    });
+
+    expect(hasActiveAccess(session)).toBe(true);
+    expect(session.access.expiresAt).toBeUndefined();
+  });
+
   it('does not treat expired entitlements as active access', () => {
     const session = makeSession({ access: { status: 'expired', annualFeePhp: 10, renewalAvailable: true } });
 
