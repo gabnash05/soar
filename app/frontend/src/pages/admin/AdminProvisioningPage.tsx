@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { Button, Card, CardBody, CardHeader, Field, LoadingBlock, Select, SubtabNav, SubtabPanel, TextInput, useQueryTab } from '../../components/ui';
+import { Button, Card, CardBody, CardHeader, ConfirmDialog, Field, LoadingBlock, Select, SubtabNav, SubtabPanel, TextInput, useQueryTab } from '../../components/ui';
 import { CANONICAL_DEPARTMENTS } from '../../lib/departments';
 import {
   assignAdminOfficer,
   createAdminOrganization,
+  listAdminOfficerGrants,
   listAdminOrganizations,
+  revokeAdminOfficer,
   searchAdminStudents,
+  type AdminOfficerGrantOption,
   type AdminOrganizationOption,
   type AdminStudentOption,
   type CreateAdminOrganizationInput,
@@ -14,6 +17,7 @@ import {
 const adminTabs = [
   { id: 'create', label: 'Create organization' },
   { id: 'assign', label: 'Assign officers' },
+  { id: 'manage', label: 'Manage organizations' },
 ];
 
 function messageFor(error: unknown, fallback: string) {
@@ -187,6 +191,17 @@ export function AdminProvisioningPage() {
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [assignmentMessage, setAssignmentMessage] = useState<string | null>(null);
 
+  const [officerGrants, setOfficerGrants] = useState<AdminOfficerGrantOption[]>([]);
+  const [officerGrantsLoading, setOfficerGrantsLoading] = useState(false);
+  const [officerGrantsError, setOfficerGrantsError] = useState<string | null>(null);
+  const [officerGrantsPageToken, setOfficerGrantsPageToken] = useState<string>();
+  const [loadMoreOfficerGrants, setLoadMoreOfficerGrants] = useState(false);
+  const [officerToRevoke, setOfficerToRevoke] = useState<AdminOfficerGrantOption | null>(null);
+  const [revokeBusy, setRevokeBusy] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [revokeMessage, setRevokeMessage] = useState<string | null>(null);
+  const officerLoadGeneration = useRef(0);
+
   const loadOrganizations = useCallback(async (pageToken?: string, replace = false) => {
     if (pageToken) setLoadMoreOrganizations(true);
     else setOrganizationsLoading(true);
@@ -206,6 +221,37 @@ export function AdminProvisioningPage() {
   useEffect(() => {
     void loadOrganizations();
   }, [loadOrganizations]);
+
+  const loadOfficerGrants = useCallback(async (organizationId: string, pageToken?: string, replace = false) => {
+    const generation = ++officerLoadGeneration.current;
+    if (pageToken) setLoadMoreOfficerGrants(true);
+    else setOfficerGrantsLoading(true);
+    setOfficerGrantsError(null);
+    try {
+      const result = await listAdminOfficerGrants(organizationId, pageToken);
+      if (generation !== officerLoadGeneration.current) return;
+      setOfficerGrants((current) => replace || !pageToken ? result.items : [...current, ...result.items]);
+      setOfficerGrantsPageToken(result.nextPageToken);
+    } catch (caught) {
+      if (generation === officerLoadGeneration.current) setOfficerGrantsError(messageFor(caught, 'Officer grants could not be loaded. Try again.'));
+    } finally {
+      if (generation === officerLoadGeneration.current) {
+        setOfficerGrantsLoading(false);
+        setLoadMoreOfficerGrants(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeId !== 'manage' || !selectedOrganizationId) {
+      officerLoadGeneration.current += 1;
+      setOfficerGrants([]);
+      setOfficerGrantsPageToken(undefined);
+      setOfficerGrantsError(null);
+      return;
+    }
+    void loadOfficerGrants(selectedOrganizationId, undefined, true);
+  }, [activeId, loadOfficerGrants, selectedOrganizationId]);
 
   const handleCreateOrganization = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -251,6 +297,24 @@ export function AdminProvisioningPage() {
       setCreateError(messageFor(caught, 'The organization could not be created. Check the details and try again.'));
     } finally {
       setCreateBusy(false);
+    }
+  };
+
+  const handleRevokeOfficer = async () => {
+    if (!selectedOrganizationId || !officerToRevoke) return;
+    setRevokeError(null);
+    setRevokeBusy(true);
+    try {
+      const result = await revokeAdminOfficer(selectedOrganizationId, officerToRevoke.uid);
+      setOfficerToRevoke(null);
+      setRevokeMessage(result.alreadyRevoked
+        ? `${officerToRevoke.displayName} no longer has officer access to ${organizations.find((item) => item.id === selectedOrganizationId)?.name ?? 'this organization'}.`
+        : `Officer access for ${officerToRevoke.displayName} was revoked.`);
+      await loadOfficerGrants(selectedOrganizationId, undefined, true);
+    } catch (caught) {
+      setRevokeError(messageFor(caught, 'Officer access could not be revoked. Try again.'));
+    } finally {
+      setRevokeBusy(false);
     }
   };
 
@@ -411,6 +475,116 @@ export function AdminProvisioningPage() {
             </form>
           </CardBody>
         </Card>
+      </SubtabPanel>
+
+      <SubtabPanel baseId="admin-setup" tabId="manage" activeId={activeId}>
+        <Card className="grid gap-4">
+          <CardHeader title="Manage organizations">
+            Review an organization’s officer grants or revoke one person’s access without changing their account or other organization access.
+          </CardHeader>
+          <CardBody className="p-0">
+            <div className="grid min-w-0 gap-4">
+              {organizationsLoading ? <LoadingBlock label="Loading organizations" /> : null}
+              {organizationsError ? (
+                <div className="grid gap-2" role="alert">
+                  <p className="m-0 text-sm text-[var(--color-orange-deep)]">{organizationsError}</p>
+                  <div><Button type="button" variant="secondary" onClick={() => void loadOrganizations()}>Try again</Button></div>
+                </div>
+              ) : null}
+              {!organizationsLoading && !organizationsError && organizations.length === 0 ? (
+                <p className="m-0 text-sm text-[var(--muted-foreground)]">No organizations are available yet. Create one in the Create organization tab first.</p>
+              ) : null}
+              {organizations.length ? (
+                <Field id="admin-manage-org-picker" label="Organization">
+                  <Select
+                    id="admin-manage-org-picker"
+                    value={selectedOrganizationId}
+                    disabled={Boolean(officerToRevoke)}
+                    onChange={(event) => {
+                      setSelectedOrganizationId(event.target.value);
+                      setOfficerGrants([]);
+                      setRevokeMessage(null);
+                      setOfficerGrantsError(null);
+                    }}
+                  >
+                    <option value="" disabled>Choose an organization</option>
+                    {organizations.map((organization) => <option value={organization.id} key={organization.id}>{organization.name}</option>)}
+                  </Select>
+                </Field>
+              ) : null}
+              {selectedOrganizationId ? (
+                <section className="grid min-w-0 gap-3" aria-label="Organization officer grants">
+                  <div>
+                    <h2 className="m-0 font-[var(--font-display)] text-base font-bold text-[var(--color-navy)]">Officer access</h2>
+                    <p className="m-0 mt-1 max-w-[68ch] text-sm text-[var(--muted-foreground)]">Revocation takes effect on protected requests immediately. Student accounts, profiles, and grants for other organizations are not changed.</p>
+                  </div>
+                  {officerGrantsError ? (
+                    <div className="grid gap-2" role="alert">
+                      <p className="m-0 text-sm text-[var(--color-orange-deep)]">{officerGrantsError}</p>
+                      <div><Button type="button" variant="secondary" onClick={() => void loadOfficerGrants(selectedOrganizationId, undefined, true)}>Try again</Button></div>
+                    </div>
+                  ) : null}
+                  {officerGrantsLoading ? <LoadingBlock label="Loading officer grants" /> : null}
+                  {!officerGrantsLoading && !officerGrantsError && officerGrants.length === 0 ? (
+                    <p className="m-0 text-sm text-[var(--muted-foreground)]">No officer grants are recorded for this organization.</p>
+                  ) : null}
+                  {officerGrants.length ? (
+                    <ul className="m-0 grid list-none gap-2 border-t border-[var(--color-border)] p-0" aria-label="Organization officer accounts">
+                      {officerGrants.map((grant) => (
+                        <li key={grant.uid} className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] py-3">
+                          <div className="grid min-w-0 gap-0.5">
+                            <strong className="break-words text-sm text-[var(--color-navy)]">{grant.displayName}</strong>
+                            <span className="break-all text-xs text-[var(--muted-foreground)]">Account ID: {grant.uid}</span>
+                            <span className="text-xs text-[var(--muted-foreground)]">
+                              {grant.isOrganizationOwner ? 'Organization owner; this grant cannot be revoked here.' : grant.status === 'active' ? 'Active officer grant' : 'Revoked officer grant'}
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="danger"
+                            disabled={grant.status !== 'active' || grant.isOrganizationOwner || revokeBusy}
+                            onClick={() => {
+                              setRevokeError(null);
+                              setRevokeMessage(null);
+                              setOfficerToRevoke(grant);
+                            }}
+                          >
+                            {grant.isOrganizationOwner ? 'Organization owner' : grant.status === 'active' ? 'Revoke access' : 'Access revoked'}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {officerGrantsPageToken ? (
+                    <div>
+                      <Button type="button" variant="quiet" disabled={loadMoreOfficerGrants} onClick={() => void loadOfficerGrants(selectedOrganizationId, officerGrantsPageToken)}>
+                        {loadMoreOfficerGrants ? 'Loading…' : 'Load more officer grants'}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {revokeMessage ? <p className="m-0 text-sm font-bold text-[var(--color-blue-deep)]" role="status" aria-live="polite">{revokeMessage}</p> : null}
+                </section>
+              ) : null}
+            </div>
+          </CardBody>
+        </Card>
+        <ConfirmDialog
+          open={Boolean(officerToRevoke)}
+          title="Revoke officer access?"
+          description={officerToRevoke ? <>{officerToRevoke.displayName} will immediately lose officer access to {organizations.find((item) => item.id === selectedOrganizationId)?.name ?? 'this organization'}. Their account and access to other organizations will remain unchanged.</> : ''}
+          confirmLabel="Revoke access"
+          cancelLabel="Keep access"
+          destructive
+          busy={revokeBusy}
+          error={revokeError}
+          onOpenChange={(open) => {
+            if (!open) {
+              setOfficerToRevoke(null);
+              setRevokeError(null);
+            }
+          }}
+          onConfirm={handleRevokeOfficer}
+        />
       </SubtabPanel>
     </div>
   );

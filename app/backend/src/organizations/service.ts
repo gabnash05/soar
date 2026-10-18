@@ -140,6 +140,90 @@ export async function listAdminOrganizations(rawQuery: unknown): Promise<{
   };
 }
 
+const adminOfficerListSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(50),
+  pageToken: z.string().min(1).max(128).refine((value) => !value.includes('/')).optional()
+});
+
+export async function listAdminOfficerGrants(orgId: string, rawQuery: unknown): Promise<{
+  items: Array<{ uid: string; displayName: string; status: 'active' | 'revoked'; isOrganizationOwner: boolean }>;
+  nextPageToken?: string;
+}> {
+  if (!/^[A-Za-z0-9_-]{2,128}$/.test(orgId)) {
+    throw new AppError('invalid_organization_id', 'The organization id is invalid.', 400);
+  }
+  const query = adminOfficerListSchema.parse(rawQuery);
+  const organization = await db.doc(organizationPath(orgId)).get();
+  if (!organization.exists) throw new AppError('organization_missing', 'The organization was not found.', 404);
+  const boundary = decodeCursor(query.pageToken, 'admin-officers', orgId, 1);
+  let ref = db.collection(`${organizationPath(orgId)}/${COLLECTIONS.officerGrants}`).orderBy(FieldPath.documentId());
+  if (boundary) ref = ref.startAfter(boundary[0]);
+  const snap = await ref.limit(query.limit + 1).get();
+  const docs = snap.docs.slice(0, query.limit);
+  const orgOwnerUid = organization.data()?.ownerUid;
+  const items = await Promise.all(docs.map(async (doc) => {
+    const grant = doc.data();
+    if (grant.uid !== doc.id || (grant.status !== 'active' && grant.status !== 'revoked')) {
+      throw new AppError('invalid_officer_grant', 'An officer grant has an invalid organization-scoped identity.', 409);
+    }
+    const account = await db.doc(accountPath(doc.id)).get();
+    const displayName = typeof account.data()?.displayName === 'string' ? account.data()?.displayName as string : 'Unknown student';
+    return { uid: doc.id, displayName, status: grant.status, isOrganizationOwner: doc.id === orgOwnerUid };
+  }));
+  const last = docs.at(-1);
+  return {
+    items,
+    ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('admin-officers', orgId, [last.id]) } : {})
+  };
+}
+
+export async function revokeAdminOfficerGrant(orgId: string, uid: string, actorUid: string): Promise<{
+  orgId: string;
+  uid: string;
+  status: 'revoked';
+  alreadyRevoked: boolean;
+}> {
+  if (!/^[A-Za-z0-9_-]{2,128}$/.test(orgId) || !/^[A-Za-z0-9_-]{1,128}$/.test(uid)) {
+    throw new AppError('invalid_officer_identity', 'The organization or officer identity is invalid.', 400);
+  }
+  const orgRef = db.doc(organizationPath(orgId));
+  const grantRef = db.doc(officerGrantPath(orgId, uid));
+  let alreadyRevoked = false;
+  await db.runTransaction(async (tx) => {
+    alreadyRevoked = false;
+    const [organization, grant] = await Promise.all([tx.get(orgRef), tx.get(grantRef)]);
+    if (!organization.exists) throw new AppError('organization_missing', 'The organization was not found.', 404);
+    if (organization.data()?.deletionStatus === 'deleting') {
+      throw new AppError('organization_deleting', 'This organization is being deleted and its grants cannot be changed.', 409);
+    }
+    if (organization.data()?.ownerUid === uid) {
+      throw new AppError('organization_owner_cannot_be_revoked', 'The organization owner cannot be revoked as an officer grant.', 409);
+    }
+    if (!grant.exists) {
+      alreadyRevoked = true;
+      return;
+    }
+    const grantData = grant.data();
+    if (grantData?.uid !== uid) {
+      throw new AppError('invalid_officer_grant', 'The officer grant identity does not match this organization and account.', 409);
+    }
+    if (grantData.status === 'revoked') {
+      alreadyRevoked = true;
+      return;
+    }
+    if (grantData.status !== 'active') {
+      throw new AppError('invalid_officer_grant', 'The officer grant has an unsupported status.', 409);
+    }
+    tx.update(grantRef, {
+      status: 'revoked',
+      revokedByUid: actorUid,
+      revokedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    });
+  });
+  return { orgId, uid, status: 'revoked', alreadyRevoked };
+}
+
 export async function searchAdminStudents(rawQuery: unknown): Promise<{
   items: Array<{ uid: string; displayName: string; studentId?: string }>;
   nextPageToken?: string;

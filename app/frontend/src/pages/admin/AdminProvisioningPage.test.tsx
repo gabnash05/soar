@@ -6,14 +6,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   assignAdminOfficer: vi.fn(),
   createAdminOrganization: vi.fn(),
+  listAdminOfficerGrants: vi.fn(),
   listAdminOrganizations: vi.fn(),
+  revokeAdminOfficer: vi.fn(),
   searchAdminStudents: vi.fn()
 }));
 
 vi.mock('../../lib/adminApi', () => ({
   assignAdminOfficer: mocks.assignAdminOfficer,
   createAdminOrganization: mocks.createAdminOrganization,
+  listAdminOfficerGrants: mocks.listAdminOfficerGrants,
   listAdminOrganizations: mocks.listAdminOrganizations,
+  revokeAdminOfficer: mocks.revokeAdminOfficer,
   searchAdminStudents: mocks.searchAdminStudents
 }));
 
@@ -34,6 +38,8 @@ describe('Admin provisioning page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listAdminOrganizations.mockResolvedValue({ items: organizations });
+    mocks.listAdminOfficerGrants.mockResolvedValue({ items: [{ uid: 'student-1', displayName: 'Mara Santos', status: 'active', isOrganizationOwner: false }] });
+    mocks.revokeAdminOfficer.mockResolvedValue({ orgId: 'robotics', uid: 'student-1', status: 'revoked', alreadyRevoked: false });
     mocks.searchAdminStudents.mockResolvedValue({ items: [student] });
     mocks.createAdminOrganization.mockResolvedValue({ orgId: 'robotics-club' });
     mocks.assignAdminOfficer.mockResolvedValue({ orgId: 'robotics', uid: student.uid, status: 'approved', alreadyAssigned: true });
@@ -89,6 +95,44 @@ describe('Admin provisioning page', () => {
 
     await user.click(screen.getByRole('button', { name: 'Assign officer' }));
     await waitFor(() => expect(mocks.assignAdminOfficer).toHaveBeenCalledTimes(2));
+  });
+
+  it('revokes the selected organization grant only after a clear confirmation and refreshes the list', async () => {
+    const user = userEvent.setup();
+    renderPage('/admin?tab=manage');
+
+    const panel = screen.getByRole('tabpanel');
+    const organization = await within(panel).findByLabelText('Organization');
+    await user.selectOptions(organization, 'robotics');
+    expect(await within(panel).findByText('Active officer grant')).toBeInTheDocument();
+    expect(mocks.listAdminOfficerGrants).toHaveBeenCalledWith('robotics', undefined);
+
+    await user.click(within(panel).getByRole('button', { name: 'Revoke access' }));
+    const confirmation = screen.getByRole('alertdialog');
+    expect(within(confirmation).getByText(/Mara Santos will immediately lose officer access to Robotics Club/)).toBeInTheDocument();
+    expect(within(confirmation).getByText(/account and access to other organizations will remain unchanged/i)).toBeInTheDocument();
+    expect(mocks.revokeAdminOfficer).not.toHaveBeenCalled();
+
+    await user.click(within(confirmation).getByRole('button', { name: 'Revoke access' }));
+    await waitFor(() => expect(mocks.revokeAdminOfficer).toHaveBeenCalledWith('robotics', 'student-1'));
+    expect(await screen.findByText('Officer access for Mara Santos was revoked.')).toHaveAttribute('role', 'status');
+    await waitFor(() => expect(mocks.listAdminOfficerGrants).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not allow revoking the organization owner or already-revoked grants', async () => {
+    const user = userEvent.setup();
+    mocks.listAdminOfficerGrants.mockResolvedValue({ items: [
+      { uid: 'owner-1', displayName: 'Owner One', status: 'active', isOrganizationOwner: true },
+      { uid: 'student-2', displayName: 'Ari Reyes', status: 'revoked', isOrganizationOwner: false },
+    ] });
+    renderPage('/admin?tab=manage');
+
+    const panel = screen.getByRole('tabpanel');
+    await user.selectOptions(await within(panel).findByLabelText('Organization'), 'robotics');
+    expect(await within(panel).findByText('Organization owner; this grant cannot be revoked here.')).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: 'Organization owner' })).toBeDisabled();
+    expect(within(panel).getByRole('button', { name: 'Access revoked' })).toBeDisabled();
+    expect(mocks.revokeAdminOfficer).not.toHaveBeenCalled();
   });
 
   it('ignores superseded student-search responses after the query changes', async () => {
