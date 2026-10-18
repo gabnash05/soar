@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../../context/AuthContext';
 import { createMockGateway } from '../../test/createMockGateway';
 import { navigateToHostedCheckout } from '../../lib/redirects';
@@ -24,6 +24,18 @@ const renderPage = () => {
 };
 
 describe('RegistrationIntentPage', () => {
+  beforeEach(() => vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'true'));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('states that registration and payment are excluded in the preview without starting checkout', () => {
+    vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'false');
+    const gateway = renderPage();
+
+    expect(screen.getByRole('heading', { name: 'Registration and payment unavailable' })).toBeInTheDocument();
+    expect(screen.getByText(/No payment will be requested/i)).toBeInTheDocument();
+    expect(gateway.startRegistrationPayment).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
+  });
   it('requires student ID before starting payment for student accounts', async () => {
     const gateway = renderPage();
     const user = userEvent.setup();

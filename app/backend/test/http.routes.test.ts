@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   deleteAnnouncement: vi.fn(),
   deleteAnnouncementComment: vi.fn(),
   getAnnouncement: vi.fn(),
+  getMediaDownloadUrl: vi.fn(),
   getStudentDepartmentCounts: vi.fn(),
   setAnnouncementLike: vi.fn(),
   listAnnouncementComments: vi.fn(),
@@ -90,6 +91,7 @@ vi.mock('../src/content/service', () => ({
   deleteAnnouncementComment: mocks.deleteAnnouncementComment,
   deleteDateEntry: mocks.deleteDateEntry,
   getAnnouncement: mocks.getAnnouncement,
+  getMediaDownloadUrl: mocks.getMediaDownloadUrl,
   getOrganizationProfile: mocks.getOrganizationProfile,
   getStudentDepartmentCounts: mocks.getStudentDepartmentCounts,
   listAnnouncementComments: mocks.listAnnouncementComments,
@@ -182,6 +184,47 @@ describe('SOAR HTTP route contracts', () => {
     } finally {
       if (previousAppUrl === undefined) delete process.env.SOAR_APP_BASE_URL;
       else process.env.SOAR_APP_BASE_URL = previousAppUrl;
+    }
+  });
+
+  it('returns an authenticated signed-media URL without exposing storage credentials', async () => {
+    const user = { uid: 'user1', email_verified: true };
+    const path = 'announcement-images/org-1/post-1/photo.png';
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.getMediaDownloadUrl.mockResolvedValue({ url: 'https://project.supabase.co/storage/v1/object/sign/private/photo.png?token=short-lived' });
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/storage/download-url?path=${encodeURIComponent(path)}`, {
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ url: 'https://project.supabase.co/storage/v1/object/sign/private/photo.png?token=short-lived' });
+    });
+
+    expect(mocks.getMediaDownloadUrl).toHaveBeenCalledWith(user, path);
+  });
+
+  it('disables payment and registration routes in an unpaid preview without invoking provider handlers', async () => {
+    const previous = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'true';
+    try {
+      await withApiServer(async (baseUrl) => {
+        const registration = await fetch(`${baseUrl}/payments/registration/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(registration.status).toBe(503);
+        await expect(registration.json()).resolves.toMatchObject({ code: 'payments_unavailable' });
+
+        const webhook = await fetch(`${baseUrl}/webhooks/paymongo`, { method: 'POST', body: '{}' });
+        expect(webhook.status).toBe(503);
+        await expect(webhook.json()).resolves.toMatchObject({ code: 'payments_unavailable' });
+      });
+      expect(mocks.paymentHandlers).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previous;
     }
   });
 
@@ -436,6 +479,47 @@ describe('SOAR HTTP route contracts', () => {
       },
     );
     expect(mocks.requestService.createMeetingDocumentTarget).toHaveBeenCalled();
+  });
+
+  it('disables payment actions while preserving authenticated access-status reads in preview mode', async () => {
+    const previous = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'true';
+    try {
+      const handlers = mocks.paymentHandlers();
+      await withApiServer(async (baseUrl) => {
+        const start = await fetch(`${baseUrl}/api/payments/registration/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(start.status).toBe(503);
+
+        const recovery = await fetch(`${baseUrl}/api/payments/registration/recover/accept`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ intentId: 'intent1', recoveryCode: 'code' }),
+        });
+        expect(recovery.status).toBe(503);
+
+        const renewal = await fetch(`${baseUrl}/api/payments/renewals/status?renewalId=renewal1`, {
+          headers: { authorization: 'Bearer test-token' },
+        });
+        expect(renewal.status).toBe(503);
+
+        const access = await fetch(`${baseUrl}/api/payments/access/status`, {
+          headers: { authorization: 'Bearer test-token' },
+        });
+        expect(access.status).toBe(200);
+        await expect(access.json()).resolves.toMatchObject({ status: 'active' });
+      });
+      expect(handlers.startRegistrationPayment).not.toHaveBeenCalled();
+      expect(handlers.acceptPaidRegistrationRecovery).not.toHaveBeenCalled();
+      expect(handlers.getRenewalStatus).not.toHaveBeenCalled();
+      expect(handlers.getAccessStatus).toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previous;
+    }
   });
 
   it('mounts paid-registration recovery and same-user renewal status routes under /api', async () => {

@@ -133,8 +133,15 @@ class FakeDb {
 }
 
 const fakeDb = new FakeDb();
+const storageMocks = vi.hoisted(() => ({
+  createSignedObjectDownloadUrl: vi.fn(),
+  createSignedObjectUploadTarget: vi.fn(async () => undefined),
+  getStoredObjectMetadata: vi.fn(),
+  isSupabaseStorageEnabled: vi.fn(() => false),
+}));
 
 vi.doMock('../../firebase', () => ({ db: fakeDb }));
+vi.doMock('../../storage/objectStorage', () => storageMocks);
 vi.doMock('../../identity/access', () => ({
   requireActiveAccess: vi.fn(async () => undefined),
   loadAccount: vi.fn(async (uid: string) => ({ uid, role: 'student', displayName: uid === 'author' ? 'Author User' : 'Other User' }))
@@ -224,6 +231,8 @@ function seedComments() {
 describe('announcement comment ownership service behavior', () => {
   beforeEach(() => {
     seedComments();
+    storageMocks.createSignedObjectDownloadUrl.mockReset();
+    storageMocks.isSupabaseStorageEnabled.mockReturnValue(false);
   });
 
   it('lets an approved organization officer update only the post body', async () => {
@@ -406,6 +415,30 @@ describe('announcement comment ownership service behavior', () => {
     expect(second.items[0].id).toBe('org-aa');
     await expect(listOrganizations(user('viewer'), { limit: 1, q: 'different', pageToken: first.nextPageToken })).rejects.toMatchObject({ code: 'invalid_page_token' });
     await expect(listOrganizations(user('viewer'), { limit: 1, q: 'alpha', pageToken: '1' })).rejects.toMatchObject({ code: 'invalid_page_token' });
+  });
+
+  it('signs only referenced active organization media for authenticated users', async () => {
+    const { getMediaDownloadUrl } = await import('../service');
+    const mediaPath = 'announcement-images/org1/post-media/photo.png';
+    fakeDb.docs.set('announcements/post-media', {
+      announcementId: 'post-media',
+      orgId: 'org1',
+      body: 'Media announcement',
+      media: [{ storagePath: mediaPath, contentType: 'image/png', sizeBytes: 12 }],
+      deletedAt: null,
+    });
+    storageMocks.isSupabaseStorageEnabled.mockReturnValue(true);
+    storageMocks.getStoredObjectMetadata.mockResolvedValue({ contentType: 'image/png', sizeBytes: 12, customMetadata: {} });
+    storageMocks.createSignedObjectDownloadUrl.mockResolvedValue('https://private.example.test/signed-image');
+
+    await expect(getMediaDownloadUrl(user('viewer'), mediaPath)).resolves.toEqual({ url: 'https://private.example.test/signed-image' });
+    await expect(getMediaDownloadUrl(user('viewer'), 'announcement-images/org1/post-media/not-referenced.png')).rejects.toMatchObject({ code: 'media_missing' });
+    fakeDb.docs.set('announcements/post-deleted', {
+      announcementId: 'post-deleted', orgId: 'org1', deletedAt: Timestamp.now(),
+      media: [{ storagePath: 'announcement-images/org1/post-deleted/photo.png' }],
+    });
+    await expect(getMediaDownloadUrl(user('viewer'), 'announcement-images/org1/post-deleted/photo.png')).rejects.toMatchObject({ code: 'media_missing' });
+    expect(storageMocks.createSignedObjectDownloadUrl).toHaveBeenCalledTimes(1);
   });
 
   it('keeps raw pagination values when scoping date-entry queries for the service parser', async () => {

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../../context/AuthContext';
 import { createMockGateway } from '../../test/createMockGateway';
 import type { CheckoutStatus } from '../../lib/contracts';
@@ -39,6 +39,9 @@ const status = (overrides: Partial<CheckoutStatus> = {}): CheckoutStatus => ({
 });
 
 describe('CheckoutStatusPage', () => {
+  beforeEach(() => vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'true'));
+  afterEach(() => vi.unstubAllEnvs());
+
   it('keeps account creation locked while server status is pending and lets the browser check again', async () => {
     const gateway = createMockGateway();
     vi.mocked(gateway.getCheckoutStatus)
@@ -89,7 +92,7 @@ describe('CheckoutStatusPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Checkout not confirmed' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /create account and send verification/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /email recovery instructions/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /email recovery instructions/i })).toBeDisabled();
   });
 
   it('can retry a temporary status read failure without replacing the preserved registration details', async () => {
@@ -118,7 +121,7 @@ describe('CheckoutStatusPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/binding cookie is missing/i);
     await user.type(screen.getByLabelText('Registration email'), paidProfile.email);
     await user.click(screen.getByRole('button', { name: /email recovery instructions/i }));
-    expect(await screen.findByRole('status')).toHaveTextContent(/recovery instructions have been sent/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/instructions sent to you/i);
 
     await user.type(screen.getByLabelText('Recovery code'), 'one-time-code');
     await user.click(screen.getByRole('button', { name: /restore secure session/i }));

@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { afterEach, vi } from 'vitest';
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ValidationProblemError } from '../../lib/contracts';
 import { UserFacingError } from '../../lib/safeErrors';
@@ -39,6 +40,7 @@ const renderAccountSettings = (gateway = createMockGateway(makeSession({
 };
 
 describe('AccountSettingsPage', () => {
+  afterEach(() => vi.unstubAllEnvs());
   it('separates profile, sign-in email, and organization grants into addressable tabs', async () => {
     const user = userEvent.setup();
     const { container } = renderAccountSettings();
@@ -176,6 +178,7 @@ describe('AccountSettingsPage', () => {
   });
 
   it('shows real access-operation failures only on Payment & access', async () => {
+    vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'true');
     const user = userEvent.setup();
     const session = makeSession();
     const gateway = createMockGateway(makeSession({

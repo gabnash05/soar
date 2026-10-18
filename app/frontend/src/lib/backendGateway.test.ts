@@ -3,34 +3,87 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
   authHeaders: vi.fn(),
+  credential: vi.fn(),
   getFirebaseConfigStatus: vi.fn(),
   getFirebaseRuntime: vi.fn(),
+  reauthenticateWithCredential: vi.fn(),
   reload: vi.fn(),
   updateProfile: vi.fn(),
   signIn: vi.fn(),
-  sendEmailVerification: vi.fn()
+  sendEmailVerification: vi.fn(),
 }));
 
 vi.mock('@firebase/auth', () => ({
+  EmailAuthProvider: { credential: mocks.credential },
+  reauthenticateWithCredential: mocks.reauthenticateWithCredential,
   reload: mocks.reload,
   sendEmailVerification: mocks.sendEmailVerification,
   sendPasswordResetEmail: vi.fn(),
   signInWithEmailAndPassword: mocks.signIn,
   signOut: vi.fn(),
-  updateProfile: mocks.updateProfile
+  updateProfile: mocks.updateProfile,
 }));
 vi.mock('./apiClient', () => ({
   apiBaseUrl: () => 'https://api.example.test',
   apiFetch: mocks.apiFetch,
-  authHeaders: mocks.authHeaders
+  authHeaders: mocks.authHeaders,
 }));
 vi.mock('./firebase', () => ({
   getFirebaseConfigStatus: mocks.getFirebaseConfigStatus,
-  getFirebaseRuntime: mocks.getFirebaseRuntime
+  getFirebaseRuntime: mocks.getFirebaseRuntime,
 }));
 vi.mock('./fixtures', () => ({ createFixtureGateway: vi.fn() }));
 
-import { createBackendGateway } from './backendGateway';
+import { createBackendGateway, reauthenticateCurrentUser } from './backendGateway';
+
+describe('reauthenticateCurrentUser', () => {
+  const user = {
+    uid: 'officer-uid',
+    email: 'officer@example.edu',
+    emailVerified: true,
+    providerData: [{ providerId: 'password' }],
+    getIdToken: vi.fn(async () => 'recent-token'),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.credential.mockReturnValue({ providerId: 'password', secret: 'credential-object' });
+    mocks.reauthenticateWithCredential.mockResolvedValue({ user });
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: user } });
+  });
+
+  it('reauthenticates with the current verified email and refreshes the recent-auth token', async () => {
+    await reauthenticateCurrentUser('entered-password', 'officer-uid');
+
+    expect(mocks.credential).toHaveBeenCalledWith('officer@example.edu', 'entered-password');
+    expect(mocks.reauthenticateWithCredential).toHaveBeenCalledWith(user, { providerId: 'password', secret: 'credential-object' });
+    expect(user.getIdToken).toHaveBeenCalledWith(true);
+    expect(mocks.reauthenticateWithCredential.mock.invocationCallOrder[0]).toBeLessThan(user.getIdToken.mock.invocationCallOrder[0]);
+  });
+
+  it('does not invent a password flow for a non-password sign-in provider', async () => {
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: { ...user, providerData: [{ providerId: 'google.com' }] } } });
+
+    await expect(reauthenticateCurrentUser('unused', 'officer-uid')).rejects.toThrow(/does not use email\/password sign-in/i);
+    expect(mocks.credential).not.toHaveBeenCalled();
+    expect(mocks.reauthenticateWithCredential).not.toHaveBeenCalled();
+  });
+
+  it('refuses reauthentication without a current user email', async () => {
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: null } });
+
+    await expect(reauthenticateCurrentUser('unused', 'officer-uid')).rejects.toThrow(/sign-in session is unavailable/i);
+    expect(mocks.credential).not.toHaveBeenCalled();
+  });
+
+  it('does not approve changes for an identity that differs from the active session', async () => {
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: { ...user, uid: 'different-uid' } } });
+
+    await expect(reauthenticateCurrentUser('unused', 'officer-uid')).rejects.toThrow(/sign-in session is unavailable/i);
+    expect(mocks.credential).not.toHaveBeenCalled();
+    expect(mocks.reauthenticateWithCredential).not.toHaveBeenCalled();
+  });
+});
 
 describe('backend session normalization', () => {
   beforeEach(() => {
@@ -46,7 +99,7 @@ describe('backend session normalization', () => {
       accountKind: 'admin',
       emailVerified: true,
       access: { status: 'missing', renewalAvailable: true },
-      officerGrants: []
+      officerGrants: [],
     });
   });
 
@@ -58,7 +111,7 @@ describe('backend session normalization', () => {
       displayName: 'Local Admin',
       accountKind: 'admin',
       access: { status: 'missing' },
-      officerGrants: []
+      officerGrants: [],
     });
     expect(mocks.apiFetch).toHaveBeenCalledWith('/session', { headers: { Authorization: 'Bearer trusted-token' } });
   });

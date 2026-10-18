@@ -5,10 +5,12 @@ import { Button, ButtonLink, Card, Field, LoadingBlock, StateBlock, TextInput, S
 import { useAuth } from '../../context/AuthContext';
 import type { CheckoutStatus } from '../../lib/contracts';
 import { isCanonicalDepartment } from '../../lib/departments';
+import { isPaidFlowEnabled } from '../../lib/features';
 import { markFixturePaymentConfirmedFromUrl } from '../../lib/fixtures';
 import { readRegistrationDraft } from './RegistrationIntentPage';
 
 export const CheckoutStatusPage = () => {
+  const paidFlowEnabled = isPaidFlowEnabled();
   const {
     gateway,
     registerAccount,
@@ -44,7 +46,7 @@ export const CheckoutStatusPage = () => {
   }, [clearError]);
 
   useEffect(() => {
-    if (!intentId) return;
+    if (!paidFlowEnabled || !intentId) return;
     if (gateway.mode === 'fixture') markFixturePaymentConfirmedFromUrl(intentId, fixtureStatus);
     let active = true;
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -78,10 +80,11 @@ export const CheckoutStatusPage = () => {
       active = false;
       if (timeout) clearTimeout(timeout);
     };
-  }, [fixtureStatus, gateway, intentId, pollCycle]);
+  }, [fixtureStatus, gateway, intentId, paidFlowEnabled, pollCycle]);
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
+    if (!paidFlowEnabled) return;
     clearError();
     setLocalError(null);
     if (!registrationProfile?.email || !registrationProfile.displayName || !registrationProfile.role) {
@@ -124,6 +127,7 @@ export const CheckoutStatusPage = () => {
 
   const handleRecoveryRequest = async (event: FormEvent) => {
     event.preventDefault();
+    if (!paidFlowEnabled) return;
     clearError();
     setRecoveryMessage(null);
     setRecoverySubmitting(true);
@@ -141,6 +145,7 @@ export const CheckoutStatusPage = () => {
 
   const handleRecoveryAccept = async (event: FormEvent) => {
     event.preventDefault();
+    if (!paidFlowEnabled) return;
     clearError();
     setRecoveryMessage(null);
     setRecoverySubmitting(true);
@@ -155,6 +160,16 @@ export const CheckoutStatusPage = () => {
       setRecoverySubmitting(false);
     }
   };
+
+  if (!paidFlowEnabled) {
+    return (
+      <main className="grid min-h-screen place-items-center p-[clamp(18px,4vw,48px)] max-sm:px-3.5">
+        <StateBlock symbol="!" title="Checkout unavailable" actions={<ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>}>
+          Payment confirmation and account creation are disabled in this non-production preview. No payment or registration can be completed here.
+        </StateBlock>
+      </main>
+    );
+  }
 
   if (!intentId) {
     return (

@@ -25,6 +25,7 @@ import {
   deleteAnnouncementComment,
   deleteDateEntry,
   getAnnouncement,
+  getMediaDownloadUrl,
   getOrganizationProfile,
   getStudentDepartmentCounts,
   listAnnouncementComments,
@@ -75,6 +76,12 @@ function asyncRoute(handler: (req: Request, res: Response) => Promise<void>) {
   };
 }
 
+function assertPaymentsEnabled(): void {
+  if (process.env.SOAR_DISABLE_PAYMENTS?.trim().toLowerCase() === 'true') {
+    throw new AppError('payments_unavailable', 'Registration and payment features are unavailable in this non-production preview.', 503);
+  }
+}
+
 async function requireAdmin(req: Request) {
   const user = await requireBearerToken(req);
   if (user.soarAdmin !== true) {
@@ -93,6 +100,7 @@ export function createApiApp() {
   }));
 
   app.post(['/webhooks/paymongo', '/api/webhooks/paymongo'], express.raw({ type: '*/*', limit: '256kb' }), asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     (req as Request & { rawBody?: Buffer }).rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body ?? ''), 'utf8');
     await sendPaymentResult(res, paymentHandlers().paymongoWebhook(req));
   }));
@@ -102,6 +110,11 @@ export function createApiApp() {
   app.get(['/health', '/api/health'], (_req, res) => {
     res.json({ ok: true, service: 'soar-backend', scope: 'identity-payments-content-requests-foundation' });
   });
+
+  app.get(['/storage/download-url', '/api/storage/download-url'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await getMediaDownloadUrl(user, req.query.path));
+  }));
 
   app.get(['/session', '/api/session'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
@@ -119,31 +132,38 @@ export function createApiApp() {
   }));
 
   app.post(['/payments/registration/start', '/api/payments/registration/start'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     await sendPaymentResult(res, paymentHandlers().startRegistrationPayment(req));
   }));
 
   app.get(['/payments/registration/status', '/api/payments/registration/status'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     await sendPaymentResult(res, paymentHandlers().getCheckoutStatus(req));
   }));
 
   app.post(['/payments/registration/complete', '/api/payments/registration/complete'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     await sendPaymentResult(res, paymentHandlers().registerAccount(req));
   }));
 
   app.post(['/payments/registration/recover', '/api/payments/registration/recover'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     await sendPaymentResult(res, paymentHandlers().recoverPaidRegistration(req));
   }));
 
   app.post(['/payments/registration/recover/accept', '/api/payments/registration/recover/accept'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     await sendPaymentResult(res, paymentHandlers().acceptPaidRegistrationRecovery(req));
   }));
 
   app.post(['/payments/renewals/start', '/api/payments/renewals/start'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     const user = await requireBearerToken(req);
     await sendPaymentResult(res, paymentHandlers().requestManualRenewal(attachAuthToPaymentRequest(req, user)));
   }));
 
   app.get(['/payments/renewals/status', '/api/payments/renewals/status'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     const user = await requireBearerToken(req);
     await sendPaymentResult(res, paymentHandlers().getRenewalStatus(attachAuthToPaymentRequest(req, user)));
   }));

@@ -6,15 +6,18 @@
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "node lib/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "emulators:start": "bash scripts/start-local-emulators.sh",
     "emulators:seed": "node scripts/seed-local-emulator.cjs",
-    "test": "npm run test:payments && npm run test:seed && npm run test:content && npm run test:requests && npm run test:identity && npm run test:organizations && npm run test:http",
+    "test": "npm run test:payments && npm run test:seed && npm run test:storage && npm run test:firebase-config && npm run test:content && npm run test:requests && npm run test:identity && npm run test:organizations && npm run test:http",
     "test:identity": "vitest run src/identity/session.test.ts",
+    "test:storage": "vitest run src/storage/objectStorage.test.ts",
+    "test:firebase-config": "vitest run src/firebase.test.ts",
     "test:organizations": "vitest run src/organizations/adminProvisioning.test.ts",
     "test:payments": "node --test src/payments/__tests__/payments.test.js && node --test src/payments/__tests__/firestoreRepository.test.js",
     "test:seed": "node --test scripts/seed-local-emulator.test.cjs",
