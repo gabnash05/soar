@@ -89,10 +89,6 @@ export const announcementUpdateSchema = z.object({
   body: trimmedString.min(1).max(4000)
 }).strict();
 
-export const announcementUpdateSchema = z.object({
-  body: trimmedString.min(1).max(4000)
-}).strict();
-
 export const announcementCreateSchema = z.object({
   announcementId: z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/).optional(),
   body: trimmedString.min(1).max(4000),
