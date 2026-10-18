@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
-import type { AnnouncementPage, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
+import type { Announcement, AnnouncementPage, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
 import { DirectoryView } from '../DirectoryPage';
@@ -698,6 +698,114 @@ describe('SOAR workflow pages', () => {
     expect(listAnnouncements).toHaveBeenNthCalledWith(3, studentSession, { limit: 15, pageToken: 'cursor-next' });
   });
 
+  it('reconciles a later feed page like and comment thread without losing the loaded cursor', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const makePost = (id: string, body: string): Announcement => ({
+      id,
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      createdAt: '2026-10-10T00:00:00.000Z',
+      body,
+      likeCount: 2,
+      viewerHasLiked: false,
+      commentCount: 1,
+      comments: [],
+    });
+    const firstPage = Array.from({ length: 15 }, (_, index) => makePost(`feed-${index}`, `Feed post ${index}`));
+    const laterPost = makePost('feed-later', 'Later-page announcement');
+    const followingPost = makePost('feed-following', 'Third-page announcement');
+    const firstComment = { id: 'comment-first', authorUid: studentSession.uid, authorName: studentSession.displayName, body: 'Original later-page comment.', createdAt: '2026-10-10T00:01:00.000Z', viewerCanEdit: true, viewerCanDelete: true };
+    const addedComment = { id: 'comment-added', authorUid: studentSession.uid, authorName: studentSession.displayName, body: 'Added on the later page.', createdAt: '2026-10-10T00:02:00.000Z', viewerCanEdit: true, viewerCanDelete: true };
+    const editedComment = { ...firstComment, body: 'Edited on the later page.', updatedAt: '2026-10-10T00:03:00.000Z' };
+    const listAnnouncements = vi.fn<WorkflowDataClient['listAnnouncements']>()
+      .mockResolvedValueOnce({ data: { items: firstPage, nextPageToken: 'cursor-page-two' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [laterPost], nextPageToken: 'cursor-page-three' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [followingPost] }, source: 'fixture' });
+    const listAnnouncementComments = vi.fn<WorkflowDataClient['listAnnouncementComments']>()
+      .mockResolvedValueOnce({ data: [firstComment], source: 'fixture' })
+      .mockResolvedValueOnce({ data: [firstComment, addedComment], source: 'fixture' })
+      .mockResolvedValueOnce({ data: [editedComment, addedComment], source: 'fixture' })
+      .mockResolvedValueOnce({ data: [editedComment], source: 'fixture' });
+    const updatedPost = (commentCount: number): Announcement => ({ ...laterPost, likeCount: 7, viewerHasLiked: true, commentCount });
+    const client: WorkflowDataClient = {
+      ...base,
+      listAnnouncements,
+      listAnnouncementComments,
+      getAnnouncement: vi.fn<WorkflowDataClient['getAnnouncement']>()
+        .mockResolvedValueOnce({ data: updatedPost(2), source: 'fixture' })
+        .mockResolvedValueOnce({ data: updatedPost(2), source: 'fixture' })
+        .mockResolvedValueOnce({ data: updatedPost(1), source: 'fixture' }),
+      toggleAnnouncementLike: vi.fn<WorkflowDataClient['toggleAnnouncementLike']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Liked.', data: updatedPost(1) }),
+      addAnnouncementComment: vi.fn<WorkflowDataClient['addAnnouncementComment']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Comment added.', data: addedComment }),
+      updateAnnouncementComment: vi.fn<WorkflowDataClient['updateAnnouncementComment']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Comment updated.', data: editedComment }),
+      deleteAnnouncementComment: vi.fn<WorkflowDataClient['deleteAnnouncementComment']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Comment deleted.' }),
+    };
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+
+    expect(await screen.findByText('Feed post 14')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Later-page announcement')).toBeInTheDocument();
+    const card = screen.getByText('Later-page announcement').closest('article') as HTMLElement;
+
+    await user.click(within(card).getByRole('button', { name: /Like announcement from Computer Engineering Department/ }));
+    expect(within(card).getByRole('button', { name: /Unlike announcement from Computer Engineering Department; 7 likes/i })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(within(card).getByRole('button', { name: /Open comments/i }));
+    expect(await within(card).findByText('Original later-page comment.')).toBeInTheDocument();
+
+    await user.type(within(card).getByLabelText('Add comment'), 'A later-page reply.');
+    await user.click(within(card).getByRole('button', { name: 'Add comment' }));
+    expect(await within(card).findByText('Added on the later page.')).toBeInTheDocument();
+    expect(await within(card).findByRole('button', { name: /Hide comments \(2\)/i })).toBeInTheDocument();
+
+    const originalCommentRow = within(card).getByText('Original later-page comment.').closest('li') as HTMLElement;
+    await user.click(within(originalCommentRow).getByRole('button', { name: 'Edit' }));
+    await user.clear(within(originalCommentRow).getByLabelText(/Edit comment by Mara Santos/i));
+    await user.type(within(originalCommentRow).getByLabelText(/Edit comment by Mara Santos/i), 'Edited on the later page.');
+    await user.click(within(card).getByRole('button', { name: 'Save comment' }));
+    expect(await within(card).findByText('Edited on the later page.')).toBeInTheDocument();
+
+    const addedCommentRow = within(card).getByText('Added on the later page.').closest('li') as HTMLElement;
+    await user.click(within(addedCommentRow).getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete comment' }));
+    expect(await within(card).findByText('Edited on the later page.')).toBeInTheDocument();
+    expect(within(card).queryByText('Added on the later page.')).not.toBeInTheDocument();
+    expect(await within(card).findByRole('button', { name: /Hide comments \(1\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Third-page announcement')).toBeInTheDocument();
+    expect(screen.getByText('Later-page announcement')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenNthCalledWith(3, studentSession, { limit: 15, pageToken: 'cursor-page-three' });
+  });
+
+  it('ignores a late feed interaction response after the session changes', async () => {
+    const user = userEvent.setup();
+    const oldPost: Announcement = { id: 'same-announcement', organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-10T00:00:00.000Z', body: 'Prior session post.', likeCount: 2, viewerHasLiked: false, commentCount: 0, comments: [] };
+    const newPost: Announcement = { ...oldPost, body: 'Current session post.', likeCount: 9 };
+    const oldClient = createFixtureWorkflowDataClient();
+    oldClient.listAnnouncements = vi.fn<WorkflowDataClient['listAnnouncements']>().mockResolvedValue({ data: { items: [oldPost] }, source: 'fixture' });
+    let resolveLike!: (result: WorkflowMutationResult<Announcement>) => void;
+    oldClient.toggleAnnouncementLike = vi.fn<WorkflowDataClient['toggleAnnouncementLike']>(() => new Promise((resolve) => { resolveLike = resolve; }));
+    const newClient = createFixtureWorkflowDataClient();
+    newClient.listAnnouncements = vi.fn<WorkflowDataClient['listAnnouncements']>().mockResolvedValue({ data: { items: [newPost] }, source: 'fixture' });
+    const nextSession: UserSession = { ...studentSession, uid: 'student-2', displayName: 'New viewer' };
+    const rendered = renderInRouter(<FeedView session={studentSession} client={oldClient} />);
+
+    expect(await screen.findByText('Prior session post.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Like announcement from Computer Engineering Department; 2 likes/i }));
+    rendered.rerender(<MemoryRouter><FeedView session={nextSession} client={newClient} /></MemoryRouter>);
+    expect(await screen.findByText('Current session post.')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveLike({ ok: true, persisted: true, source: 'fixture', message: 'Liked.', data: { ...oldPost, likeCount: 99, viewerHasLiked: true } });
+    });
+    expect(screen.getByText('Current session post.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Like announcement from Computer Engineering Department; 9 likes/i })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('Prior session post.')).not.toBeInTheDocument();
+  });
+
   it('keeps public organization profiles public-facing even for managers', async () => {
     renderInRouter(<OrganizationView organizationId="robotics" session={officerSession} client={createFixtureWorkflowDataClient()} />);
 
@@ -873,6 +981,118 @@ describe('SOAR workflow pages', () => {
 
     await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
     expect(screen.getByRole('dialog', { name: /Add dated entry/i })).toBeInTheDocument();
+  });
+
+  it('keeps managed later-page announcements, comments, and cursor through edit and delete', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const multiOfficerSession: UserSession = {
+      ...officerSession,
+      officerGrants: [
+        ...officerSession.officerGrants,
+        { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' },
+      ],
+    };
+    const makePost = (id: string, body: string): Announcement => ({
+      id,
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      createdAt: '2026-10-10T00:00:00.000Z',
+      body,
+      likeCount: 3,
+      viewerHasLiked: false,
+      commentCount: 1,
+      comments: [],
+    });
+    const firstPage = Array.from({ length: 15 }, (_, index) => makePost(`managed-${index}`, `Managed post ${index}`));
+    const laterPost = makePost('managed-later', 'Later managed announcement');
+    const survivorPost = makePost('managed-survivor', 'Surviving later announcement');
+    const thirdPage = makePost('managed-third-page', 'Managed third-page announcement');
+    const comment = { id: 'managed-comment', authorUid: studentSession.uid, authorName: 'Mara Santos', body: 'Keep this thread open.', createdAt: '2026-10-10T00:01:00.000Z' };
+    const listAnnouncements = vi.fn<WorkflowDataClient['listAnnouncements']>()
+      .mockResolvedValueOnce({ data: { items: firstPage, nextPageToken: 'managed-cursor-two' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [laterPost, survivorPost], nextPageToken: 'managed-cursor-three' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [thirdPage] }, source: 'fixture' });
+    const updatedPost = { ...laterPost, body: 'Updated later-page announcement', likeCount: 4, viewerHasLiked: true };
+    const client: WorkflowDataClient = {
+      ...base,
+      listAnnouncements,
+      listAnnouncementComments: vi.fn<WorkflowDataClient['listAnnouncementComments']>().mockResolvedValue({ data: [comment], source: 'fixture' }),
+      toggleAnnouncementLike: vi.fn<WorkflowDataClient['toggleAnnouncementLike']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Liked.', data: { ...laterPost, likeCount: 4, viewerHasLiked: true } }),
+      updateAnnouncement: vi.fn<WorkflowDataClient['updateAnnouncement']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Announcement updated.', data: updatedPost }),
+      deleteAnnouncement: vi.fn<WorkflowDataClient['deleteAnnouncement']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Announcement deleted.' }),
+    };
+    renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={client} />, ['/settings/organization?organizationId=robotics&tab=announcements']);
+
+    expect(await screen.findByText('Managed post 14')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Later managed announcement')).toBeInTheDocument();
+    const card = screen.getByText('Later managed announcement').closest('article') as HTMLElement;
+    const cardContainer = card.parentElement as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: /Like announcement from Computer Engineering Department/ }));
+    expect(within(card).getByRole('button', { name: /Unlike announcement from Computer Engineering Department; 4 likes/i })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(within(card).getByRole('button', { name: /Open comments/i }));
+    expect(await within(card).findByText('Keep this thread open.')).toBeInTheDocument();
+
+    await user.click(within(cardContainer).getByRole('button', { name: 'Edit announcement' }));
+    const editor = screen.getByRole('textbox', { name: 'Announcement text' });
+    await user.clear(editor);
+    await user.type(editor, 'Updated later-page announcement');
+    await user.click(screen.getByRole('button', { name: 'Save announcement' }));
+    expect(await screen.findByText('Updated later-page announcement')).toBeInTheDocument();
+    expect(within(card).getByText('Keep this thread open.')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: /Hide comments \(1\)/i })).toBeInTheDocument();
+    expect(screen.getByText('Surviving later announcement')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(2);
+
+    await user.click(within(cardContainer).getByRole('button', { name: 'Delete announcement' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete announcement' }));
+    await waitFor(() => expect(screen.queryByText('Updated later-page announcement')).not.toBeInTheDocument());
+    expect(screen.getByText('Surviving later announcement')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Managed third-page announcement')).toBeInTheDocument();
+    expect(screen.getByText('Surviving later announcement')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenNthCalledWith(3, multiOfficerSession, { limit: 15, pageToken: 'managed-cursor-three', organizationId: 'robotics' });
+  });
+
+  it('does not let a late managed announcement response cross organization scope', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const multiOfficerSession: UserSession = {
+      ...officerSession,
+      officerGrants: [
+        ...officerSession.officerGrants,
+        { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' },
+      ],
+    };
+    const roboticsPost: Announcement = { id: 'robotics-post', organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-10T00:00:00.000Z', body: 'Robotics scoped post.', likeCount: 2, viewerHasLiked: false, commentCount: 0, comments: [] };
+    const literaryPost: Announcement = { id: 'literary-post', organizationId: 'literary', organizationName: 'Architecture Department', createdAt: '2026-10-10T00:00:00.000Z', body: 'Literary scoped post.', likeCount: 8, viewerHasLiked: false, commentCount: 0, comments: [] };
+    const listAnnouncements = vi.fn<WorkflowDataClient['listAnnouncements']>()
+      .mockResolvedValueOnce({ data: { items: [roboticsPost] }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [literaryPost] }, source: 'fixture' });
+    let resolveLike!: (result: WorkflowMutationResult<Announcement>) => void;
+    const client: WorkflowDataClient = {
+      ...base,
+      listAnnouncements,
+      toggleAnnouncementLike: vi.fn<WorkflowDataClient['toggleAnnouncementLike']>(() => new Promise((resolve) => { resolveLike = resolve; })),
+    };
+    renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={client} />, ['/settings/organization?organizationId=robotics&tab=announcements']);
+
+    expect(await screen.findByText('Robotics scoped post.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Like announcement from Computer Engineering Department; 2 likes/i }));
+    await user.selectOptions(screen.getByLabelText('Organization'), 'literary');
+    expect(await screen.findByText('Literary scoped post.')).toBeInTheDocument();
+    await act(async () => {
+      resolveLike({ ok: true, persisted: true, source: 'fixture', message: 'Liked.', data: { ...roboticsPost, likeCount: 99, viewerHasLiked: true } });
+    });
+
+    expect(screen.getByText('Literary scoped post.')).toBeInTheDocument();
+    expect(screen.queryByText('Robotics scoped post.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Like announcement from Architecture Department; 8 likes/i })).toHaveAttribute('aria-pressed', 'false');
+    expect(listAnnouncements).toHaveBeenLastCalledWith(multiOfficerSession, { limit: 15, organizationId: 'literary' });
   });
 
   it('keeps the draft pending until persistence confirms, then refreshes once', async () => {
