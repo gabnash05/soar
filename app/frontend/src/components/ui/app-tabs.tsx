@@ -77,13 +77,11 @@ export function SubtabNav({
               tabIndex={selected ? 0 : -1}
               className={cn(
                 'inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-t-[10px] px-3.5 font-extrabold whitespace-nowrap text-[var(--muted-foreground)] no-underline hover:bg-[var(--color-navy-soft)] hover:text-[var(--color-navy)]',
-                '[&_strong]:grid [&_strong]:min-h-[22px] [&_strong]:min-w-[22px] [&_strong]:place-items-center [&_strong]:rounded-full [&_strong]:bg-[var(--color-gold-soft)] [&_strong]:px-1.5 [&_strong]:text-xs [&_strong]:text-[var(--color-navy)]',
                 selected && 'bg-[var(--color-white)] text-[var(--color-navy)] shadow-[inset_0_-3px_0_var(--color-gold)]',
               )}
               to={getTabTo(item.id)}
             >
               <span>{item.label}</span>
-              {item.count !== undefined ? <strong aria-hidden="true">{item.count}</strong> : null}
             </Link>
           );
         })}
