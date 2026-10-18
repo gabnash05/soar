@@ -568,14 +568,18 @@ describe('request service meeting workflow', () => {
       requestedDate: '2026-11-12',
       requestedTime: '09:30'
     });
-    const expiredAccessService = createRequestService({
+    const guardedAccessService = createRequestService({
       store,
-      ensureActiveAccess: async () => { throw Object.assign(new Error('Access is expired.'), { code: 'access_inactive' }); },
+      ensureActiveAccess: async (actor) => {
+        if (actor.email_verified !== true) throw Object.assign(new Error('Verify your email first.'), { code: 'email_not_verified' });
+        throw Object.assign(new Error('Access is expired.'), { code: 'access_inactive' });
+      },
       now: () => fixedNow,
       verifyMeetingDocumentUpload: async () => undefined
     });
 
-    await expectCode(expiredAccessService.updateMeetingStatus(user('officer'), created.id, 'org1', { status: 'Approved' }), 'access_inactive');
+    await expectCode(guardedAccessService.updateMeetingStatus(user('officer'), created.id, 'org1', { status: 'Approved' }), 'access_inactive');
+    await expectCode(guardedAccessService.updateMeetingStatus({ ...user('officer'), email_verified: false } as DecodedIdToken, created.id, 'org1', { status: 'Approved' }), 'email_not_verified');
   });
 
   it('lets the assigned organization owner approve and decline requests without an interview stage', async () => {
