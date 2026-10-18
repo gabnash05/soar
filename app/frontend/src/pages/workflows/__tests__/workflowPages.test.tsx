@@ -1,10 +1,10 @@
 import type { ReactElement } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
-import type { AnnouncementPage, DateEntry, DateEntryInput, OfficerDashboard, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
+import type { Announcement, AnnouncementPage, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, OrganizationSummary, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
 import { ApplicationsView } from '../ApplicationsPage';
 import { DirectoryView } from '../DirectoryPage';
@@ -58,7 +58,10 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => render(<MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>);
+const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => {
+  const router = createMemoryRouter([{ path: '*', element: ui }], { initialEntries });
+  return render(<RouterProvider router={router} />);
+};
 
 function saveDateEntryResult(input: DateEntryInput, source: WorkflowDataClient['mode']): WorkflowMutationResult<DateEntry> {
   return {
@@ -126,6 +129,41 @@ describe('SOAR workflow pages', () => {
     }
   });
 
+  it('loads organization directory pages beyond the first set with the opaque cursor', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const summary = (id: string, name: string) => ({ id, slug: id, name, shortDescription: `${name} description`, contactEmail: `${id}@example.edu`, recruitmentTitle: 'Recruitment' });
+    const firstItems = Array.from({ length: 20 }, (_, index) => summary(`saved-${index}`, `Saved organization ${index}`));
+    const listOrganizations = vi.fn()
+      .mockResolvedValueOnce({ data: { items: firstItems, nextPageToken: 'cursor-after-twenty' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [summary('admin-created', 'Admin-created organization')] }, source: 'fixture' });
+    renderInRouter(<DirectoryView session={studentSession} client={{ ...base, listOrganizations }} />);
+
+    expect(await screen.findByText('Saved organization 19')).toBeInTheDocument();
+    expect(listOrganizations).toHaveBeenCalledWith(studentSession, { limit: 20, query: '' });
+    await userEvent.click(screen.getByRole('button', { name: 'Load more organizations' }));
+    expect(await screen.findByText('Admin-created organization')).toBeInTheDocument();
+    expect(listOrganizations).toHaveBeenNthCalledWith(2, studentSession, { limit: 20, pageToken: 'cursor-after-twenty', query: '' });
+  });
+
+  it('ignores stale organization search responses when the query changes', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const summary = (id: string, name: string) => ({ id, slug: id, name, shortDescription: '', contactEmail: '', recruitmentTitle: '' });
+    const pending = new Map<string, (result: { data: { items: OrganizationSummary[] }; source: 'fixture' }) => void>();
+    const listOrganizations = vi.fn((_session: UserSession, page?: { limit?: number; pageToken?: string; query?: string }) => {
+      if (page?.query === 'la' || page?.query === 'late') return new Promise<{ data: { items: OrganizationSummary[] }; source: 'fixture' }>((resolve) => pending.set(page.query!, resolve));
+      return Promise.resolve({ data: { items: [], nextPageToken: undefined }, source: 'fixture' as const });
+    });
+    renderInRouter(<DirectoryView session={studentSession} client={{ ...base, listOrganizations }} />);
+    const input = await screen.findByLabelText(/Search by organization name/i);
+    await userEvent.type(input, 'late');
+    await waitFor(() => expect(pending.has('la') && pending.has('late')).toBe(true));
+    pending.get('late')?.({ data: { items: [summary('late-org', 'Late match')] }, source: 'fixture' });
+    expect(await screen.findByText('Late match')).toBeInTheDocument();
+    pending.get('la')?.({ data: { items: [summary('stale-org', 'Stale match')] }, source: 'fixture' });
+    await waitFor(() => expect(screen.queryByText('Stale match')).not.toBeInTheDocument());
+    expect(screen.getByText('Late match')).toBeInTheDocument();
+  });
+
   it('filters the organization directory by name and shows no-results copy', async () => {
     const user = userEvent.setup();
     renderInRouter(<DirectoryView session={studentSession} client={createFixtureWorkflowDataClient()} />);
@@ -141,31 +179,164 @@ describe('SOAR workflow pages', () => {
     expect(screen.queryByText('Computer Engineering Department')).not.toBeInTheDocument();
   });
 
-  it('keeps external application confirmation locked until the form link is activated', async () => {
+  it('keeps confirmation locked until the external form opens, then blocks a second application for that organization', async () => {
     const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
     const newStudentSession = { ...studentSession, uid: 'student-new', email: 'new.student@example.edu' };
-    renderInRouter(<OrganizationView organizationId="literary" session={newStudentSession} client={createFixtureWorkflowDataClient()} />, ['/app/organizations/literary?tab=apply']);
+    const view = <OrganizationView organizationId="literary" session={newStudentSession} client={client} />;
+    const { unmount } = renderInRouter(view, ['/app/organizations/literary?tab=apply']);
 
     const confirm = await screen.findByRole('button', { name: /I submitted the external form/i });
     expect(confirm).toBeDisabled();
 
     await user.click(screen.getByRole('link', { name: /open external form/i }));
     expect(confirm).toBeEnabled();
-    expect(screen.getByText(/SOAR cannot prove what happened in that external form/i)).toBeInTheDocument();
+    expect(screen.getByText(/SOAR cannot verify external submissions/i)).toBeInTheDocument();
 
     await user.click(confirm);
     expect(await screen.findByText(/External submission confirmation recorded/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Application already on file' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /I submitted the external form/i })).not.toBeInTheDocument();
+    unmount();
+
+    renderInRouter(view, ['/app/organizations/literary?tab=apply']);
+    expect(await screen.findByRole('heading', { name: 'Application already on file' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /open external form/i })).not.toBeInTheDocument();
+  });
+
+  it('shows existing applications instead of opening another application form', async () => {
+    renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={createFixtureWorkflowDataClient()} />, ['/app/organizations/robotics?tab=apply']);
+
+    expect(await screen.findByRole('heading', { name: 'Application already on file' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View application tracker' })).toHaveAttribute('href', '/app/applications?tab=mine');
+    expect(screen.queryByRole('link', { name: /open external form/i })).not.toBeInTheDocument();
+  });
+
+  it('shows closed intake and rejects a stale external form confirmation', async () => {
+    const user = userEvent.setup();
+    const closedClient = createFixtureWorkflowDataClient();
+    await closedClient.setApplicationsOpen('robotics', false, officerSession);
+    const { unmount } = renderInRouter(<OrganizationView organizationId="robotics" session={{ ...studentSession, uid: 'student-new' }} client={closedClient} />, ['/app/organizations/robotics?tab=apply']);
+
+    expect(await screen.findByRole('heading', { name: 'Applications are closed' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /I submitted the external form/i })).not.toBeInTheDocument();
+    unmount();
+
+    const staleClient = createFixtureWorkflowDataClient();
+    staleClient.confirmExternalApplication = vi.fn(async () => {
+      throw Object.assign(new Error('Applications are closed.'), { code: 'applications_closed' });
+    });
+    renderInRouter(<OrganizationView organizationId="literary" session={{ ...studentSession, uid: 'student-stale' }} client={staleClient} />, ['/app/organizations/literary?tab=apply']);
+    await user.click(await screen.findByRole('link', { name: /open external form/i }));
+    await user.click(screen.getByRole('button', { name: /I submitted the external form/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Applications are closed' })).toBeInTheDocument();
+    expect(await screen.findByText(/Applications closed before SOAR recorded your confirmation/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /I submitted the external form/i })).not.toBeInTheDocument();
   });
 
   it('excludes sponsors from application tools and tracker rows', async () => {
-    renderInRouter(<OrganizationView organizationId="robotics" session={sponsorSession} client={createFixtureWorkflowDataClient()} />);
+    const organizationView = renderInRouter(<OrganizationView organizationId="robotics" session={sponsorSession} client={createFixtureWorkflowDataClient()} />);
 
     expect(await screen.findByRole('heading', { name: /Computer Engineering Department/i, level: 1 })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: /Apply|Meetings/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /I submitted the external form/i })).not.toBeInTheDocument();
+    organizationView.unmount();
 
-    renderInRouter(<ApplicationsView session={sponsorSession} client={createFixtureWorkflowDataClient()} />);
+    const sponsorApplications = renderInRouter(<ApplicationsView session={sponsorSession} client={createFixtureWorkflowDataClient()} />);
     expect(screen.getByText(/No sponsor application tracker/i)).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Application intake' })).not.toBeInTheDocument();
+    sponsorApplications.unmount();
+
+    const sponsorWithGrant: UserSession = { ...sponsorSession, officerGrants: officerSession.officerGrants };
+    renderInRouter(<OrganizationSettingsView session={sponsorWithGrant} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByRole('heading', { name: 'No managed organization yet.' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Application intake' })).not.toBeInTheDocument();
+  });
+
+  it('does not expose Applications intake to students or revoked officers', async () => {
+    const studentView = renderInRouter(<ApplicationsView session={studentSession} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByRole('heading', { name: 'Track each recruitment opportunity once.' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Application intake' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Close applications/i })).not.toBeInTheDocument();
+    studentView.unmount();
+
+    const revokedSession: UserSession = {
+      ...officerSession,
+      officerGrants: officerSession.officerGrants.map((grant) => ({ ...grant, status: 'revoked' })),
+    };
+    const revokedView = renderInRouter(<ApplicationsView session={revokedSession} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByRole('heading', { name: 'Track each recruitment opportunity once.' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Review applicants' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Application intake' })).not.toBeInTheDocument();
+    revokedView.unmount();
+
+    const expiredOfficer: UserSession = { ...officerSession, access: { ...activeAccess, status: 'expired' } };
+    renderInRouter(<ApplicationsView session={expiredOfficer} client={createFixtureWorkflowDataClient()} />);
+    expect(await screen.findByRole('heading', { name: 'Track each recruitment opportunity once.' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Review applicants' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Application intake' })).not.toBeInTheDocument();
+  });
+
+  it('scopes the Applications intake tab to approved grants and preserves confirmed organization state across switches', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveIntake = client.setApplicationsOpen.bind(client);
+    const setApplicationsOpen = vi.fn<WorkflowDataClient['setApplicationsOpen']>();
+    setApplicationsOpen.mockRejectedValueOnce(Object.assign(new Error('private server details'), { code: 'internal' }));
+    setApplicationsOpen.mockImplementation((organizationId, applicationsOpen, session) => saveIntake(organizationId, applicationsOpen, session));
+    client.setApplicationsOpen = setApplicationsOpen;
+    const multiOfficerSession: UserSession = {
+      ...officerSession,
+      officerGrants: [
+        ...officerSession.officerGrants,
+        { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' },
+        { organizationId: 'health', organizationName: 'Civil Engineering Department', status: 'revoked' },
+      ],
+    };
+
+    renderInRouter(<ApplicationsView session={multiOfficerSession} client={client} />, ['/app/applications?tab=intake&organizationId=health']);
+    expect(await screen.findByRole('tab', { name: 'Review applicants' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'My applications' })).toBeInTheDocument();
+
+    const organizationPicker = await screen.findByLabelText(/^Organization$/i, { selector: '#application-intake-organization' });
+    expect(organizationPicker).toHaveValue('robotics');
+    expect(Array.from((organizationPicker as HTMLSelectElement).options).map((option) => option.value)).toEqual(['robotics', 'literary']);
+    let intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Open')).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Application intake for Computer Engineering Department' })).getByRole('heading', { name: 'Computer Engineering Department' })).toBeInTheDocument();
+
+    await user.click(within(intake).getByRole('button', { name: 'Close applications' }));
+    expect(await screen.findByText('SOAR could not update application intake. Check your connection and try again.')).toBeInTheDocument();
+    expect(within(intake).getByText('Open')).toBeInTheDocument();
+    expect(within(intake).getByRole('button', { name: 'Close applications' })).toBeEnabled();
+    expect(screen.queryByText('private server details')).not.toBeInTheDocument();
+
+    await user.selectOptions(organizationPicker, 'literary');
+    intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(await screen.findByRole('group', { name: 'Application intake for Architecture Department' })).toBeInTheDocument();
+    expect(within(intake).getByText('Open')).toBeInTheDocument();
+    await user.click(within(intake).getByRole('button', { name: 'Close applications' }));
+    expect(await screen.findByRole('button', { name: 'Open applications' })).toBeInTheDocument();
+    expect(setApplicationsOpen).toHaveBeenLastCalledWith('literary', false, multiOfficerSession);
+    expect((await client.getOrganization('literary', multiOfficerSession)).data?.applicationsOpen).toBe(false);
+
+    await user.click(screen.getByRole('tab', { name: 'Review applicants' }));
+    await user.click(screen.getByRole('tab', { name: 'Application intake' }));
+    const reenteredPicker = await screen.findByLabelText(/^Organization$/i, { selector: '#application-intake-organization' });
+    expect(reenteredPicker).toHaveValue('literary');
+    intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Closed')).toBeInTheDocument();
+
+    await user.selectOptions(reenteredPicker, 'robotics');
+    expect(await screen.findByRole('group', { name: 'Application intake for Computer Engineering Department' })).toBeInTheDocument();
+    intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Open')).toBeInTheDocument();
+    await user.selectOptions(reenteredPicker, 'literary');
+    expect(await screen.findByRole('group', { name: 'Application intake for Architecture Department' })).toBeInTheDocument();
+    intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Closed')).toBeInTheDocument();
+    expect(within(intake).getByRole('button', { name: 'Open applications' })).toBeEnabled();
   });
 
   it('defaults organization profiles to the feed with role-appropriate profile tabs', async () => {
@@ -215,9 +386,14 @@ describe('SOAR workflow pages', () => {
     renderInRouter(<MeetingsView session={studentSession} client={client} />);
     await screen.findAllByText(/Computer Engineering consultation window/i);
     await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    await user.type(screen.getByLabelText(/Short note/i), 'Please keep this note with my request.');
+    await user.upload(screen.getByLabelText(/Formal request document/i), new File(['private pdf'], 'formal-request.pdf', { type: 'application/pdf' }));
     await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
 
     expect(await screen.findByText(/We could not send your meeting request\. It was not confirmed\./i)).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /Request a meeting\/interview/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Short note/i)).toHaveValue('Please keep this note with my request.');
+    expect(screen.getByText(/Selected formal-request\.pdf/i)).toBeInTheDocument();
     expect(screen.queryByText(/Internal Functions details/i)).not.toBeInTheDocument();
   });
 
@@ -249,6 +425,131 @@ describe('SOAR workflow pages', () => {
     expect(table).toHaveAttribute('tabindex', '0');
     expect(table.querySelector('table')).toHaveClass('min-w-[640px]');
     expect(within(table).getAllByText(/Not a confirmed booking/i).length).toBeGreaterThan(0);
+  });
+
+  it('keeps a confirmed meeting request visible when an older list response arrives late', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const createdRequest: MeetingRequest = {
+      id: 'meeting-student-1-confirmed-refresh',
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      dateEntryId: 'date-robotics-interview',
+      meetingTitle: 'Computer Engineering consultation window',
+      requesterUid: studentSession.uid,
+      requesterName: studentSession.displayName,
+      requestedDate: '2026-11-12',
+      requestedTime: '14:30',
+      status: 'Pending',
+      updatedAt: '2026-10-16T06:00:00.000Z',
+    };
+    let resolveInitialList: (result: WorkflowQueryResult<MeetingRequest[]>) => void = () => undefined;
+    const initialList = new Promise<WorkflowQueryResult<MeetingRequest[]>>((resolve) => { resolveInitialList = resolve; });
+    const listMyMeetingRequests = vi.fn()
+      .mockReturnValueOnce(initialList)
+      .mockResolvedValueOnce({ data: [createdRequest], source: 'fixture' });
+    const requestMeeting = vi.fn().mockResolvedValue({
+      ok: true,
+      persisted: true,
+      source: 'fixture' as const,
+      message: 'Meeting request created as Pending.',
+      data: createdRequest,
+    });
+    const client: WorkflowDataClient = { ...base, listMyMeetingRequests, requestMeeting };
+    renderInRouter(<MeetingsView session={studentSession} client={client} />);
+
+    await screen.findAllByText(/Computer Engineering consultation window/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    await user.clear(screen.getByLabelText(/Requested time/i));
+    await user.type(screen.getByLabelText(/Requested time/i), '14:30');
+    await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
+    expect(await screen.findByText(/Meeting request created as Pending/i)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Request a meeting\/interview/i })).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveInitialList({ data: [], source: 'fixture' });
+      await initialList;
+    });
+    await user.click(screen.getByRole('tab', { name: 'My requests' }));
+
+    const table = await screen.findByRole('region', { name: 'My meeting request statuses' });
+    expect(within(table).getAllByText('Computer Engineering consultation window')).toHaveLength(1);
+    expect(within(table).getByText('2026-11-12, 14:30')).toBeInTheDocument();
+    expect(requestMeeting).toHaveBeenCalledTimes(1);
+    expect(listMyMeetingRequests).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows an officer own-request result in both relevant tabs without review actions', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const createdRequest: MeetingRequest = {
+      id: 'meeting-officer-1-confirmed-refresh',
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      dateEntryId: 'date-robotics-interview',
+      meetingTitle: 'Computer Engineering consultation window',
+      requesterUid: officerSession.uid,
+      requesterName: officerSession.displayName,
+      requestedDate: '2026-11-12',
+      requestedTime: '14:30',
+      status: 'Pending',
+      updatedAt: '2026-10-16T06:01:00.000Z',
+    };
+    const requestMeeting = vi.fn().mockResolvedValue({
+      ok: true,
+      persisted: true,
+      source: 'fixture' as const,
+      message: 'Meeting request created as Pending.',
+      data: createdRequest,
+    });
+    const client: WorkflowDataClient = { ...base, requestMeeting };
+    renderInRouter(<MeetingsView session={officerSession} client={client} />);
+
+    await screen.findByRole('region', { name: 'Meeting requests to review' });
+    await user.click(screen.getByRole('tab', { name: 'Availability' }));
+    await screen.findAllByText(/Computer Engineering consultation window/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    await user.clear(screen.getByLabelText(/Requested time/i));
+    await user.type(screen.getByLabelText(/Requested time/i), '14:30');
+    await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
+    expect(await screen.findByText(/Meeting request created as Pending/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'My requests' }));
+    const myRequests = await screen.findByRole('region', { name: 'My meeting request statuses' });
+    expect(within(myRequests).getAllByText('2026-11-12, 14:30')).toHaveLength(1);
+
+    await user.click(screen.getByRole('tab', { name: 'Review requests' }));
+    const reviewRequests = await screen.findByRole('region', { name: 'Meeting requests for this organization' });
+    const ownRequestRow = within(reviewRequests).getByText('Lia Cruz').closest('tr');
+    expect(ownRequestRow).not.toBeNull();
+    expect(within(ownRequestRow as HTMLElement).getByText(/Your request · check My requests for status/i)).toBeInTheDocument();
+    expect(within(ownRequestRow as HTMLElement).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(within(ownRequestRow as HTMLElement).queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+    expect(within(reviewRequests).getAllByRole('button', { name: 'Approve' }).length).toBeGreaterThan(0);
+    expect(requestMeeting).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not present an unconfirmed meeting submission as saved', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const requestMeeting = vi.fn().mockResolvedValue({
+      ok: true,
+      persisted: 'unconfirmed' as const,
+      source: 'production' as const,
+      message: 'Internal persistence details must not appear.',
+    });
+    const client: WorkflowDataClient = { ...base, requestMeeting };
+    renderInRouter(<MeetingsView session={studentSession} client={client} />);
+
+    await screen.findAllByText(/Computer Engineering consultation window/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
+
+    expect(await screen.findByText(/We could not confirm that your meeting request was saved/i)).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /Request a meeting\/interview/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Internal persistence details/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Meeting request created as Pending/i)).not.toBeInTheDocument();
+    expect(requestMeeting).toHaveBeenCalledTimes(1);
   });
 
   it('contains the requests table on direct mobile-tab entry without modal state', async () => {
@@ -435,6 +736,114 @@ describe('SOAR workflow pages', () => {
     expect(listAnnouncements).toHaveBeenNthCalledWith(3, studentSession, { limit: 15, pageToken: 'cursor-next' });
   });
 
+  it('reconciles a later feed page like and comment thread without losing the loaded cursor', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const makePost = (id: string, body: string): Announcement => ({
+      id,
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      createdAt: '2026-10-10T00:00:00.000Z',
+      body,
+      likeCount: 2,
+      viewerHasLiked: false,
+      commentCount: 1,
+      comments: [],
+    });
+    const firstPage = Array.from({ length: 15 }, (_, index) => makePost(`feed-${index}`, `Feed post ${index}`));
+    const laterPost = makePost('feed-later', 'Later-page announcement');
+    const followingPost = makePost('feed-following', 'Third-page announcement');
+    const firstComment = { id: 'comment-first', authorUid: studentSession.uid, authorName: studentSession.displayName, body: 'Original later-page comment.', createdAt: '2026-10-10T00:01:00.000Z', viewerCanEdit: true, viewerCanDelete: true };
+    const addedComment = { id: 'comment-added', authorUid: studentSession.uid, authorName: studentSession.displayName, body: 'Added on the later page.', createdAt: '2026-10-10T00:02:00.000Z', viewerCanEdit: true, viewerCanDelete: true };
+    const editedComment = { ...firstComment, body: 'Edited on the later page.', updatedAt: '2026-10-10T00:03:00.000Z' };
+    const listAnnouncements = vi.fn<WorkflowDataClient['listAnnouncements']>()
+      .mockResolvedValueOnce({ data: { items: firstPage, nextPageToken: 'cursor-page-two' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [laterPost], nextPageToken: 'cursor-page-three' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [followingPost] }, source: 'fixture' });
+    const listAnnouncementComments = vi.fn<WorkflowDataClient['listAnnouncementComments']>()
+      .mockResolvedValueOnce({ data: [firstComment], source: 'fixture' })
+      .mockResolvedValueOnce({ data: [firstComment, addedComment], source: 'fixture' })
+      .mockResolvedValueOnce({ data: [editedComment, addedComment], source: 'fixture' })
+      .mockResolvedValueOnce({ data: [editedComment], source: 'fixture' });
+    const updatedPost = (commentCount: number): Announcement => ({ ...laterPost, likeCount: 7, viewerHasLiked: true, commentCount });
+    const client: WorkflowDataClient = {
+      ...base,
+      listAnnouncements,
+      listAnnouncementComments,
+      getAnnouncement: vi.fn<WorkflowDataClient['getAnnouncement']>()
+        .mockResolvedValueOnce({ data: updatedPost(2), source: 'fixture' })
+        .mockResolvedValueOnce({ data: updatedPost(2), source: 'fixture' })
+        .mockResolvedValueOnce({ data: updatedPost(1), source: 'fixture' }),
+      toggleAnnouncementLike: vi.fn<WorkflowDataClient['toggleAnnouncementLike']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Liked.', data: updatedPost(1) }),
+      addAnnouncementComment: vi.fn<WorkflowDataClient['addAnnouncementComment']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Comment added.', data: addedComment }),
+      updateAnnouncementComment: vi.fn<WorkflowDataClient['updateAnnouncementComment']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Comment updated.', data: editedComment }),
+      deleteAnnouncementComment: vi.fn<WorkflowDataClient['deleteAnnouncementComment']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Comment deleted.' }),
+    };
+    renderInRouter(<FeedView session={studentSession} client={client} />);
+
+    expect(await screen.findByText('Feed post 14')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Later-page announcement')).toBeInTheDocument();
+    const card = screen.getByText('Later-page announcement').closest('article') as HTMLElement;
+
+    await user.click(within(card).getByRole('button', { name: /Like announcement from Computer Engineering Department/ }));
+    expect(within(card).getByRole('button', { name: /Unlike announcement from Computer Engineering Department; 7 likes/i })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(within(card).getByRole('button', { name: /Open comments/i }));
+    expect(await within(card).findByText('Original later-page comment.')).toBeInTheDocument();
+
+    await user.type(within(card).getByLabelText('Add comment'), 'A later-page reply.');
+    await user.click(within(card).getByRole('button', { name: 'Add comment' }));
+    expect(await within(card).findByText('Added on the later page.')).toBeInTheDocument();
+    expect(await within(card).findByRole('button', { name: /Hide comments \(2\)/i })).toBeInTheDocument();
+
+    const originalCommentRow = within(card).getByText('Original later-page comment.').closest('li') as HTMLElement;
+    await user.click(within(originalCommentRow).getByRole('button', { name: 'Edit' }));
+    await user.clear(within(originalCommentRow).getByLabelText(/Edit comment by Mara Santos/i));
+    await user.type(within(originalCommentRow).getByLabelText(/Edit comment by Mara Santos/i), 'Edited on the later page.');
+    await user.click(within(card).getByRole('button', { name: 'Save comment' }));
+    expect(await within(card).findByText('Edited on the later page.')).toBeInTheDocument();
+
+    const addedCommentRow = within(card).getByText('Added on the later page.').closest('li') as HTMLElement;
+    await user.click(within(addedCommentRow).getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete comment' }));
+    expect(await within(card).findByText('Edited on the later page.')).toBeInTheDocument();
+    expect(within(card).queryByText('Added on the later page.')).not.toBeInTheDocument();
+    expect(await within(card).findByRole('button', { name: /Hide comments \(1\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Third-page announcement')).toBeInTheDocument();
+    expect(screen.getByText('Later-page announcement')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenNthCalledWith(3, studentSession, { limit: 15, pageToken: 'cursor-page-three' });
+  });
+
+  it('ignores a late feed interaction response after the session changes', async () => {
+    const user = userEvent.setup();
+    const oldPost: Announcement = { id: 'same-announcement', organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-10T00:00:00.000Z', body: 'Prior session post.', likeCount: 2, viewerHasLiked: false, commentCount: 0, comments: [] };
+    const newPost: Announcement = { ...oldPost, body: 'Current session post.', likeCount: 9 };
+    const oldClient = createFixtureWorkflowDataClient();
+    oldClient.listAnnouncements = vi.fn<WorkflowDataClient['listAnnouncements']>().mockResolvedValue({ data: { items: [oldPost] }, source: 'fixture' });
+    let resolveLike!: (result: WorkflowMutationResult<Announcement>) => void;
+    oldClient.toggleAnnouncementLike = vi.fn<WorkflowDataClient['toggleAnnouncementLike']>(() => new Promise((resolve) => { resolveLike = resolve; }));
+    const newClient = createFixtureWorkflowDataClient();
+    newClient.listAnnouncements = vi.fn<WorkflowDataClient['listAnnouncements']>().mockResolvedValue({ data: { items: [newPost] }, source: 'fixture' });
+    const nextSession: UserSession = { ...studentSession, uid: 'student-2', displayName: 'New viewer' };
+    const rendered = renderInRouter(<FeedView session={studentSession} client={oldClient} />);
+
+    expect(await screen.findByText('Prior session post.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Like announcement from Computer Engineering Department; 2 likes/i }));
+    rendered.rerender(<MemoryRouter><FeedView session={nextSession} client={newClient} /></MemoryRouter>);
+    expect(await screen.findByText('Current session post.')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveLike({ ok: true, persisted: true, source: 'fixture', message: 'Liked.', data: { ...oldPost, likeCount: 99, viewerHasLiked: true } });
+    });
+    expect(screen.getByText('Current session post.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Like announcement from Computer Engineering Department; 9 likes/i })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('Prior session post.')).not.toBeInTheDocument();
+  });
+
   it('keeps public organization profiles public-facing even for managers', async () => {
     renderInRouter(<OrganizationView organizationId="robotics" session={officerSession} client={createFixtureWorkflowDataClient()} />);
 
@@ -500,6 +909,25 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByText(/Architecture portfolio orientation starts Friday/i)).toBeInTheDocument();
   });
 
+  it('maps announcement upload failures safely and keeps the draft available to retry', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const providerError = Object.assign(new Error('Firebase Storage denied object gs://private-bucket/secret/path'), { code: 'storage/unauthorized' });
+    const publishAnnouncement = vi.spyOn(client, 'publishAnnouncement').mockRejectedValueOnce(providerError);
+    renderInRouter(<FeedView session={officerSession} client={client} />);
+
+    await user.click(await screen.findByRole('button', { name: /Post announcement/i }));
+    await user.type(screen.getByLabelText(/Post text/i), 'Draft that should survive an upload failure.');
+    await user.upload(screen.getByLabelText(/Optional media/i), new File(['image'], 'campus.png', { type: 'image/png' }));
+    await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('You do not have permission to upload this file.');
+    expect(screen.queryByText(/private-bucket|secret\/path|Firebase Storage denied/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Post text/i)).toHaveValue('Draft that should survive an upload failure.');
+    expect(screen.getByRole('img', { name: 'campus.png' })).toBeInTheDocument();
+    expect(publishAnnouncement).toHaveBeenCalledOnce();
+  });
+
   it('guards organization settings to approved officer grants and supports managed organization context', async () => {
     const user = userEvent.setup();
     const multiOfficerSession = {
@@ -514,6 +942,8 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByRole('heading', { name: /Organization settings/i, level: 1 })).toBeInTheDocument();
     expect(screen.getByText(/Selected organization: Computer Engineering Department/i)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^Details$/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Application intake' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Application intake' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: /View public profile/i })).toHaveLength(1);
     expect(screen.queryByLabelText(/Post text/i)).not.toBeInTheDocument();
     const organizationSelector = screen.getByLabelText(/^Organization$/i);
@@ -523,6 +953,41 @@ describe('SOAR workflow pages', () => {
     await user.selectOptions(organizationSelector, 'literary');
     await waitFor(() => expect(screen.getByLabelText(/^Organization name$/i)).toHaveValue('Architecture Department'));
     expect(screen.queryByDisplayValue('Civil Engineering Department')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Application intake' }));
+    expect(await screen.findByRole('group', { name: 'Application intake' })).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Application intake for Architecture Department' })).getByRole('heading', { name: 'Architecture Department' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /^Details$/i }));
+    await user.click(screen.getByRole('tab', { name: 'Application intake' }));
+    expect(await screen.findByRole('group', { name: 'Application intake for Architecture Department' })).toBeInTheDocument();
+  });
+
+  it('lets an approved officer close and reopen only the selected organization intake', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const setApplicationsOpen = vi.fn(client.setApplicationsOpen.bind(client));
+    client.setApplicationsOpen = setApplicationsOpen;
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} />, ['/settings/organization?organizationId=robotics']);
+
+    expect(await screen.findByRole('tab', { name: /^Details$/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('group', { name: 'Application intake' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Application intake' }));
+    let intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Open')).toBeInTheDocument();
+    await user.click(within(intake).getByRole('button', { name: 'Close applications' }));
+
+    expect(await screen.findByRole('button', { name: 'Open applications' })).toBeInTheDocument();
+    expect(await screen.findByText('Closed')).toBeInTheDocument();
+    expect(setApplicationsOpen).toHaveBeenCalledWith('robotics', false, officerSession);
+    expect((await client.getOrganization('robotics', officerSession)).data?.applicationsOpen).toBe(false);
+
+    await user.click(screen.getByRole('tab', { name: /^Details$/i }));
+    await user.click(screen.getByRole('tab', { name: 'Application intake' }));
+    intake = await screen.findByRole('group', { name: 'Application intake' });
+    expect(within(intake).getByText('Closed')).toBeInTheDocument();
+    await user.click(within(intake).getByRole('button', { name: 'Open applications' }));
+    expect(await screen.findByRole('button', { name: 'Close applications' })).toBeInTheDocument();
+    expect(setApplicationsOpen).toHaveBeenLastCalledWith('robotics', true, officerSession);
+    expect((await client.getOrganization('robotics', officerSession)).data?.applicationsOpen).toBe(true);
   });
 
   it('scopes manage-organization announcement history and dates to the selected organization tab', async () => {
@@ -534,20 +999,157 @@ describe('SOAR workflow pages', () => {
         { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' as const },
       ],
     };
-    const { unmount } = renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=robotics&tab=announcements']);
+    const client = createFixtureWorkflowDataClient();
+    const listAnnouncements = vi.spyOn(client, 'listAnnouncements');
+    const updateAnnouncement = vi.spyOn(client, 'updateAnnouncement').mockRejectedValueOnce(new Error('Temporary save error'));
+    const { unmount } = renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={client} />, ['/settings/organization?organizationId=robotics&tab=announcements']);
 
     expect(await screen.findByRole('tab', { name: /Announcements/i })).toHaveAttribute('aria-selected', 'true');
     expect((await screen.findAllByText(/Computer Engineering project night/i)).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/Architecture portfolio clinic signup/i)).not.toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'Electronics workbench with small robotics parts' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Like announcement from Computer Engineering Department/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Open comments/i }));
+    expect(await screen.findByText('Is the consultation window open to first-year students?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete announcement' })).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledWith(multiOfficerSession, { limit: 15, organizationId: 'robotics' });
+    await user.click(screen.getByRole('button', { name: 'Edit announcement' }));
+    const editor = screen.getByRole('textbox', { name: 'Announcement text' });
+    await user.clear(editor);
+    await user.type(editor, 'Updated robotics announcement text.');
+    await user.click(screen.getByRole('button', { name: 'Close Edit announcement' }));
+    expect(screen.getByRole('alertdialog', { name: /Discard unsaved changes/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Keep editing' }));
+    await user.click(screen.getByRole('button', { name: 'Save announcement' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Temporary save error');
+    expect(screen.getByRole('textbox', { name: 'Announcement text' })).toHaveValue('Updated robotics announcement text.');
+    await user.click(screen.getByRole('button', { name: 'Save announcement' }));
+    expect(await screen.findByText('Updated robotics announcement text.')).toBeInTheDocument();
+    expect(updateAnnouncement).toHaveBeenCalledTimes(2);
+    const announcementPanel = screen.getByRole('tabpanel', { name: /Announcements/i });
+    expect(within(announcementPanel).queryByText(/Computer Engineering project night/i)).not.toBeInTheDocument();
+    expect((await client.listAnnouncements(multiOfficerSession, { limit: 15, organizationId: 'robotics' })).data.items[0].body).toBe('Updated robotics announcement text.');
+    expect(within(announcementPanel).queryByText(/Architecture portfolio clinic signup/i)).not.toBeInTheDocument();
     unmount();
 
     renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={createFixtureWorkflowDataClient()} />, ['/settings/organization?organizationId=literary&tab=dates']);
     expect(await screen.findByRole('tab', { name: /Dates & availability/i })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => expect(screen.getAllByText(/Architecture portfolio clinic/i).length).toBeGreaterThan(0));
-    expect(screen.queryByText(/Computer Engineering project night/i)).not.toBeInTheDocument();
+    expect(within(screen.getByRole('tabpanel', { name: /Dates & availability/i })).queryByText(/Computer Engineering project night/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Add dated entry/i }));
     expect(screen.getByRole('dialog', { name: /Add dated entry/i })).toBeInTheDocument();
+  });
+
+  it('keeps managed later-page announcements, comments, and cursor through edit and delete', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const multiOfficerSession: UserSession = {
+      ...officerSession,
+      officerGrants: [
+        ...officerSession.officerGrants,
+        { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' },
+      ],
+    };
+    const makePost = (id: string, body: string): Announcement => ({
+      id,
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      createdAt: '2026-10-10T00:00:00.000Z',
+      body,
+      likeCount: 3,
+      viewerHasLiked: false,
+      commentCount: 1,
+      comments: [],
+    });
+    const firstPage = Array.from({ length: 15 }, (_, index) => makePost(`managed-${index}`, `Managed post ${index}`));
+    const laterPost = makePost('managed-later', 'Later managed announcement');
+    const survivorPost = makePost('managed-survivor', 'Surviving later announcement');
+    const thirdPage = makePost('managed-third-page', 'Managed third-page announcement');
+    const comment = { id: 'managed-comment', authorUid: studentSession.uid, authorName: 'Mara Santos', body: 'Keep this thread open.', createdAt: '2026-10-10T00:01:00.000Z' };
+    const listAnnouncements = vi.fn<WorkflowDataClient['listAnnouncements']>()
+      .mockResolvedValueOnce({ data: { items: firstPage, nextPageToken: 'managed-cursor-two' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [laterPost, survivorPost], nextPageToken: 'managed-cursor-three' }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [thirdPage] }, source: 'fixture' });
+    const updatedPost = { ...laterPost, body: 'Updated later-page announcement', likeCount: 4, viewerHasLiked: true };
+    const client: WorkflowDataClient = {
+      ...base,
+      listAnnouncements,
+      listAnnouncementComments: vi.fn<WorkflowDataClient['listAnnouncementComments']>().mockResolvedValue({ data: [comment], source: 'fixture' }),
+      toggleAnnouncementLike: vi.fn<WorkflowDataClient['toggleAnnouncementLike']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Liked.', data: { ...laterPost, likeCount: 4, viewerHasLiked: true } }),
+      updateAnnouncement: vi.fn<WorkflowDataClient['updateAnnouncement']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Announcement updated.', data: updatedPost }),
+      deleteAnnouncement: vi.fn<WorkflowDataClient['deleteAnnouncement']>().mockResolvedValue({ ok: true, persisted: true, source: 'fixture', message: 'Announcement deleted.' }),
+    };
+    renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={client} />, ['/settings/organization?organizationId=robotics&tab=announcements']);
+
+    expect(await screen.findByText('Managed post 14')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Later managed announcement')).toBeInTheDocument();
+    const card = screen.getByText('Later managed announcement').closest('article') as HTMLElement;
+    const cardContainer = card.parentElement as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: /Like announcement from Computer Engineering Department/ }));
+    expect(within(card).getByRole('button', { name: /Unlike announcement from Computer Engineering Department; 4 likes/i })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(within(card).getByRole('button', { name: /Open comments/i }));
+    expect(await within(card).findByText('Keep this thread open.')).toBeInTheDocument();
+
+    await user.click(within(cardContainer).getByRole('button', { name: 'Edit announcement' }));
+    const editor = screen.getByRole('textbox', { name: 'Announcement text' });
+    await user.clear(editor);
+    await user.type(editor, 'Updated later-page announcement');
+    await user.click(screen.getByRole('button', { name: 'Save announcement' }));
+    expect(await screen.findByText('Updated later-page announcement')).toBeInTheDocument();
+    expect(within(card).getByText('Keep this thread open.')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: /Hide comments \(1\)/i })).toBeInTheDocument();
+    expect(screen.getByText('Surviving later announcement')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenCalledTimes(2);
+
+    await user.click(within(cardContainer).getByRole('button', { name: 'Delete announcement' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete announcement' }));
+    await waitFor(() => expect(screen.queryByText('Updated later-page announcement')).not.toBeInTheDocument());
+    expect(screen.getByText('Surviving later announcement')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load more announcements' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Load more announcements' }));
+    expect(await screen.findByText('Managed third-page announcement')).toBeInTheDocument();
+    expect(screen.getByText('Surviving later announcement')).toBeInTheDocument();
+    expect(listAnnouncements).toHaveBeenNthCalledWith(3, multiOfficerSession, { limit: 15, pageToken: 'managed-cursor-three', organizationId: 'robotics' });
+  });
+
+  it('does not let a late managed announcement response cross organization scope', async () => {
+    const user = userEvent.setup();
+    const base = createFixtureWorkflowDataClient();
+    const multiOfficerSession: UserSession = {
+      ...officerSession,
+      officerGrants: [
+        ...officerSession.officerGrants,
+        { organizationId: 'literary', organizationName: 'Architecture Department', status: 'approved' },
+      ],
+    };
+    const roboticsPost: Announcement = { id: 'robotics-post', organizationId: 'robotics', organizationName: 'Computer Engineering Department', createdAt: '2026-10-10T00:00:00.000Z', body: 'Robotics scoped post.', likeCount: 2, viewerHasLiked: false, commentCount: 0, comments: [] };
+    const literaryPost: Announcement = { id: 'literary-post', organizationId: 'literary', organizationName: 'Architecture Department', createdAt: '2026-10-10T00:00:00.000Z', body: 'Literary scoped post.', likeCount: 8, viewerHasLiked: false, commentCount: 0, comments: [] };
+    const listAnnouncements = vi.fn<WorkflowDataClient['listAnnouncements']>()
+      .mockResolvedValueOnce({ data: { items: [roboticsPost] }, source: 'fixture' })
+      .mockResolvedValueOnce({ data: { items: [literaryPost] }, source: 'fixture' });
+    let resolveLike!: (result: WorkflowMutationResult<Announcement>) => void;
+    const client: WorkflowDataClient = {
+      ...base,
+      listAnnouncements,
+      toggleAnnouncementLike: vi.fn<WorkflowDataClient['toggleAnnouncementLike']>(() => new Promise((resolve) => { resolveLike = resolve; })),
+    };
+    renderInRouter(<OrganizationSettingsView session={multiOfficerSession} client={client} />, ['/settings/organization?organizationId=robotics&tab=announcements']);
+
+    expect(await screen.findByText('Robotics scoped post.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Like announcement from Computer Engineering Department; 2 likes/i }));
+    await user.selectOptions(screen.getByLabelText('Organization'), 'literary');
+    expect(await screen.findByText('Literary scoped post.')).toBeInTheDocument();
+    await act(async () => {
+      resolveLike({ ok: true, persisted: true, source: 'fixture', message: 'Liked.', data: { ...roboticsPost, likeCount: 99, viewerHasLiked: true } });
+    });
+
+    expect(screen.getByText('Literary scoped post.')).toBeInTheDocument();
+    expect(screen.queryByText('Robotics scoped post.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Like announcement from Architecture Department; 8 likes/i })).toHaveAttribute('aria-pressed', 'false');
+    expect(listAnnouncements).toHaveBeenLastCalledWith(multiOfficerSession, { limit: 15, organizationId: 'literary' });
   });
 
   it('keeps the draft pending until persistence confirms, then refreshes once', async () => {
@@ -719,12 +1321,14 @@ describe('SOAR workflow pages', () => {
     }
   });
 
-  it('keeps one profile save action and confirms before persisting organization profile edits', async () => {
+  it('requires transient password approval before one organization profile save', async () => {
     const user = userEvent.setup();
     const client = createFixtureWorkflowDataClient();
     const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    let completeReauthentication: (() => void) | undefined;
+    const reauthenticate = vi.fn((_password: string, _expectedUid: string) => new Promise<void>((resolve) => { completeReauthentication = resolve; }));
     client.saveOrganizationProfile = saveProfile;
-    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} />, ['/settings/organization?organizationId=robotics']);
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
 
     const nameInput = await screen.findByLabelText(/^Organization name$/i);
     const saveButton = screen.getByRole('button', { name: /^Save profile$/i });
@@ -739,12 +1343,71 @@ describe('SOAR workflow pages', () => {
     await user.type(nameInput, ' Updated');
     await user.click(saveButton);
 
-    const dialog = screen.getByRole('alertdialog', { name: /Save profile changes/i });
-    expect(dialog).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
+    expect(saveProfile).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/^Password$/i)).toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText(/^Password$/i)).toHaveAttribute('autocomplete', 'current-password');
+
+    await user.type(screen.getByLabelText(/^Password$/i), 'correct-demo-password');
+    await user.click(within(dialog).getByRole('button', { name: /^Approve and save changes$/i }));
+    expect(screen.getByLabelText(/^Password$/i)).toHaveValue('');
+    expect(saveProfile).not.toHaveBeenCalled();
+    completeReauthentication?.();
+    await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+    expect(reauthenticate).toHaveBeenCalledWith('correct-demo-password', officerSession.uid);
+    expect(reauthenticate.mock.invocationCallOrder[0]).toBeLessThan(saveProfile.mock.invocationCallOrder[0]);
+    expect(saveProfile.mock.calls[0]?.[0]).not.toHaveProperty('password');
+    expect(screen.queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps profile drafts after rejected password approval and clears the transient input', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    const reauthenticate = vi.fn().mockRejectedValueOnce(Object.assign(new Error('invalid credential details'), { code: 'auth/invalid-credential' }));
+    client.saveOrganizationProfile = saveProfile;
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
+
+    const nameInput = await screen.findByLabelText(/^Organization name$/i);
+    await user.type(nameInput, ' Draft');
+    await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+    await user.type(screen.getByLabelText(/^Password$/i), 'wrong-password');
+    await user.click(screen.getByRole('button', { name: /^Approve and save changes$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/password could not be verified/i);
+    expect(nameInput).toHaveValue('Computer Engineering Department Draft');
+    expect(screen.getByLabelText(/^Password$/i)).toHaveValue('');
     expect(saveProfile).not.toHaveBeenCalled();
 
-    await user.click(within(dialog).getByRole('button', { name: /^Save profile$/i }));
-    await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: /^Cancel$/i }));
+    expect(screen.queryByRole('dialog', { name: /Approve organization changes/i })).not.toBeInTheDocument();
+    expect(nameInput).toHaveValue('Computer Engineering Department Draft');
+  });
+
+  it('uses password-free synthetic approval only for the labelled fixture build', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    const reauthenticate = vi.fn(async (_password: string, _expectedUid: string) => undefined);
+    client.saveOrganizationProfile = saveProfile;
+    vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'true');
+    try {
+      renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
+      const nameInput = await screen.findByLabelText(/^Organization name$/i);
+      await user.type(nameInput, ' Preview');
+      await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+
+      const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
+      expect(dialog).toHaveTextContent(/simulated preview uses local approval only/i);
+      expect(within(dialog).queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: /^Approve simulated changes$/i }));
+
+      await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+      expect(reauthenticate).not.toHaveBeenCalled();
+      expect(saveProfile.mock.calls[0]?.[0]).not.toHaveProperty('password');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('protects dirty profile edits before switching managed organizations', async () => {
@@ -916,7 +1579,7 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByText(/Use a PNG, JPEG, GIF, or WebP image/i)).toBeInTheDocument();
     expect(screen.queryByText('robot-a.png')).not.toBeInTheDocument();
     await user.upload(screen.getByLabelText(/Optional media/i), new File(['a'], 'robot-a.png', { type: 'image/png' }));
-    expect(screen.getByText(/30 MB combined maximum/i)).toBeInTheDocument();
+    expect(screen.getByText(/Up to 4 images\. Use PNG, JPEG, GIF, or WebP, up to 30 MB combined\./i)).toBeInTheDocument();
     expect(screen.getByText('robot-a.png')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));

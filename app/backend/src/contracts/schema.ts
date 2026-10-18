@@ -34,6 +34,8 @@ export interface AccountDocument {
   displayName: string;
   email: string;
   emailVerified: boolean;
+  accessProvenance?: 'unpaid-preview';
+  previewAccessGrantedAt?: Timestamp;
   studentId?: string;
   department?: string;
   departmentKey?: string;
@@ -95,6 +97,7 @@ export interface OrganizationDocument {
   department?: string;
   departmentKey?: string;
   logoPath?: string;
+  applicationsOpen?: boolean;
   recruitment?: OrganizationRecruitment;
   createdAt: Timestamp;
   updatedAt: Timestamp;

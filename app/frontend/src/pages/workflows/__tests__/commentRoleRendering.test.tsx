@@ -79,10 +79,17 @@ describe('production comment DTO to visible author badge path', () => {
     const sponsorBody = screen.getByText('Other account kind comment.');
     const unknownBody = screen.getByText('Unknown role comment.');
 
-    expect(within(studentBody.closest('li')!).getByText('Student', { exact: true })).toBeInTheDocument();
-    expect(within(officerBody.closest('li')!).getByText('Officer', { exact: true })).toBeInTheDocument();
-    expect(within(sponsorBody.closest('li')!).queryByText(/^(Student|Officer)$/)).not.toBeInTheDocument();
-    expect(within(unknownBody.closest('li')!).queryByText(/^(Student|Officer)$/)).not.toBeInTheDocument();
+    const studentBadge = within(studentBody.closest('li')!).getByText('Student', { exact: true });
+    const officerBadge = within(officerBody.closest('li')!).getByText('Officer', { exact: true });
+    const sponsorRow = within(sponsorBody.closest('li')!);
+    const unknownRow = within(unknownBody.closest('li')!);
+    const sponsorBadge = sponsorRow.getByText('Role unavailable', { exact: true });
+    const unknownBadge = unknownRow.getByText('Role unavailable', { exact: true });
+    expect(sponsorRow.queryByText('Sponsor', { exact: true })).not.toBeInTheDocument();
+    expect(studentBadge.parentElement).toHaveClass('gap-3');
+    expect(officerBadge.parentElement).toHaveClass('gap-3');
+    expect(sponsorBadge.parentElement).toHaveClass('gap-3');
+    expect(unknownBadge.parentElement).toHaveClass('gap-3');
     expect(mocks.apiFetch).toHaveBeenCalledWith('/announcements/role-post/comments?limit=50', expect.anything());
   });
 });

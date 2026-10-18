@@ -8,6 +8,12 @@ const { Timestamp } = require('firebase-admin/firestore');
 const PROJECT_ID = process.env.GCLOUD_PROJECT || process.env.SOAR_EMULATOR_PROJECT_ID || 'demo-soar-local';
 const DEMO_PASSWORD = 'SoarDemo123!';
 const ACCESS_MONTHS = 6;
+const FIXED_SEED_IDENTITIES = new Map([
+  ['demo-student-1', { email: 'student@example.test', role: 'student' }],
+  ['demo-sponsor-1', { email: 'sponsor@example.test', role: 'sponsor' }],
+  ['demo-owner-robotics', { email: 'owner@example.test', role: 'student' }],
+  ['demo-officer-robotics', { email: 'officer@example.test', role: 'student' }]
+]);
 
 function fail(message) {
   console.error(`Refusing to seed local SOAR data: ${message}`);
@@ -15,34 +21,47 @@ function fail(message) {
 }
 
 function parseHostPort(value, label) {
-  if (!value) fail(`${label} is required.`);
-  const url = new URL(value.includes('://') ? value : `http://${value}`);
+  if (!value) throw new Error(`${label} is required.`);
+  let url;
+  try {
+    url = new URL(value.includes('://') ? value : `http://${value}`);
+  } catch {
+    throw new Error(`${label} must be a valid emulator host and port.`);
+  }
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
   const port = Number(url.port);
   const loopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-  if (!loopback) fail(`${label} must point at loopback, got ${value}.`);
-  if (!Number.isInteger(port) || port <= 0) fail(`${label} must include a port, got ${value}.`);
+  if (!loopback) throw new Error(`${label} must point at loopback.`);
+  if (!Number.isInteger(port) || port <= 0) throw new Error(`${label} must include a port.`);
   return { url: `${url.protocol}//${url.host}`, hostname, port };
 }
 
-function assertLocalOnly() {
-  if (PROJECT_ID !== 'demo-soar-local') {
-    fail(`GCLOUD_PROJECT/SOAR_EMULATOR_PROJECT_ID must be demo-soar-local, got ${PROJECT_ID}.`);
-  }
+function getLocalSeedEndpoints(env = process.env, projectId = PROJECT_ID) {
+  if (projectId === 'soar-a711e') throw new Error('The production Firebase project is never a seed target.');
+  if (projectId !== 'demo-soar-local') throw new Error('The seed project must be demo-soar-local.');
 
-  if (PROJECT_ID === 'soar-a711e') {
-    fail('the production Firebase project is never a seed target.');
+  let firebaseConfig;
+  try {
+    firebaseConfig = env.FIREBASE_CONFIG ? JSON.parse(env.FIREBASE_CONFIG) : undefined;
+  } catch {
+    throw new Error('FIREBASE_CONFIG must be valid JSON.');
   }
-
-  const firebaseConfig = process.env.FIREBASE_CONFIG ? JSON.parse(process.env.FIREBASE_CONFIG) : undefined;
-  if (firebaseConfig?.projectId && firebaseConfig.projectId !== PROJECT_ID) {
-    fail(`FIREBASE_CONFIG projectId ${firebaseConfig.projectId} does not match ${PROJECT_ID}.`);
+  if (firebaseConfig?.projectId && firebaseConfig.projectId !== projectId) {
+    throw new Error('FIREBASE_CONFIG projectId must match the local demo project.');
   }
 
   return {
-    firestore: parseHostPort(process.env.FIRESTORE_EMULATOR_HOST, 'FIRESTORE_EMULATOR_HOST'),
-    auth: parseHostPort(process.env.FIREBASE_AUTH_EMULATOR_HOST, 'FIREBASE_AUTH_EMULATOR_HOST')
+    firestore: parseHostPort(env.FIRESTORE_EMULATOR_HOST, 'FIRESTORE_EMULATOR_HOST'),
+    auth: parseHostPort(env.FIREBASE_AUTH_EMULATOR_HOST, 'FIREBASE_AUTH_EMULATOR_HOST')
   };
+}
+
+function assertLocalOnly() {
+  try {
+    return getLocalSeedEndpoints(process.env, PROJECT_ID);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : 'The local emulator target is invalid.');
+  }
 }
 
 async function probeEmulator(label, endpoint) {
@@ -75,14 +94,47 @@ function nowAndExpiry() {
   return { now, expires };
 }
 
+function normalizeEmail(email) {
+  return typeof email === 'string' ? email.trim().toLowerCase() : '';
+}
+
+function assertFixedSeedUsers(users) {
+  if (!Array.isArray(users)) throw new Error('Refusing to seed a non-fixed synthetic account set.');
+  const seen = new Set();
+  for (const user of users) {
+    const expected = user && FIXED_SEED_IDENTITIES.get(user.uid);
+    if (!expected || normalizeEmail(user.email) !== expected.email || user.role !== expected.role || seen.has(user.uid)) {
+      throw new Error('Refusing to seed an identity outside the fixed synthetic account set.');
+    }
+    seen.add(user.uid);
+  }
+}
+
+function matchesSeedAccount(account, user) {
+  return Boolean(account && account.uid === user.uid && normalizeEmail(account.email) === normalizeEmail(user.email) && account.role === user.role);
+}
+
+function matchesSeedEntitlement(entitlement, user) {
+  const eventId = `seed-${user.uid}`;
+  return Boolean(
+    entitlement &&
+    entitlement.uid === user.uid &&
+    entitlement.provider === 'emulator-simulated' &&
+    entitlement.lastProviderEventId === eventId &&
+    Array.isArray(entitlement.history) &&
+    entitlement.history.some((entry) => entry?.provider === 'emulator-simulated' && entry.providerEventId === eventId)
+  );
+}
+
 async function createAuthFixtureIfMissing(auth, user) {
+  let authUser;
+  let created = false;
   try {
-    await auth.getUser(user.uid);
-    return false;
+    authUser = await auth.getUser(user.uid);
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
     if (code !== 'auth/user-not-found') throw error;
-    await auth.createUser({
+    authUser = await auth.createUser({
       uid: user.uid,
       email: user.email,
       password: DEMO_PASSWORD,
@@ -90,23 +142,41 @@ async function createAuthFixtureIfMissing(auth, user) {
       emailVerified: true,
       disabled: false
     });
+    created = true;
+  }
+
+  const matches = authUser?.uid === user.uid && normalizeEmail(authUser.email) === normalizeEmail(user.email);
+  return { matches, created: matches && created };
+}
+
+async function createFixtureIfAbsent(db, path, data) {
+  try {
+    await db.doc(path).create(data);
     return true;
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    if (code === 6 || code === '6' || code === 'already-exists' || code === 'firestore/already-exists') return false;
+    throw error;
   }
 }
 
 async function seedAccounts(db, auth, users) {
+  assertFixedSeedUsers(users);
   const { now, expires } = nowAndExpiry();
   const createdUserIds = [];
   for (const user of users) {
     const accountRef = db.doc(`accounts/${user.uid}`);
     const entitlementRef = db.doc(`entitlements/${user.uid}`);
-    const [account, entitlement] = await Promise.all([accountRef.get(), entitlementRef.get()]);
-    if (account.exists || entitlement.exists) continue;
-    const isNewFixture = await createAuthFixtureIfMissing(auth, user);
-    if (!isNewFixture) continue;
-    createdUserIds.push(user.uid);
+    const [accountSnapshot, entitlementSnapshot] = await Promise.all([accountRef.get(), entitlementRef.get()]);
+    const existingAccount = accountSnapshot.exists ? accountSnapshot.data() : undefined;
+    const existingEntitlement = entitlementSnapshot.exists ? entitlementSnapshot.data() : undefined;
+    if (accountSnapshot.exists && !matchesSeedAccount(existingAccount, user)) continue;
+    if (entitlementSnapshot.exists && !matchesSeedEntitlement(existingEntitlement, user)) continue;
 
-    await accountRef.set({
+    const authFixture = await createAuthFixtureIfMissing(auth, user);
+    if (!authFixture.matches) continue;
+
+    const account = {
       uid: user.uid,
       role: user.role,
       displayName: user.displayName,
@@ -117,9 +187,8 @@ async function seedAccounts(db, auth, users) {
       ...(user.companyName ? { companyName: user.companyName } : {}),
       createdAt: now,
       updatedAt: now
-    });
-
-    await entitlementRef.set({
+    };
+    const entitlement = {
       uid: user.uid,
       status: 'active',
       accessExpiresAt: expires,
@@ -134,7 +203,27 @@ async function seedAccounts(db, auth, users) {
         recordedAt: now,
         note: 'LOCAL EMULATOR ONLY: simulated paid six-month access; not valid for production.'
       }]
+    };
+
+    const repair = await db.runTransaction(async (transaction) => {
+      const [currentAccount, currentEntitlement] = await Promise.all([
+        transaction.get(accountRef),
+        transaction.get(entitlementRef)
+      ]);
+      const currentAccountData = currentAccount.exists ? currentAccount.data() : undefined;
+      const currentEntitlementData = currentEntitlement.exists ? currentEntitlement.data() : undefined;
+      if (currentAccount.exists && !matchesSeedAccount(currentAccountData, user)) return { eligible: false };
+      if (currentEntitlement.exists && !matchesSeedEntitlement(currentEntitlementData, user)) return { eligible: false };
+
+      const createAccount = !currentAccount.exists;
+      const createEntitlement = !currentEntitlement.exists;
+      if (createAccount) transaction.create(accountRef, account);
+      if (createEntitlement) transaction.create(entitlementRef, entitlement);
+      return { eligible: true, created: createAccount || createEntitlement };
     });
+
+    if (!repair.eligible) continue;
+    if (authFixture.created) createdUserIds.push(user.uid);
   }
   return createdUserIds;
 }
@@ -247,7 +336,7 @@ async function seedOrganizations(db) {
   ];
 
   for (const org of orgs) {
-    await db.doc(`organizations/${org.orgId}`).set({
+    await createFixtureIfAbsent(db, `organizations/${org.orgId}`, {
       ...org,
       searchName: org.name.toLowerCase(),
       departmentKey: org.department.toLowerCase(),
@@ -255,24 +344,24 @@ async function seedOrganizations(db) {
       createdAt: now,
       updatedAt: now,
       createdByUid: 'local-emulator-seed'
-    }, { merge: true });
+    });
 
-    await db.doc(`organizations/${org.orgId}/officerGrants/${org.ownerUid}`).set({
+    await createFixtureIfAbsent(db, `organizations/${org.orgId}/officerGrants/${org.ownerUid}`, {
       uid: org.ownerUid,
       status: 'active',
       grantedByUid: 'local-emulator-seed',
       createdAt: now,
       updatedAt: now
-    }, { merge: true });
+    });
   }
 
-  await db.doc('organizations/computer-engineering/officerGrants/demo-officer-robotics').set({
+  await createFixtureIfAbsent(db, 'organizations/computer-engineering/officerGrants/demo-officer-robotics', {
     uid: 'demo-officer-robotics',
     status: 'active',
     grantedByUid: 'demo-owner-robotics',
     createdAt: now,
     updatedAt: now
-  }, { merge: true });
+  });
 }
 
 async function seedContent(db) {
@@ -309,7 +398,7 @@ async function seedContent(db) {
   ];
 
   for (const [id, data] of announcements) {
-    await db.doc(`announcements/${id}`).set(data, { merge: true });
+    await createFixtureIfAbsent(db, `announcements/${id}`, data);
   }
 
   const entries = [
@@ -320,19 +409,19 @@ async function seedContent(db) {
   ];
 
   for (const [entryId, data] of entries) {
-    await db.doc(`calendarEntries/${entryId}`).set({
+    await createFixtureIfAbsent(db, `calendarEntries/${entryId}`, {
       entryId,
       ...data,
       createdAt: now,
       updatedAt: now
-    }, { merge: true });
+    });
   }
 }
 
 async function seedRequests(db) {
   const { now } = nowAndExpiry();
   const applicationId = stableId('app', ['demo-student-1', 'computer-engineering', 'computer-engineering-build-team-2026']);
-  await db.doc(`applications/${applicationId}`).set({
+  await createFixtureIfAbsent(db, `applications/${applicationId}`, {
     applicationId,
     studentUid: 'demo-student-1',
     studentName: 'Mara Santos',
@@ -345,10 +434,10 @@ async function seedRequests(db) {
     externalSubmissionConfirmedAt: now,
     createdAt: now,
     updatedAt: now
-  }, { merge: true });
+  });
 
   const studentMeetingId = stableId('meeting', ['demo-student-1', 'computer-engineering', 'date-computer-engineering-interview', '2026-11-12', '14:00']);
-  await db.doc(`meetingRequests/${studentMeetingId}`).set({
+  await createFixtureIfAbsent(db, `meetingRequests/${studentMeetingId}`, {
     meetingRequestId: studentMeetingId,
     requesterUid: 'demo-student-1',
     requesterName: 'Mara Santos',
@@ -363,10 +452,10 @@ async function seedRequests(db) {
     note: 'Application submitted externally.',
     createdAt: now,
     updatedAt: now
-  }, { merge: true });
+  });
 
   const sponsorMeetingId = stableId('meeting', ['demo-sponsor-1', 'civil-engineering', 'date-civil-engineering-partner-meeting', '2026-11-14', '09:30']);
-  await db.doc(`meetingRequests/${sponsorMeetingId}`).set({
+  await createFixtureIfAbsent(db, `meetingRequests/${sponsorMeetingId}`, {
     meetingRequestId: sponsorMeetingId,
     requesterUid: 'demo-sponsor-1',
     requesterName: 'Ari Reyes',
@@ -383,7 +472,7 @@ async function seedRequests(db) {
     updatedAt: now,
     decidedByUid: 'demo-owner-robotics',
     decidedAt: now
-  }, { merge: true });
+  });
 }
 
 async function main() {
@@ -419,7 +508,7 @@ async function main() {
   }
 }
 
-module.exports = { createAuthFixtureIfMissing, seedAccounts };
+module.exports = { createAuthFixtureIfMissing, getLocalSeedEndpoints, createFixtureIfAbsent, seedAccounts, seedOrganizations, seedContent, seedRequests };
 
 if (require.main === module) {
   main().catch((error) => {

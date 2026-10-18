@@ -16,11 +16,14 @@ export interface OrganizationGrant {
   grantedAt?: string;
 }
 
+export type AccessProvenance = 'provider-confirmed-payment' | 'unpaid-preview';
+
 export interface AccessEntitlement {
   status: AccessStatus;
+  provenance?: AccessProvenance;
   /** @deprecated Kept for backend compatibility while UI copy uses feePhp/periodLabel. */
   annualFeePhp: 10;
-  feePhp?: 10;
+  feePhp?: number;
   periodMonths?: 6;
   periodLabel?: string;
   startsAt?: string;
@@ -55,6 +58,16 @@ export interface RegistrationPaymentInput {
   returnUrl: string;
 }
 
+export interface PreviewRegistrationInput {
+  role: RegistrationRoleIntent;
+  email: string;
+  password: string;
+  displayName: string;
+  studentId?: string;
+  department?: string;
+  companyName?: string;
+}
+
 export interface RegistrationPaymentIntent {
   intentId: string;
   checkoutUrl: string;
@@ -65,6 +78,8 @@ export interface RegistrationPaymentIntent {
   fixture?: boolean;
 }
 
+export type RegistrationProfile = Pick<RegistrationPaymentInput, 'role' | 'email' | 'displayName' | 'studentId' | 'department' | 'companyName'>;
+
 export interface CheckoutStatus {
   intentId: string;
   status: AccessStatus;
@@ -72,7 +87,14 @@ export interface CheckoutStatus {
   providerReference?: string;
   message: string;
   canCreateAccount: boolean;
+  completed?: boolean;
+  registrationProfile?: RegistrationProfile | null;
   fixture?: boolean;
+}
+
+export interface RegistrationRecoveryResult {
+  accepted: true;
+  delivery: 'sent' | 'not_configured';
 }
 
 export interface RegisterAccountInput {
@@ -118,6 +140,14 @@ export interface RenewalRequest {
   fixture?: boolean;
 }
 
+export interface RenewalCheckoutStatus {
+  renewalId: string;
+  status: 'pending' | 'confirmed' | 'failed';
+  accessExpiresAt?: string | null;
+  message: string;
+  fixture?: boolean;
+}
+
 export interface ApiProblem {
   code: string;
   message: string;
@@ -146,7 +176,8 @@ export class ValidationProblemError extends Error {
 }
 
 export const hasActiveAccess = (session: UserSession | null | undefined): boolean =>
-  session?.access.status === 'active' && Boolean(session.access.expiresAt);
+  session?.access.status === 'active'
+  && (Boolean(session.access.expiresAt) || session.access.provenance === 'unpaid-preview');
 
 export const hasApprovedOfficerGrant = (session: UserSession | null | undefined): boolean =>
   Boolean(session?.officerGrants.some((grant) => grant.status === 'approved' || grant.status === 'active'));

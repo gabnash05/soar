@@ -18,6 +18,7 @@ export interface ImageUploadTarget {
   contentType: (typeof ANNOUNCEMENT_MEDIA_CONTENT_TYPES)[number];
   sizeBytes: number;
   announcementId?: string;
+  signedUploadUrl?: string;
 }
 
 export interface UploadedImageReference {
@@ -41,6 +42,7 @@ export interface MeetingDocumentUploadTarget {
   sizeBytes: number;
   allowedContentTypes?: readonly string[];
   maxSizeBytes?: number;
+  signedUploadUrl?: string;
 }
 
 export interface UploadedMeetingDocumentReference {
@@ -94,11 +96,44 @@ export const validateMeetingDocumentFile = (file: File): void => {
   }
 };
 
+function getFirebaseStorage() {
+  const storage = getFirebaseRuntime().storage;
+  if (!storage) throw new UserFacingError('Private file storage is not configured.');
+  return storage;
+}
+
 export const storageDownloadUrl = async (storagePath: string): Promise<string> => {
   if (!storagePath) return '';
-  const { storage } = getFirebaseRuntime();
-  return getDownloadURL(ref(storage, storagePath));
+  if (import.meta.env.VITE_SOAR_STORAGE_PROVIDER === 'supabase') {
+    const response = await fetch(`${assertApiBase()}/storage/download-url?path=${encodeURIComponent(storagePath)}`, {
+      headers: await authHeaders(),
+      credentials: 'include',
+    });
+    if (!response.ok) throw new UserFacingError('This media is temporarily unavailable.');
+    const result = await response.json() as { url?: unknown };
+    if (typeof result.url !== 'string' || !result.url.startsWith('https://')) throw new UserFacingError('This media is temporarily unavailable.');
+    return result.url;
+  }
+  return getDownloadURL(ref(getFirebaseStorage(), storagePath));
 };
+
+async function uploadToSignedUrl(url: string, file: File, contentType: string, metadata?: Record<string, string>): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': contentType,
+        'x-upsert': 'false',
+        ...(metadata ? { 'x-metadata': JSON.stringify(metadata) } : {}),
+      },
+      body: file,
+    });
+  } catch {
+    throw new UserFacingError('The file could not be uploaded. Check your connection and try again.');
+  }
+  if (!response.ok) throw new UserFacingError('The file could not be uploaded. Check your connection and try again.');
+}
 
 export const uploadToStorageTarget = async (target: ImageUploadTarget, file: File, alt = file.name): Promise<UploadedImageReference> => {
   validateAnnouncementMediaFile(file);
@@ -106,10 +141,15 @@ export const uploadToStorageTarget = async (target: ImageUploadTarget, file: Fil
     throw new UserFacingError('The selected image changed before upload. Choose the file again.');
   }
 
-  const { storage } = getFirebaseRuntime();
-  const objectRef = ref(storage, target.storagePath);
-  await uploadBytes(objectRef, file, { contentType: target.contentType });
-  const url = await getDownloadURL(objectRef);
+  let url: string;
+  if (target.signedUploadUrl) {
+    await uploadToSignedUrl(target.signedUploadUrl, file, target.contentType);
+    url = await storageDownloadUrl(target.storagePath);
+  } else {
+    const objectRef = ref(getFirebaseStorage(), target.storagePath);
+    await uploadBytes(objectRef, file, { contentType: target.contentType });
+    url = await getDownloadURL(objectRef);
+  }
 
   return {
     storagePath: target.storagePath,
@@ -133,12 +173,15 @@ export const uploadMeetingDocumentToTarget = async (
     throw new UserFacingError('The document target no longer matches this meeting request. Choose the file again.');
   }
 
-  const { storage } = getFirebaseRuntime();
-  const objectRef = ref(storage, target.storagePath);
-  await uploadBytes(objectRef, file, {
-    contentType: target.contentType,
-    customMetadata: metadata,
-  });
+  if (target.signedUploadUrl) {
+    await uploadToSignedUrl(target.signedUploadUrl, file, target.contentType, metadata);
+  } else {
+    const objectRef = ref(getFirebaseStorage(), target.storagePath);
+    await uploadBytes(objectRef, file, {
+      contentType: target.contentType,
+      customMetadata: metadata,
+    });
+  }
 
   return {
     storagePath: target.storagePath,

@@ -5,6 +5,7 @@ import { AppError } from '../src/errors';
 const mocks = vi.hoisted(() => ({
   requireBearerToken: vi.fn(),
   getUserSession: vi.fn(),
+  createUnpaidPreviewAccount: vi.fn(),
   updateDisplayName: vi.fn(),
   requestVerifiedEmailChange: vi.fn(),
   approveOfficerGrant: vi.fn(),
@@ -27,9 +28,11 @@ const mocks = vi.hoisted(() => ({
   createAnnouncementImageTarget: vi.fn(),
   createAnnouncementMediaTargets: vi.fn(),
   createAnnouncement: vi.fn(),
+  updateAnnouncement: vi.fn(),
   deleteAnnouncement: vi.fn(),
   deleteAnnouncementComment: vi.fn(),
   getAnnouncement: vi.fn(),
+  getMediaDownloadUrl: vi.fn(),
   getStudentDepartmentCounts: vi.fn(),
   setAnnouncementLike: vi.fn(),
   listAnnouncementComments: vi.fn(),
@@ -61,6 +64,7 @@ vi.mock('../src/http/auth', () => ({
 }));
 
 vi.mock('../src/identity/session', () => ({ getUserSession: mocks.getUserSession }));
+vi.mock('../src/identity/previewRegistration', () => ({ createUnpaidPreviewAccount: mocks.createUnpaidPreviewAccount }));
 vi.mock('../src/identity/accountSettings', () => ({
   updateDisplayName: mocks.updateDisplayName,
   requestVerifiedEmailChange: mocks.requestVerifiedEmailChange,
@@ -89,6 +93,7 @@ vi.mock('../src/content/service', () => ({
   deleteAnnouncementComment: mocks.deleteAnnouncementComment,
   deleteDateEntry: mocks.deleteDateEntry,
   getAnnouncement: mocks.getAnnouncement,
+  getMediaDownloadUrl: mocks.getMediaDownloadUrl,
   getOrganizationProfile: mocks.getOrganizationProfile,
   getStudentDepartmentCounts: mocks.getStudentDepartmentCounts,
   listAnnouncementComments: mocks.listAnnouncementComments,
@@ -97,6 +102,7 @@ vi.mock('../src/content/service', () => ({
   listOrganizations: mocks.listOrganizations,
   scopedDateEntryQuery: mocks.scopedDateEntryQuery,
   setAnnouncementLike: mocks.setAnnouncementLike,
+  updateAnnouncement: mocks.updateAnnouncement,
   updateAnnouncementComment: mocks.updateAnnouncementComment,
   updateDateEntry: mocks.updateDateEntry,
   updateOrganizationProfile: mocks.updateOrganizationProfile,
@@ -120,13 +126,16 @@ describe('SOAR HTTP route contracts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireBearerToken.mockResolvedValue({ uid: 'user1', email_verified: true });
+    mocks.createUnpaidPreviewAccount.mockResolvedValue({ uid: 'user1', created: true, access: { status: 'active', provenance: 'unpaid-preview' } });
     mocks.paymentHandlers.mockReturnValue({
       paymongoWebhook: vi.fn(async () => ({ status: 200, body: { received: true } })),
       startRegistrationPayment: vi.fn(async () => ({ status: 200, body: { intentId: 'intent1' } })),
       getCheckoutStatus: vi.fn(async () => ({ status: 200, body: { intentId: 'intent1', status: 'pending' } })),
       registerAccount: vi.fn(async () => ({ status: 201, body: { uid: 'user1' } })),
       recoverPaidRegistration: vi.fn(async () => ({ status: 200, body: { recovered: true } })),
+      acceptPaidRegistrationRecovery: vi.fn(async () => ({ status: 200, body: { accepted: true } })),
       requestManualRenewal: vi.fn(async () => ({ status: 200, body: { renewalId: 'renewal1' } })),
+      getRenewalStatus: vi.fn(async () => ({ status: 200, body: { renewalId: 'renewal1', status: 'pending' } })),
       getAccessStatus: vi.fn(async () => ({ status: 200, body: { status: 'active' } })),
     });
     mocks.scopedDateEntryQuery.mockImplementation((orgId: string, query: unknown) => ({ ...(query as object), organizationId: orgId }));
@@ -181,6 +190,47 @@ describe('SOAR HTTP route contracts', () => {
     }
   });
 
+  it('returns an authenticated signed-media URL without exposing storage credentials', async () => {
+    const user = { uid: 'user1', email_verified: true };
+    const path = 'announcement-images/org-1/post-1/photo.png';
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.getMediaDownloadUrl.mockResolvedValue({ url: 'https://project.supabase.co/storage/v1/object/sign/private/photo.png?token=short-lived' });
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/storage/download-url?path=${encodeURIComponent(path)}`, {
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ url: 'https://project.supabase.co/storage/v1/object/sign/private/photo.png?token=short-lived' });
+    });
+
+    expect(mocks.getMediaDownloadUrl).toHaveBeenCalledWith(user, path);
+  });
+
+  it('disables payment and registration routes in an unpaid preview without invoking provider handlers', async () => {
+    const previous = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'true';
+    try {
+      await withApiServer(async (baseUrl) => {
+        const registration = await fetch(`${baseUrl}/payments/registration/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(registration.status).toBe(503);
+        await expect(registration.json()).resolves.toMatchObject({ code: 'payments_unavailable' });
+
+        const webhook = await fetch(`${baseUrl}/webhooks/paymongo`, { method: 'POST', body: '{}' });
+        expect(webhook.status).toBe(503);
+        await expect(webhook.json()).resolves.toMatchObject({ code: 'payments_unavailable' });
+      });
+      expect(mocks.paymentHandlers).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previous;
+    }
+  });
+
   it('returns authenticated session payloads through the /api prefix', async () => {
     mocks.getUserSession.mockResolvedValue({ uid: 'user1', email: 'user@example.test', access: { status: 'active' } });
 
@@ -192,6 +242,41 @@ describe('SOAR HTTP route contracts', () => {
 
     expect(mocks.requireBearerToken).toHaveBeenCalled();
     expect(mocks.getUserSession).toHaveBeenCalledWith({ uid: 'user1', email_verified: true });
+  });
+
+  it('saves a self-authenticated unpaid preview account without passing a password to the backend', async () => {
+    const profile = {
+      role: 'student',
+      displayName: 'Mara Santos',
+      studentId: '2026-0001',
+      department: 'Computer Engineering Department',
+    };
+    mocks.requireBearerToken.mockResolvedValueOnce({ uid: 'user1', email: 'user@example.edu', email_verified: true });
+    const previousPaymentsSetting = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'true';
+
+    try {
+      await withApiServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/accounts/preview-registration`, {
+          method: 'POST',
+          headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+          body: JSON.stringify(profile),
+        });
+        expect(response.status).toBe(201);
+        await expect(response.json()).resolves.toMatchObject({
+          uid: 'user1',
+          created: true,
+          access: { status: 'active', provenance: 'unpaid-preview' },
+        });
+      });
+    } finally {
+      if (previousPaymentsSetting === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previousPaymentsSetting;
+    }
+
+    expect(mocks.requireBearerToken).toHaveBeenCalled();
+    expect(mocks.createUnpaidPreviewAccount).toHaveBeenCalledWith({ uid: 'user1', email: 'user@example.edu', email_verified: true }, profile);
+    expect(JSON.stringify(mocks.createUnpaidPreviewAccount.mock.calls)).not.toContain('password');
   });
 
   it('preserves the name-save response DTO without claiming it is a complete session', async () => {
@@ -259,9 +344,29 @@ describe('SOAR HTTP route contracts', () => {
     );
   });
 
+  it('uses the existing organization profile patch contract for intake changes', async () => {
+    const user = { uid: 'approved-officer', email_verified: true };
+    const updatedProfile = { id: 'robotics', applicationsOpen: false };
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.updateOrganizationProfile.mockResolvedValue(updatedProfile);
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/organizations/robotics`, {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ applicationsOpen: false }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual(updatedProfile);
+    });
+
+    expect(mocks.updateOrganizationProfile).toHaveBeenCalledWith(user, 'robotics', { applicationsOpen: false });
+  });
+
   it('mounts department counts and revised announcement routes without exposing student lists', async () => {
     mocks.getStudentDepartmentCounts.mockResolvedValue({ organizationId: 'computer-engineering', department: 'Computer Engineering Department', departmentKey: 'computer engineering department', registeredStudentCount: 2 });
     mocks.createAnnouncementMediaTargets.mockResolvedValue({ announcementId: 'post1', items: [] });
+    mocks.updateAnnouncement.mockResolvedValue({ id: 'post1', body: 'Revised post' });
     mocks.updateAnnouncementComment.mockResolvedValue({ id: 'comment1', body: 'Updated', viewerCanEdit: true });
     mocks.deleteAnnouncementComment.mockResolvedValue({ announcementId: 'post1', commentId: 'comment1', deleted: true });
     mocks.getAnnouncement.mockResolvedValue({ id: 'post1', deepLinkPath: '/app?announcementId=post1' });
@@ -275,6 +380,11 @@ describe('SOAR HTTP route contracts', () => {
       expect(removedAdminStats.status).toBe(404);
 
       await expect((await fetch(`${baseUrl}/api/announcements/post1`, { headers: { authorization: 'Bearer test-token' } })).json()).resolves.toMatchObject({ deepLinkPath: '/app?announcementId=post1' });
+      expect((await fetch(`${baseUrl}/api/organizations/robotics/announcements/post1`, {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ body: 'Revised post' }),
+      })).status).toBe(200);
       expect((await fetch(`${baseUrl}/api/organizations/robotics/announcements/media-targets`, {
         method: 'POST',
         headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
@@ -293,6 +403,7 @@ describe('SOAR HTTP route contracts', () => {
 
     expect(mocks.getStudentDepartmentCounts).toHaveBeenCalledWith({ uid: 'user1', email_verified: true }, 'computer-engineering');
     expect(mocks.createAnnouncementMediaTargets).toHaveBeenCalled();
+    expect(mocks.updateAnnouncement).toHaveBeenCalledWith({ uid: 'user1', email_verified: true }, 'robotics', 'post1', { body: 'Revised post' });
     expect(mocks.updateAnnouncementComment).toHaveBeenCalled();
     expect(mocks.deleteAnnouncementComment).toHaveBeenCalled();
   });
@@ -406,6 +517,71 @@ describe('SOAR HTTP route contracts', () => {
       },
     );
     expect(mocks.requestService.createMeetingDocumentTarget).toHaveBeenCalled();
+  });
+
+  it('disables payment actions while preserving authenticated access-status reads in preview mode', async () => {
+    const previous = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'true';
+    try {
+      const handlers = mocks.paymentHandlers();
+      await withApiServer(async (baseUrl) => {
+        const start = await fetch(`${baseUrl}/api/payments/registration/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(start.status).toBe(503);
+
+        const recovery = await fetch(`${baseUrl}/api/payments/registration/recover/accept`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ intentId: 'intent1', recoveryCode: 'code' }),
+        });
+        expect(recovery.status).toBe(503);
+
+        const renewal = await fetch(`${baseUrl}/api/payments/renewals/status?renewalId=renewal1`, {
+          headers: { authorization: 'Bearer test-token' },
+        });
+        expect(renewal.status).toBe(503);
+
+        const access = await fetch(`${baseUrl}/api/payments/access/status`, {
+          headers: { authorization: 'Bearer test-token' },
+        });
+        expect(access.status).toBe(200);
+        await expect(access.json()).resolves.toMatchObject({ status: 'active' });
+      });
+      expect(handlers.startRegistrationPayment).not.toHaveBeenCalled();
+      expect(handlers.acceptPaidRegistrationRecovery).not.toHaveBeenCalled();
+      expect(handlers.getRenewalStatus).not.toHaveBeenCalled();
+      expect(handlers.getAccessStatus).toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previous;
+    }
+  });
+
+  it('mounts paid-registration recovery and same-user renewal status routes under /api', async () => {
+    const handlers = mocks.paymentHandlers();
+
+    await withApiServer(async (baseUrl) => {
+      const accepted = await fetch(`${baseUrl}/api/payments/registration/recover/accept`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ intentId: 'intent1', recoveryCode: 'one-time-code' }),
+      });
+      expect(accepted.status).toBe(200);
+      await expect(accepted.json()).resolves.toEqual({ accepted: true });
+
+      const renewal = await fetch(`${baseUrl}/api/payments/renewals/status?renewalId=renewal1`, {
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(renewal.status).toBe(200);
+      await expect(renewal.json()).resolves.toMatchObject({ renewalId: 'renewal1', status: 'pending' });
+    });
+
+    expect(handlers.acceptPaidRegistrationRecovery).toHaveBeenCalled();
+    expect(mocks.requireBearerToken).toHaveBeenCalled();
+    expect(handlers.getRenewalStatus).toHaveBeenCalled();
   });
 
   it('returns plain JSON problem responses for app errors and unknown routes', async () => {

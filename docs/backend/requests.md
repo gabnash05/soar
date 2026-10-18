@@ -51,8 +51,7 @@ SOAR records only the student's acknowledgement, not independent proof that the 
 
 ### Application document
 
-Records are stored in `applications/{applicationId}` with a deterministic backend id derived from `studentUid`, `orgId`, and `opportunityId`.
-That deterministic id is the atomic duplicate-prevention boundary for one student per recruitment opportunity.
+Records are stored in `applications/{applicationId}`. New records use a deterministic backend id derived from `studentUid` and `orgId`, making repeated and concurrent confirmations for the same student/organization converge on one document. The transactional store also checks for any existing application with the same saved `studentUid` and `orgId`, so older opportunity-keyed records block a second application without being migrated or deleted.
 
 ```ts
 {
@@ -99,9 +98,10 @@ Rules:
 
 - Caller must be an active verified student account.
 - `externalFormOpened` and `confirmedExternalSubmission` must both be `true`.
-- Organization must exist and have a posted `recruitment.applicationLink`.
+- Organization must exist, have a posted `recruitment.applicationLink`, and have open application intake.
 - `opportunityId` must match the current organization recruitment opportunity.
-- Duplicate confirmations for the same student and opportunity return `409 duplicate_application`.
+- A missing `applicationsOpen` organization setting means open for compatibility with existing organizations. An explicit `false` rejects confirmation with `409 applications_closed`.
+- Duplicate confirmations for the same student and organization return `409 duplicate_application`, even if the organization later posts a different opportunity. Existing application records and review statuses remain unchanged; reopening intake does not permit reapplication.
 
 Response is an application tracker row:
 
@@ -291,6 +291,18 @@ Request body:
 Allowed statuses are exactly `Pending`, `Approved`, and `Declined`.
 The service records `decidedByUid` and `decidedAt`.
 
+## Organization application-intake setting
+
+An approved officer with a grant for the selected organization can control intake from Organization Settings. The frontend uses the existing `PATCH /organizations/:orgId` profile route with a boolean-only body:
+
+```json
+{ "applicationsOpen": false }
+```
+
+The existing organization management authorization check scopes the change to the caller's organization. `applicationsOpen` is optional in stored organization records; reads and application confirmation treat a missing value as `true` so existing organizations are not silently closed. Intake changes only affect new confirmations. Existing applications remain in student trackers and officer queues while intake is closed.
+
+The confirmation transaction reads the organization setting while atomically checking existing applications and creating the deterministic student/organization document. If an officer closes intake after a student opened the external form but before confirmation commits, the transaction observes the closed state (including retry after an organization write conflict) and rejects without creating an application.
+
 ## Firestore rules and indexes
 
 Client SDK collection scans remain denied for `applications` and `meetingRequests`.
@@ -299,6 +311,7 @@ Document `get` remains available only to the requester or an approved manager fo
 
 Trusted backend queries require these composite indexes:
 
+- `applications`: `studentUid ASC, orgId ASC` (transactional per-student/per-organization duplicate check).
 - `applications`: `studentUid ASC, updatedAt DESC`.
 - `applications`: `orgId ASC, updatedAt DESC`.
 - `meetingRequests`: `requesterUid ASC, updatedAt DESC`.

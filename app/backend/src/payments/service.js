@@ -30,10 +30,13 @@ const {
 } = require('./paymongo');
 
 const DEFAULT_REGISTRATION_TTL_MS = 48 * 60 * 60 * 1000;
+const DEFAULT_RECOVERY_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RATE_LIMITS = Object.freeze({
   checkoutPerEmailPerHour: 3,
   checkoutPerIpPerHour: 20,
   completionPerIpPerHour: 20,
+  recoveryPerEmailPerHour: 3,
+  recoveryPerIpPerHour: 20,
 });
 
 const DEPARTMENT_LABELS = Object.freeze([
@@ -128,13 +131,28 @@ function addMillis(date, millis) {
   return new Date(date.getTime() + millis);
 }
 
+function appReturnUrl(appBaseUrl, path) {
+  let base;
+  try {
+    base = new URL(appBaseUrl);
+  } catch (_) {
+    fail('invalid_app_base_url', 'SOAR_APP_BASE_URL must be configured as the frontend HTTPS origin.');
+  }
+  const localHttp = base.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname);
+  if (base.protocol !== 'https:' && !localHttp) {
+    fail('invalid_app_base_url', 'SOAR_APP_BASE_URL must use HTTPS outside local development.');
+  }
+  return new URL(path, base.origin).toString();
+}
+
 function publicIntentStatus(intent, payment, now) {
   return {
     intentId: intent && intent.id,
     status: intent ? intent.status : 'missing',
     paymentStatus: payment ? payment.status : null,
-    canComplete: Boolean(intent && intent.status === REGISTRATION_STATUSES.PAID),
+    canComplete: Boolean(intent && [REGISTRATION_STATUSES.PAID, REGISTRATION_STATUSES.COMPLETING].includes(intent.status)),
     completed: Boolean(intent && intent.status === REGISTRATION_STATUSES.COMPLETED),
+    registrationProfile: intent && intent.profile || null,
     amountMinor: ACCESS_PRICE_MINOR,
     currency: ACCESS_CURRENCY,
     checkoutExpiresAt: dateToIso(intent && intent.expiresAt),
@@ -150,7 +168,7 @@ class PaymentAccessService {
     repository,
     provider,
     identity,
-    appBaseUrl = 'http://localhost:5000',
+    appBaseUrl = '',
     secretPepper,
     webhookSecret,
     expectedLivemode = false,
@@ -200,6 +218,8 @@ class PaymentAccessService {
     const expiresAt = addMillis(now, this.registrationTtlMs);
     const hashedEmail = emailHash(profile.email, this.secretPepper);
     const referenceNumber = providerReference(paymentId);
+    const successUrl = appReturnUrl(this.appBaseUrl, `/access/checkout?intentId=${encodeURIComponent(intentId)}`);
+    const cancelUrl = appReturnUrl(this.appBaseUrl, `/access/checkout?intentId=${encodeURIComponent(intentId)}&checkout=cancelled`);
 
     const intent = {
       id: intentId,
@@ -248,8 +268,8 @@ class PaymentAccessService {
         referenceNumber,
         billingName: profile.fullName,
         billingEmail: profile.email,
-        successUrl: `${this.appBaseUrl}/access/registration/return?intent=${encodeURIComponent(intentId)}`,
-        cancelUrl: `${this.appBaseUrl}/access/registration/cancel?intent=${encodeURIComponent(intentId)}`,
+        successUrl,
+        cancelUrl,
         metadata: {
           paymentId,
           intentId,
@@ -317,6 +337,8 @@ class PaymentAccessService {
 
     const paymentId = `pay_${randomToken(18)}`;
     const referenceNumber = providerReference(paymentId);
+    const successUrl = appReturnUrl(this.appBaseUrl, `/settings/access?renewalId=${encodeURIComponent(paymentId)}&checkout=success`);
+    const cancelUrl = appReturnUrl(this.appBaseUrl, `/settings/access?renewalId=${encodeURIComponent(paymentId)}&checkout=cancelled`);
     const payment = {
       id: paymentId,
       purpose: PAYMENT_PURPOSES.RENEWAL,
@@ -345,8 +367,8 @@ class PaymentAccessService {
         referenceNumber,
         billingName: account.fullName || authUser.displayName || account.email || uid,
         billingEmail: account.email || authUser.email,
-        successUrl: `${this.appBaseUrl}/access/renewal/return?payment=${encodeURIComponent(paymentId)}`,
-        cancelUrl: `${this.appBaseUrl}/access/renewal/cancel?payment=${encodeURIComponent(paymentId)}`,
+        successUrl,
+        cancelUrl,
         metadata: {
           paymentId,
           uid,
@@ -383,6 +405,32 @@ class PaymentAccessService {
       amountMinor: ACCESS_PRICE_MINOR,
       currency: ACCESS_CURRENCY,
     };
+  }
+
+  async getRenewalStatus(input, context = {}) {
+    const uid = requireString(context.auth && context.auth.uid, 'unauthorized_status', 'Renewal status requires an authenticated account.');
+    const renewalId = requireString(input && input.renewalId, 'missing_renewal_id', 'Renewal id is required.');
+    return this.repository.runTransaction(async (tx) => {
+      const payment = await tx.getPayment(renewalId);
+      if (!payment || payment.purpose !== PAYMENT_PURPOSES.RENEWAL || payment.uid !== uid) {
+        fail('renewal_not_found', 'Renewal payment was not found.');
+      }
+      const status = payment.status === PAYMENT_STATUSES.PAID
+        ? 'confirmed'
+        : [PAYMENT_STATUSES.FAILED, PAYMENT_STATUSES.INVALID, PAYMENT_STATUSES.CANCELLED, PAYMENT_STATUSES.EXPIRED].includes(payment.status)
+          ? 'failed'
+          : 'pending';
+      return {
+        renewalId,
+        status,
+        accessExpiresAt: dateToIso(payment.accessExpiresAt),
+        message: status === 'confirmed'
+          ? 'Payment confirmed. Your access has been updated.'
+          : status === 'failed'
+            ? 'This renewal could not be confirmed. You can start a new checkout.'
+            : 'Waiting for provider-confirmed payment. Access remains unchanged until confirmation.',
+      };
+    });
   }
 
   async handlePayMongoWebhook({ rawBody, signatureHeader }) {
@@ -440,10 +488,18 @@ class PaymentAccessService {
 
       if (validationError) return rejectEvent('invalid_paid_event_facts', validationError.code, validationError.details);
       if (payment.providerCheckoutSessionId !== facts.checkoutSessionId) return rejectEvent('checkout_session_mismatch', 'checkout_session_mismatch');
-      const metadataPaymentId = facts.metadata && facts.metadata.paymentId;
-      const referenceMatches = facts.referenceNumber && facts.referenceNumber === payment.referenceNumber;
-      const metadataMatches = metadataPaymentId && metadataPaymentId === payment.id;
-      if (!referenceMatches && !metadataMatches) return rejectEvent('provider_reference_mismatch', 'provider_reference_mismatch');
+      const metadata = facts.metadata || {};
+      const metadataPaymentId = metadata.paymentId;
+      if (!facts.referenceNumber || facts.referenceNumber !== payment.referenceNumber) return rejectEvent('provider_reference_mismatch', 'provider_reference_mismatch');
+      if (metadataPaymentId && metadataPaymentId !== payment.id) return rejectEvent('payment_id_mismatch', 'payment_id_mismatch');
+      if (![PAYMENT_PURPOSES.REGISTRATION, PAYMENT_PURPOSES.RENEWAL].includes(payment.purpose)) return rejectEvent('unknown_payment_purpose', 'unknown_payment_purpose');
+      if (metadata.purpose && metadata.purpose !== payment.purpose) return rejectEvent('payment_purpose_mismatch', 'payment_purpose_mismatch');
+      if (payment.purpose === PAYMENT_PURPOSES.REGISTRATION && metadata.intentId && metadata.intentId !== payment.registrationIntentId) {
+        return rejectEvent('registration_intent_mismatch', 'registration_intent_mismatch');
+      }
+      if (payment.purpose === PAYMENT_PURPOSES.RENEWAL && metadata.uid && metadata.uid !== payment.uid) {
+        return rejectEvent('renewal_uid_mismatch', 'renewal_uid_mismatch');
+      }
       if (payment.amountMinor !== ACCESS_PRICE_MINOR || payment.currency !== ACCESS_CURRENCY) return rejectEvent('internal_amount_mismatch', 'internal_amount_mismatch');
       if (payment.livemode !== null && payment.livemode !== facts.livemode) return rejectEvent('livemode_mismatch', 'livemode_mismatch');
 
@@ -661,30 +717,71 @@ class PaymentAccessService {
     });
   }
 
-  async requestPaidRegistrationRecovery(input) {
-    const now = this.now();
+  async requestPaidRegistrationRecovery(input, context = {}) {
     const email = validateEmail(input && input.email);
+    if (!this.recoverySender || typeof this.recoverySender.sendPaidRegistrationRecovery !== 'function') {
+      return { accepted: true, delivery: 'not_configured' };
+    }
+
+    const now = this.now();
     const checkoutSessionId = String((input && input.checkoutSessionId) || '').trim() || null;
     const hashedEmail = emailHash(email, this.secretPepper);
+    await this.checkRateLimit(`recovery-email:${hashedEmail}`, DEFAULT_RATE_LIMITS.recoveryPerEmailPerHour, 60 * 60 * 1000);
+    await this.checkRateLimit(context.ip ? `recovery-ip:${context.ip}` : null, DEFAULT_RATE_LIMITS.recoveryPerIpPerHour, 60 * 60 * 1000);
     let recovery = null;
     await this.repository.runTransaction(async (tx) => {
       const intent = await tx.findPaidIncompleteRegistrationByEmailHash(hashedEmail, checkoutSessionId);
       if (!intent) return;
       const recoverySecret = randomToken(32);
       await tx.updateRegistrationIntent(intent.id, {
-        secretHash: hashSecret(recoverySecret, this.secretPepper),
+        recoverySecretHash: hashSecret(recoverySecret, this.secretPepper),
+        recoveryExpiresAt: addMillis(now, DEFAULT_RECOVERY_TTL_MS),
         recoveryIssuedAt: now,
         recoveryCount: (intent.recoveryCount || 0) + 1,
         updatedAt: now,
       });
-      recovery = { intentId: intent.id, email: intent.email, recoverySecret, expiresAt: intent.expiresAt };
+      recovery = { intentId: intent.id, email: intent.email, recoverySecret, expiresAt: addMillis(now, DEFAULT_RECOVERY_TTL_MS) };
     });
 
-    if (recovery && this.recoverySender) {
-      await this.recoverySender.sendPaidRegistrationRecovery(recovery);
-      return { accepted: true, delivery: 'sent' };
+    if (recovery) {
+      try {
+        await this.recoverySender.sendPaidRegistrationRecovery(recovery);
+      } catch (_) {
+        // Do not reveal whether a paid registration matched or whether delivery succeeded.
+      }
     }
-    return { accepted: true, delivery: recovery ? 'not_configured' : 'not_applicable' };
+    return { accepted: true, delivery: 'sent' };
+  }
+
+  async acceptPaidRegistrationRecovery(input, context = {}) {
+    await this.checkRateLimit(context.ip ? `recovery-accept-ip:${context.ip}` : null, DEFAULT_RATE_LIMITS.completionPerIpPerHour, 60 * 60 * 1000);
+    const intentId = requireString(input && input.intentId, 'missing_intent_id', 'Registration intent id is required.');
+    const recoverySecret = requireString(input && input.recoverySecret, 'missing_recovery_code', 'Recovery code is required.');
+    const now = this.now();
+    const registrationSecret = randomToken(32);
+
+    return this.repository.runTransaction(async (tx) => {
+      const intent = await tx.getRegistrationIntent(intentId);
+      if (!intent) fail('registration_intent_not_found', 'Registration intent was not found.');
+      if (!verifySecret({ secret: recoverySecret, expectedHash: intent.recoverySecretHash, pepper: this.secretPepper })) {
+        fail('invalid_recovery_code', 'Registration recovery code is invalid.');
+      }
+      if (intent.status !== REGISTRATION_STATUSES.PAID && intent.status !== REGISTRATION_STATUSES.COMPLETING) {
+        fail('registration_not_paid', 'Registration cannot be recovered until payment is confirmed.');
+      }
+      const recoveryExpiresAt = toDate(intent.recoveryExpiresAt);
+      if (!recoveryExpiresAt || recoveryExpiresAt.getTime() <= now.getTime()) {
+        fail('recovery_code_expired', 'Registration recovery code has expired. Request another recovery email.');
+      }
+      await tx.updateRegistrationIntent(intent.id, {
+        secretHash: hashSecret(registrationSecret, this.secretPepper),
+        recoverySecretHash: null,
+        recoveryExpiresAt: null,
+        recoveryAcceptedAt: now,
+        updatedAt: now,
+      });
+      return { intentId, private: { registrationSecret } };
+    });
   }
 
   async getAccessStatus(input, context = {}) {

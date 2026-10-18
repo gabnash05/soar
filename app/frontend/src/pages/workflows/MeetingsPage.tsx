@@ -17,6 +17,13 @@ const requestInputFromOption = (option?: DateEntry): MeetingRequestInput => ({
   note: '',
 });
 
+function mergeMeetingRequests(serverRequests: MeetingRequest[], confirmedRequests: MeetingRequest[]) {
+  const requestsById = new Map<string, MeetingRequest>();
+  confirmedRequests.forEach((request) => requestsById.set(request.id, request));
+  serverRequests.forEach((request) => requestsById.set(request.id, request));
+  return Array.from(requestsById.values());
+}
+
 export function MeetingDocumentButton({ request }: { request: MeetingRequest }) {
   const [message, setMessage] = useState('');
   if (!request.document) return <span className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No document</span>;
@@ -47,8 +54,10 @@ export function MeetingsView({ session, client }: { session: UserSession; client
   const requestedOrganizationId = searchParams.get('organizationId') ?? '';
   const optionsQuery = useWorkflowQuery(() => client.listMeetingOptions(session), [client, session.uid]);
   const requestsQuery = useWorkflowQuery(() => client.listMyMeetingRequests(session), [client, session.uid]);
+  const [confirmedRequestsBySession, setConfirmedRequestsBySession] = useState<{ sessionUid: string; items: MeetingRequest[] }>(() => ({ sessionUid: session.uid, items: [] }));
+  const confirmedRequests = confirmedRequestsBySession.sessionUid === session.uid ? confirmedRequestsBySession.items : [];
   const options = optionsQuery.data ?? [];
-  const requests = requestsQuery.data ?? [];
+  const requests = mergeMeetingRequests(requestsQuery.data ?? [], confirmedRequests);
   const preferredOption = options.find((option) => option.organizationId === requestedOrganizationId) ?? options[0];
   const officerGrants = getApprovedOfficerGrants(session);
   const hasOfficerReview = officerGrants.length > 0;
@@ -104,14 +113,36 @@ export function MeetingsView({ session, client }: { session: UserSession; client
     setBusy(true);
     try {
       const next = await client.requestMeeting(form, session);
-      setResult(next);
-      if (next.ok) {
-        setRequestOpen(false);
-        setRequestDirty(false);
-        setDocumentError('');
-        setForm(requestInputFromOption(preferredOption));
-        await requestsQuery.reload();
+      if (!next.ok) {
+        setResult(next);
+        return;
       }
+      if (next.persisted !== true || !next.data || next.data.requesterUid !== session.uid || next.data.status !== 'Pending') {
+        setResult({
+          ...next,
+          ok: false,
+          persisted: 'unconfirmed',
+          reason: 'error',
+          message: 'We could not confirm that your meeting request was saved. Check My requests before trying again.',
+        });
+        await requestsQuery.reload();
+        return;
+      }
+
+      setResult(next);
+      const confirmedRequest = next.data;
+      setConfirmedRequestsBySession((current) => {
+        const previous = current.sessionUid === session.uid ? current.items : [];
+        return {
+          sessionUid: session.uid,
+          items: [confirmedRequest, ...previous.filter((request) => request.id !== confirmedRequest.id)],
+        };
+      });
+      setRequestOpen(false);
+      setRequestDirty(false);
+      setDocumentError('');
+      setForm(requestInputFromOption(preferredOption));
+      await requestsQuery.reload();
     } catch (error) {
       setResult({
         ok: false,
@@ -222,7 +253,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
 
       {hasOfficerReview ? (
         <SubtabPanel baseId="meetings" tabId="review" activeId={activeId}>
-          <OfficerMeetingReview session={session} client={client} />
+          <OfficerMeetingReview session={session} client={client} confirmedRequests={confirmedRequests} />
         </SubtabPanel>
       ) : null}
 
