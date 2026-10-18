@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 
 const projectId = process.env.GCLOUD_PROJECT ?? `soar-storage-rules-${Date.now()}`;
 
@@ -33,10 +33,18 @@ function imageBlob(size = 16, type = 'image/png') {
   return new Blob([new Uint8Array(size).fill(1)], { type });
 }
 
+function pdfBlob(size = 16, type = 'application/pdf') {
+  return new Blob([new Uint8Array(size).fill(2)], { type });
+}
+
+function unsupportedVideoBlob(size = 16, type = 'video/mp4') {
+  return new Blob([new Uint8Array(size).fill(3)], { type });
+}
+
 async function seedBaseData() {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
-    for (const uid of ['owner', 'officer', 'foreign', 'expired', 'unverified']) {
+    for (const uid of ['owner', 'officer', 'requester', 'foreign', 'expired', 'unverified']) {
       await setDoc(doc(db, 'accounts', uid), {
         uid,
         role: 'student',
@@ -76,6 +84,22 @@ async function seedBaseData() {
       createdAt: oldEnough,
       updatedAt: oldEnough
     });
+
+    await setDoc(doc(db, 'meetingRequests', 'meeting1'), {
+      meetingRequestId: 'meeting1',
+      requesterUid: 'requester',
+      requesterName: 'Requester User',
+      requesterRole: 'student',
+      orgId: 'org1',
+      organizationName: 'Robotics Club',
+      dateEntryId: 'date1',
+      meetingTitle: 'Interview window',
+      status: 'Pending',
+      requestedDate: '2026-10-10',
+      requestedTime: '10:00',
+      createdAt: oldEnough,
+      updatedAt: oldEnough
+    });
   });
 }
 
@@ -104,9 +128,10 @@ afterAll(async () => {
 });
 
 describe('storage organization image boundaries', () => {
-  it('allows organization owners and active officers to upload organization images', async () => {
+  it('allows organization-owned image uploads and rejects announcement videos' , async () => {
     await assertSucceeds(storageFor('owner').ref('organization-logos/org1/logo.png').put(imageBlob(), { contentType: 'image/png' }));
     await assertSucceeds(storageFor('officer').ref('announcement-images/org1/post1/image.webp').put(imageBlob(16, 'image/webp'), { contentType: 'image/webp' }));
+    await assertFails(storageFor('officer').ref('announcement-images/org1/post1/clip.mp4').put(unsupportedVideoBlob(), { contentType: 'video/mp4' }));
   });
 
   it('blocks foreign, unverified, expired, and anonymous uploads', async () => {
@@ -119,6 +144,7 @@ describe('storage organization image boundaries', () => {
   it('blocks invalid image types and oversized files', async () => {
     await assertFails(storageFor('owner').ref('organization-logos/org1/readme.txt').put(imageBlob(16, 'text/plain'), { contentType: 'text/plain' }));
     await assertFails(storageFor('owner').ref('organization-logos/org1/huge.png').put(imageBlob(5 * 1024 * 1024 + 1), { contentType: 'image/png' }));
+    await assertFails(storageFor('officer').ref('announcement-images/org1/post1/clip.webm').put(unsupportedVideoBlob(16, 'video/webm'), { contentType: 'video/webm' }));
   });
 
   it('allows active users to read images while blocking expired users', async () => {
@@ -128,5 +154,34 @@ describe('storage organization image boundaries', () => {
 
     await assertSucceeds(storageFor('foreign').ref('organization-logos/org1/logo.png').getDownloadURL());
     await assertFails(storageFor('expired').ref('organization-logos/org1/logo.png').getDownloadURL());
+  });
+});
+
+describe('storage meeting request document boundaries', () => {
+  const requestPath = 'meeting-request-documents/org1/meeting1/formal-request.pdf';
+  const metadata = { orgId: 'org1', meetingRequestId: 'meeting1', requesterUid: 'requester' };
+
+  it('allows requesters to upload PDFs with matching metadata only', async () => {
+    await assertSucceeds(storageFor('requester').ref(requestPath).put(pdfBlob(), { contentType: 'application/pdf', customMetadata: metadata }));
+    await assertFails(storageFor('requester').ref('meeting-request-documents/org1/meeting1/request.html').put(pdfBlob(16, 'text/html'), { contentType: 'text/html', customMetadata: metadata }));
+    await assertFails(storageFor('requester').ref(requestPath).put(pdfBlob(10 * 1024 * 1024 + 1), { contentType: 'application/pdf', customMetadata: metadata }));
+    await assertFails(storageFor('foreign').ref(requestPath).put(pdfBlob(), { contentType: 'application/pdf', customMetadata: { ...metadata, requesterUid: 'requester' } }));
+  });
+
+  it('blocks direct SDK reads so the authorized API can stream without public download tokens', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.storage().ref(requestPath).put(pdfBlob(), { contentType: 'application/pdf', customMetadata: metadata });
+    });
+
+    await assertFails(storageFor('requester').ref(requestPath).getDownloadURL());
+    await assertFails(storageFor('officer').ref(requestPath).getDownloadURL());
+    await assertFails(storageFor('owner').ref(requestPath).getDownloadURL());
+    await assertFails(storageFor('foreign').ref(requestPath).getDownloadURL());
+    await assertFails(storageFor('expired').ref(requestPath).getDownloadURL());
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), 'organizations', 'org1', 'officerGrants', 'officer'), { status: 'revoked' });
+    });
+    await assertFails(storageFor('officer').ref(requestPath).getDownloadURL());
   });
 });

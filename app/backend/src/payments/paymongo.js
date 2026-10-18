@@ -146,7 +146,7 @@ function validatePaidCheckoutFacts(facts, expected = {}) {
   if (amounts.length === 0) fail('missing_amount', 'PayMongo event did not include verifiable amount facts.');
   for (const fact of amounts) {
     if (fact.amount !== expectedAmount || String(fact.currency || '').toUpperCase() !== expectedCurrency) {
-      fail('payment_amount_mismatch', 'PayMongo payment amount or currency did not match SOAR annual access.', fact);
+      fail('payment_amount_mismatch', 'PayMongo payment amount or currency did not match SOAR six-month access.', fact);
     }
   }
 
@@ -184,14 +184,14 @@ class PayMongoCheckoutProvider {
       data: {
         attributes: {
           line_items: [{
-            name: 'SOAR annual access',
-            description: 'One year of SOAR account access',
+            name: 'SOAR six-month access',
+            description: 'Six months of SOAR account access',
             amount: ACCESS_PRICE_MINOR,
             currency: ACCESS_CURRENCY,
             quantity: 1,
           }],
           payment_method_types: ['gcash'],
-          description: 'SOAR annual account access',
+          description: 'SOAR six-month account access',
           reference_number: referenceNumber,
           success_url: successUrl,
           cancel_url: cancelUrl,

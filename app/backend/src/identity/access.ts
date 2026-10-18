@@ -36,7 +36,7 @@ export async function requireActiveAccess(user: DecodedIdToken): Promise<void> {
 
   const access = await getAccessState(user.uid);
   if (access.status !== 'active') {
-    throw new AppError('access_inactive', 'Renew annual access before using the main app.', 403, 'renew_access');
+    throw new AppError('access_inactive', 'Renew SOAR access before using the main app.', 403, 'renew_access');
   }
 }
 

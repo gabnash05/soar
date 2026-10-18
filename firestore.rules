@@ -29,7 +29,10 @@ service cloud.firestore {
     }
 
     function activeUser() {
-      return emailVerified() && hasActiveAccess(request.auth.uid);
+      return emailVerified()
+        && hasActiveAccess(request.auth.uid)
+        && exists(accountPath(request.auth.uid))
+        && (currentAccount().data.role == 'student' || currentAccount().data.role == 'sponsor');
     }
 
     function currentAccount() {

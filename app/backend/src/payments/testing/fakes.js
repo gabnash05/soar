@@ -76,6 +76,8 @@ class FakeIdentityFoundation {
         email,
         emailVerified: false,
         studentId: input.studentId || null,
+        department: input.department || null,
+        departmentKey: input.departmentKey || (input.department ? String(input.department).trim().replace(/\s+/g, ' ').toLowerCase() : null),
         companyName: input.companyName || null,
         createdAt: new Date(),
         updatedAt: new Date(),

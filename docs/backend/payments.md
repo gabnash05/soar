@@ -15,8 +15,8 @@ Implemented under `app/backend/src/payments/**`:
 - Idempotent provider-event recording, duplicate/replay handling, and transactional state changes.
 - Registration completion that calls the identity foundation helper after payment confirmation.
 - Manual renewal checkout and entitlement extension.
-- Paid-but-unfinished registration recovery by rotating the registration binding secret.
-- Unit/mock tests for signatures, amount/currency, duplicate/concurrent/out-of-order webhooks, theft/reuse, renewal binding, failure/cancel/expiry, provider failure, recovery, and yearly expiry arithmetic.
+- Paid-but-unfinished registration recovery by one-time email code and HttpOnly binding-cookie rotation.
+- Unit/mock tests for signatures, amount/currency, duplicate/concurrent/out-of-order webhooks, theft/reuse, renewal binding, failure/cancel/expiry, provider failure, recovery, and six-month calendar expiry arithmetic.
 
 No production deploy, live payment, merchant activation, or shared Firebase manifest edit is included in this PR.
 
@@ -41,7 +41,7 @@ PayMongo remains the intended GCash provider, but production acceptance still re
 
 The identity lane owns Firebase Auth lifecycle, account documents, organization ownership/grants, shared TypeScript build/contracts, Firebase rules/config, and CI/build manifests.
 
-The paid-access lane owns checkout/registration intents, provider verification, provider-event idempotency, annual entitlement calculations, recovery of paid unfinished registrations, and renewal payment confirmation.
+The paid-access lane owns checkout/registration intents, provider verification, provider-event idempotency, six-month entitlement calculations, recovery of paid unfinished registrations, and renewal payment confirmation.
 
 Payment completion calls the identity helper shape agreed in `data/soar-identity-foundation/payment-coordination.md`:
 
@@ -103,6 +103,7 @@ Request body:
   "email": "ada@example.edu",
   "displayName": "Ada Lovelace",
   "studentId": "2026-0001",
+  "department": "Computer Engineering Department",
   "companyName": null,
   "returnUrl": "https://soar.example/access/register"
 }
@@ -111,9 +112,10 @@ Request body:
 Rules:
 
 - `role` is `student` or `sponsor`. Officers are student accounts with organization grants, not an account role.
-- Students require `studentId`; sponsors may include `companyName`.
+- Students require `studentId` and one supported canonical `department` label; sponsors may include `companyName` and must not include `department`.
 - Password is not accepted here and must not be sent before provider payment confirmation.
 - Backend checks for existing account/email through the identity adapter.
+- Any client `returnUrl` value is ignored. The backend builds success and cancel URLs from its configured `SOAR_APP_BASE_URL` and the shipped `/access/checkout?intentId=...` route. `SOAR_APP_BASE_URL` is required for checkout; the code fails closed when it is missing or non-HTTPS outside localhost development instead of redirecting to a baked-in host.
 
 Response body matches `RegistrationPaymentIntent`:
 
@@ -148,7 +150,7 @@ Response body matches `CheckoutStatus`:
 }
 ```
 
-When the signed PayMongo webhook confirms payment, `canCreateAccount` becomes `true` and `message` changes. `status` remains `pending` until the account exists because frontend `AccessStatus` has no separate `paid_unfinished` value.
+When the signed PayMongo webhook confirms payment, `canCreateAccount` becomes `true` and `message` changes. `status` remains `pending` until the account exists because frontend `AccessStatus` has no separate `paid_unfinished` value. The response also includes a password-free server-locked `registrationProfile`, so a recovered browser can resume without trusting editable client fields. The frontend must use only `canCreateAccount` from this cookie-bound endpoint as its completion gate; `pending` is not contradictory and browser redirects are never payment evidence.
 
 ### `POST /api/payments/registration/complete`
 
@@ -181,7 +183,7 @@ Response:
 {
   "uid": "firebase-auth-uid",
   "completed": true,
-  "accessExpiresAt": "2027-10-07T15:00:00.000Z"
+  "accessExpiresAt": "2027-04-07T15:00:00.000Z"
 }
 ```
 
@@ -198,13 +200,17 @@ Request:
 }
 ```
 
-Response is intentionally non-enumerating:
+Response is intentionally non-enumerating when delivery is configured: `{ "accepted": true, "delivery": "sent" }` is returned whether or not a paid registration matched, and sender failures do not expose match state. If a paid unfinished intent exists, the backend creates a one-time recovery code and uses a configured recovery sender to deliver the intent id and code. The original browser binding remains valid until the code is accepted. If no sender is configured, the result is `{ "accepted": true, "delivery": "not_configured" }` without changing that binding; production needs email delivery from the identity/notifications lane before relying on cross-browser recovery.
+
+### `POST /api/payments/registration/recover/accept`
+
+Request:
 
 ```json
-{ "accepted": true, "delivery": "sent" }
+{ "intentId": "reg_...", "recoveryCode": "one-time-code-from-email" }
 ```
 
-If a paid unfinished intent exists, the backend rotates the binding secret and uses a configured recovery sender to deliver a private recovery link/instructions. If no sender is configured in an emulator/local environment the result is `not_configured`; production needs email delivery from the identity/notifications lane before relying on this UX.
+The backend accepts only an unexpired code for a payment-confirmed registration, rotates it into a fresh registration binding, and sets the same `__Host-soar_reg` HttpOnly cookie. The response is `{ "accepted": true }`; neither recovery nor registration binding secrets are returned in JSON or placed in a URL. Codes expire after 24 hours and are one-use.
 
 ### `POST /api/payments/renewals/start`
 
@@ -224,6 +230,10 @@ Response body matches `RenewalRequest`:
 }
 ```
 
+### `GET /api/payments/renewals/status?renewalId=pay_...`
+
+Requires Firebase bearer authentication. The backend returns status only when the payment purpose is renewal and its uid matches the authenticated account. `status` is `pending`, `confirmed`, or `failed`; a confirmed response includes the server-issued expiry. Browser return parameters never change payment state.
+
 ### `GET /api/payments/access/status`
 
 Frontend method: `getAccessStatus()`.
@@ -235,8 +245,11 @@ Requires the same authenticated uid. Returns server-owned access only:
   "uid": "firebase-auth-uid",
   "status": "active",
   "active": true,
-  "accessExpiresAt": "2027-10-07T15:00:00.000Z",
+  "accessExpiresAt": "2027-04-07T15:00:00.000Z",
   "latestPaymentId": "pay_...",
+  "feePhp": 10,
+  "periodMonths": 6,
+  "periodLabel": "6 months",
   "serverTime": "2026-10-07T15:00:00.000Z"
 }
 ```
@@ -254,15 +267,17 @@ Processing rules:
 - Validate amount `1000`, currency `PHP`, GCash source when present, checkout session id, provider reference or metadata payment id, expected livemode, and internal payment amount/currency.
 - Deduplicate by provider event id and keep exactly-once state transitions in transactions.
 
-## Annual access and renewal policy
+## Six-month access and renewal policy
 
-SOAR access is a **manual annual purchase**, not an automatic subscription.
+SOAR access is a **manual six-month purchase**, not an automatic subscription.
 
-- New registration access starts from provider-confirmed paid time and expires one UTC calendar year later.
+- The price remains **PHP 10.00 = 1000 minor units** unless separately changed.
+- New registration access starts from provider-confirmed paid time and expires six UTC calendar months later.
 - Renewal access starts from the later of current future expiry or provider-confirmed paid time.
-- Early renewal therefore stacks exactly one additional calendar year onto the current future expiry.
+- Early renewal therefore stacks exactly six additional calendar months onto the current future expiry.
 - Expired renewal starts from the new confirmed payment time.
-- Calendar-year arithmetic preserves month/day/time in UTC when possible. Leap-day expiry clamps to February 28 in non-leap years.
+- Calendar-month arithmetic preserves day/time in UTC when possible. Month-end dates clamp to the last valid day of the target month, including leap-year February.
+- Already-issued stored expiry dates are preserved; this code does not retroactively truncate paid rights or migrate live data.
 - Pending, failed, cancelled, invalid, or expired checkout/payment records never unlock account creation or main app access.
 - Expiry locks main workflow access but preserves account and product records for manual renewal.
 
@@ -272,9 +287,10 @@ Payment code exposes repository-backed rate-limit hooks for:
 
 - unauthenticated registration checkout by email hash and IP,
 - unauthenticated registration completion by IP,
-- renewal checkout by IP.
+- renewal checkout by IP,
+- recovery-code acceptance by IP.
 
-Production should back `paymentRateLimits` with Firestore so limits are shared across function instances. Frontend must still show friendly retry messages for `rate_limited` responses.
+Recovery email requests are also rate-limited by email hash and IP. Production should back `paymentRateLimits` with Firestore so limits are shared across function instances. Frontend must still show friendly retry messages for `rate_limited` responses.
 
 ## Firebase/Auth bypass constraints
 
@@ -294,8 +310,10 @@ This PR does not enable billing, deploy blocking functions, or change shared Aut
 Payment unit tests are dependency-free and run without Firebase or PayMongo credentials:
 
 ```bash
-node --test app/backend/src/payments/__tests__/payments.test.js
+npm --workspace app/backend run test:payments
 ```
+
+The script runs the signed-webhook/service suite and the dependency-free Firestore payment repository contract test serially.
 
 For Firebase emulator integration after the identity foundation lands shared manifests:
 
@@ -304,7 +322,9 @@ For Firebase emulator integration after the identity foundation lands shared man
 - `PAYMONGO_EXPECTED_LIVEMODE=false`
 - `PAYMENT_SECRET_PEPPER=<random local secret>`
 - `PAYMENT_SECURE_COOKIES=false` for local HTTP only; deployed HTTPS should use secure cookies
-- `SOAR_APP_BASE_URL=http://localhost:5173`
+- `SOAR_APP_BASE_URL=http://localhost:5173` for the local app; the deployed value must be the exact first-party frontend origin selected by the deployment owner. There is no hard-coded production-host fallback.
+- `PAYMENT_SECURE_COOKIES=false` only for local plain-HTTP emulator work; the code defaults cookies to Secure and HTTPS deployments must keep it enabled.
+- The frontend API base must point to the selected runtime. `/api` is appropriate only when the selected host actually routes that path to the API. For a separate API origin, verify credentialed CORS and browser cookie delivery before relying on the `__Host-`, `SameSite=Lax`, Secure binding; do not weaken HttpOnly/Secure/SameSite protections to compensate.
 - Firebase Auth and Firestore emulators running through the shared backend functions entrypoint.
 - Webhook tests can use PayMongo dashboard test events or signed local fixtures; do not mark payment completed without a signed provider-shaped event.
 
@@ -322,14 +342,14 @@ Live prerequisites before production acceptance:
 Executed locally:
 
 ```bash
-node --test app/backend/src/payments/__tests__/payments.test.js
+npm --workspace app/backend run test:payments
 find app/backend/src/payments -name '*.js' -print0 | xargs -0 -n1 node --check
 ```
 
 Covered by mock/unit tests:
 
 - valid and invalid signed PayMongo callbacks,
-- wrong amount/currency/session/reference rejection,
+- wrong amount/currency/session/reference/payment-id/lane/intent-metadata rejection,
 - duplicate and concurrent webhook deliveries,
 - out-of-order failed-before-paid delivery,
 - registration intent theft/reuse,
@@ -339,8 +359,9 @@ Covered by mock/unit tests:
 - paid unfinished registration recovery,
 - exactly one account/entitlement from completion through identity-helper idempotency,
 - unauthorized renewal and malicious cross-account renewal metadata,
-- manual annual renewal expiry arithmetic,
-- authenticated access-status visibility.
+- manual six-month renewal expiry arithmetic,
+- authenticated access-status visibility,
+- Firestore repository persistence and checkout-session index lookups using an in-memory Firestore contract fake.
 
 Not covered here because it needs shared infrastructure or external credentials:
 

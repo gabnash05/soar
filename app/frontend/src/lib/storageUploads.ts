@@ -1,16 +1,13 @@
 import { getDownloadURL, ref, uploadBytes } from '@firebase/storage';
 import { assertApiBase, authHeaders } from './apiClient';
 import { getFirebaseRuntime } from './firebase';
+import { UserFacingError } from './safeErrors';
 
 export const WORKFLOW_IMAGE_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
 export const WORKFLOW_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
-export const WORKFLOW_VIDEO_CONTENT_TYPES = ['video/mp4', 'video/webm'] as const;
-export const WORKFLOW_VIDEO_MAX_BYTES = 25 * 1024 * 1024;
-
-export const ANNOUNCEMENT_MEDIA_CONTENT_TYPES = [...WORKFLOW_IMAGE_CONTENT_TYPES, ...WORKFLOW_VIDEO_CONTENT_TYPES] as const;
+export const ANNOUNCEMENT_MEDIA_CONTENT_TYPES = WORKFLOW_IMAGE_CONTENT_TYPES;
 export const ANNOUNCEMENT_MEDIA_MAX_ITEMS = 4;
-export const ANNOUNCEMENT_MEDIA_MAX_VIDEO_ITEMS = 1;
 export const ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES = 30 * 1024 * 1024;
 
 export const MEETING_DOCUMENT_CONTENT_TYPES = ['application/pdf'] as const;
@@ -21,6 +18,7 @@ export interface ImageUploadTarget {
   contentType: (typeof ANNOUNCEMENT_MEDIA_CONTENT_TYPES)[number];
   sizeBytes: number;
   announcementId?: string;
+  signedUploadUrl?: string;
 }
 
 export interface UploadedImageReference {
@@ -44,6 +42,7 @@ export interface MeetingDocumentUploadTarget {
   sizeBytes: number;
   allowedContentTypes?: readonly string[];
   maxSizeBytes?: number;
+  signedUploadUrl?: string;
 }
 
 export interface UploadedMeetingDocumentReference {
@@ -62,47 +61,26 @@ export const formatBytes = (bytes: number): string => {
 const isImageType = (contentType: string): contentType is (typeof WORKFLOW_IMAGE_CONTENT_TYPES)[number] =>
   WORKFLOW_IMAGE_CONTENT_TYPES.includes(contentType as (typeof WORKFLOW_IMAGE_CONTENT_TYPES)[number]);
 
-const isVideoType = (contentType: string): contentType is (typeof WORKFLOW_VIDEO_CONTENT_TYPES)[number] =>
-  WORKFLOW_VIDEO_CONTENT_TYPES.includes(contentType as (typeof WORKFLOW_VIDEO_CONTENT_TYPES)[number]);
-
 export const validateWorkflowImageFile = (file: File): void => {
   if (!isImageType(file.type)) {
-    throw new Error('Use a PNG, JPEG, GIF, or WebP image.');
+    throw new UserFacingError('Use a PNG, JPEG, GIF, or WebP image.');
   }
 
   if (file.size > WORKFLOW_IMAGE_MAX_BYTES) {
-    throw new Error('Use an image smaller than 5 MB.');
+    throw new UserFacingError('Use an image smaller than 5 MB.');
   }
 };
 
-export const validateAnnouncementMediaFile = (file: File): void => {
-  if (isImageType(file.type)) {
-    validateWorkflowImageFile(file);
-    return;
-  }
-
-  if (!isVideoType(file.type)) {
-    throw new Error('Use a PNG, JPEG, GIF, WebP, MP4, or WebM file.');
-  }
-
-  if (file.size > WORKFLOW_VIDEO_MAX_BYTES) {
-    throw new Error('Use a video smaller than 25 MB.');
-  }
-};
+export const validateAnnouncementMediaFile = validateWorkflowImageFile;
 
 export const validateAnnouncementMediaFiles = (files: File[]): void => {
   if (files.length > ANNOUNCEMENT_MEDIA_MAX_ITEMS) {
-    throw new Error(`Choose up to ${ANNOUNCEMENT_MEDIA_MAX_ITEMS} media items.`);
-  }
-
-  const videoCount = files.filter((file) => isVideoType(file.type)).length;
-  if (videoCount > ANNOUNCEMENT_MEDIA_MAX_VIDEO_ITEMS) {
-    throw new Error('Choose at most one video per announcement.');
+    throw new UserFacingError(`Choose up to ${ANNOUNCEMENT_MEDIA_MAX_ITEMS} media items.`);
   }
 
   const aggregateSize = files.reduce((sum, file) => sum + file.size, 0);
   if (aggregateSize > ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES) {
-    throw new Error('Choose media with a combined size of 30 MB or less.');
+    throw new UserFacingError('Choose images with a combined size of 30 MB or less.');
   }
 
   files.forEach(validateAnnouncementMediaFile);
@@ -110,30 +88,68 @@ export const validateAnnouncementMediaFiles = (files: File[]): void => {
 
 export const validateMeetingDocumentFile = (file: File): void => {
   if (!MEETING_DOCUMENT_CONTENT_TYPES.includes(file.type as MeetingDocumentUploadTarget['contentType'])) {
-    throw new Error('Attach a PDF document. Other file types are not allowed for formal requests.');
+    throw new UserFacingError('Attach a PDF document. Other file types are not allowed for formal requests.');
   }
 
   if (file.size > MEETING_DOCUMENT_MAX_BYTES) {
-    throw new Error('Attach a PDF smaller than 10 MB.');
+    throw new UserFacingError('Attach a PDF smaller than 10 MB.');
   }
 };
 
+function getFirebaseStorage() {
+  const storage = getFirebaseRuntime().storage;
+  if (!storage) throw new UserFacingError('Private file storage is not configured.');
+  return storage;
+}
+
 export const storageDownloadUrl = async (storagePath: string): Promise<string> => {
   if (!storagePath) return '';
-  const { storage } = getFirebaseRuntime();
-  return getDownloadURL(ref(storage, storagePath));
+  if (import.meta.env.VITE_SOAR_STORAGE_PROVIDER === 'supabase') {
+    const response = await fetch(`${assertApiBase()}/storage/download-url?path=${encodeURIComponent(storagePath)}`, {
+      headers: await authHeaders(),
+      credentials: 'include',
+    });
+    if (!response.ok) throw new UserFacingError('This media is temporarily unavailable.');
+    const result = await response.json() as { url?: unknown };
+    if (typeof result.url !== 'string' || !result.url.startsWith('https://')) throw new UserFacingError('This media is temporarily unavailable.');
+    return result.url;
+  }
+  return getDownloadURL(ref(getFirebaseStorage(), storagePath));
 };
+
+async function uploadToSignedUrl(url: string, file: File, contentType: string, metadata?: Record<string, string>): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': contentType,
+        'x-upsert': 'false',
+        ...(metadata ? { 'x-metadata': JSON.stringify(metadata) } : {}),
+      },
+      body: file,
+    });
+  } catch {
+    throw new UserFacingError('The file could not be uploaded. Check your connection and try again.');
+  }
+  if (!response.ok) throw new UserFacingError('The file could not be uploaded. Check your connection and try again.');
+}
 
 export const uploadToStorageTarget = async (target: ImageUploadTarget, file: File, alt = file.name): Promise<UploadedImageReference> => {
   validateAnnouncementMediaFile(file);
   if (file.type !== target.contentType || file.size !== target.sizeBytes) {
-    throw new Error('The selected media changed before upload. Choose the file again.');
+    throw new UserFacingError('The selected image changed before upload. Choose the file again.');
   }
 
-  const { storage } = getFirebaseRuntime();
-  const objectRef = ref(storage, target.storagePath);
-  await uploadBytes(objectRef, file, { contentType: target.contentType });
-  const url = await getDownloadURL(objectRef);
+  let url: string;
+  if (target.signedUploadUrl) {
+    await uploadToSignedUrl(target.signedUploadUrl, file, target.contentType);
+    url = await storageDownloadUrl(target.storagePath);
+  } else {
+    const objectRef = ref(getFirebaseStorage(), target.storagePath);
+    await uploadBytes(objectRef, file, { contentType: target.contentType });
+    url = await getDownloadURL(objectRef);
+  }
 
   return {
     storagePath: target.storagePath,
@@ -151,18 +167,21 @@ export const uploadMeetingDocumentToTarget = async (
 ): Promise<UploadedMeetingDocumentReference> => {
   validateMeetingDocumentFile(file);
   if (file.type !== target.contentType || file.size !== target.sizeBytes) {
-    throw new Error('The selected document changed before upload. Choose the file again.');
+    throw new UserFacingError('The selected document changed before upload. Choose the file again.');
   }
   if (metadata.meetingRequestId !== target.meetingRequestId) {
-    throw new Error('The document target no longer matches this meeting request. Choose the file again.');
+    throw new UserFacingError('The document target no longer matches this meeting request. Choose the file again.');
   }
 
-  const { storage } = getFirebaseRuntime();
-  const objectRef = ref(storage, target.storagePath);
-  await uploadBytes(objectRef, file, {
-    contentType: target.contentType,
-    customMetadata: metadata,
-  });
+  if (target.signedUploadUrl) {
+    await uploadToSignedUrl(target.signedUploadUrl, file, target.contentType, metadata);
+  } else {
+    const objectRef = ref(getFirebaseStorage(), target.storagePath);
+    await uploadBytes(objectRef, file, {
+      contentType: target.contentType,
+      customMetadata: metadata,
+    });
+  }
 
   return {
     storagePath: target.storagePath,
@@ -173,7 +192,7 @@ export const uploadMeetingDocumentToTarget = async (
 };
 
 export const openPrivateMeetingDocument = async (meetingRequestId: string, fileName = 'formal-request.pdf', contentType = 'application/pdf'): Promise<void> => {
-  if (!meetingRequestId) throw new Error('Meeting request id is missing.');
+  if (!meetingRequestId) throw new UserFacingError('Meeting request id is missing.');
   const response = await fetch(`${assertApiBase()}/requests/meetings/${encodeURIComponent(meetingRequestId)}/document`, {
     headers: await authHeaders(),
     credentials: 'include',

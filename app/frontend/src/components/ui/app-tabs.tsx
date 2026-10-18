@@ -111,7 +111,7 @@ export function SubtabPanel({
       role="tabpanel"
       aria-labelledby={`${baseId}-tab-${tabId}`}
       hidden={activeId !== tabId}
-      className={cn('block', className)}
+      className={cn('block min-w-0 max-w-full', className)}
     >
       {children}
     </section>

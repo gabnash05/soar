@@ -35,12 +35,24 @@ export class FirestoreRequestStore implements RequestStore {
     return snap.exists ? snap.data() as CalendarEntryDocument : undefined;
   }
 
-  async createApplicationIfAbsent(applicationId: string, application: ApplicationDocument): Promise<'created' | 'exists'> {
-    const ref = this.db.collection(COLLECTIONS.applications).doc(applicationId);
+  async createApplicationIfAbsent(applicationId: string, application: ApplicationDocument): Promise<'created' | 'exists' | 'closed' | 'organization_missing'> {
+    const applicationRef = this.db.collection(COLLECTIONS.applications).doc(applicationId);
+    const organizationRef = this.db.doc(organizationPath(application.orgId));
+    const existingApplicationQuery = this.db.collection(COLLECTIONS.applications)
+      .where('studentUid', '==', application.studentUid)
+      .where('orgId', '==', application.orgId)
+      .limit(1);
+
     return this.db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (snap.exists) return 'exists' as const;
-      tx.create(ref, application);
+      const [applicationSnap, organizationSnap, existingApplications] = await Promise.all([
+        tx.get(applicationRef),
+        tx.get(organizationRef),
+        tx.get(existingApplicationQuery)
+      ]);
+      if (!organizationSnap.exists) return 'organization_missing' as const;
+      if (organizationSnap.data()?.applicationsOpen === false) return 'closed' as const;
+      if (applicationSnap.exists || !existingApplications.empty) return 'exists' as const;
+      tx.create(applicationRef, application);
       return 'created' as const;
     });
   }

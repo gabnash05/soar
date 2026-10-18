@@ -1,7 +1,20 @@
 import type { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
+export const DEPARTMENT_LABELS = [
+  'Civil Engineering Department',
+  'Architecture Department',
+  'Electrical Engineering Department',
+  'Computer Engineering Department',
+  'Mechanical Engineering Department',
+  'Electronics Engineering Department',
+  'Geodetic Engineering'
+] as const;
+export type DepartmentLabel = (typeof DEPARTMENT_LABELS)[number];
+
 export const ACCOUNT_ROLES = ['student', 'sponsor'] as const;
 export type AccountRole = (typeof ACCOUNT_ROLES)[number];
+export const PUBLIC_ACCOUNT_ROLES = ACCOUNT_ROLES;
+export type PublicAccountRole = AccountRole;
 
 export const ENTITLEMENT_STATUSES = ['active', 'expired', 'revoked'] as const;
 export type EntitlementStatus = (typeof ENTITLEMENT_STATUSES)[number];
@@ -22,6 +35,8 @@ export interface AccountDocument {
   email: string;
   emailVerified: boolean;
   studentId?: string;
+  department?: string;
+  departmentKey?: string;
   companyName?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -76,7 +91,11 @@ export interface OrganizationDocument {
   shortDescription?: string;
   description?: string;
   contactEmail?: string;
+  contactPhone?: string;
+  department?: string;
+  departmentKey?: string;
   logoPath?: string;
+  applicationsOpen?: boolean;
   recruitment?: OrganizationRecruitment;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -85,11 +104,17 @@ export interface OrganizationDocument {
 
 export type DateEntryKind = 'event' | 'availability';
 
-export interface AnnouncementImage {
+export type AnnouncementImageContentType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+
+export interface AnnouncementMedia {
   storagePath: string;
-  contentType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+  contentType: AnnouncementImageContentType;
   sizeBytes: number;
   alt?: string;
+}
+
+export interface AnnouncementImage extends AnnouncementMedia {
+  contentType: AnnouncementImageContentType;
 }
 
 export interface AnnouncementDocument {
@@ -100,6 +125,7 @@ export interface AnnouncementDocument {
   authorUid: string;
   body: string;
   image?: AnnouncementImage | null;
+  media?: AnnouncementMedia[];
   likeCount: number;
   commentCount: number;
   deletedAt?: Timestamp | null;
@@ -114,6 +140,7 @@ export interface AnnouncementCommentDocument {
   authorName: string;
   body: string;
   createdAt: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 export interface CalendarEntryDocument {
@@ -145,8 +172,10 @@ export interface PaidRegistrationCompletionInput {
   email: string;
   password: string;
   displayName: string;
-  role: AccountRole;
+  role: PublicAccountRole;
   studentId?: string;
+  department?: string;
+  departmentKey?: string;
   companyName?: string;
   entitlement: {
     provider: string;

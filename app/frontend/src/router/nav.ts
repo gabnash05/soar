@@ -4,10 +4,12 @@ export interface NavRoute {
   shortLabel: string;
   requiresStudent?: boolean;
   requiresOfficerGrant?: boolean;
+  requiresAdmin?: boolean;
   requiresActiveAccess?: boolean;
 }
 
 export const appNavRoutes: NavRoute[] = [
+  { to: '/admin', label: 'Admin', shortLabel: 'Admin', requiresAdmin: true },
   { to: '/app', label: 'Announcements', shortLabel: 'Feed' },
   { to: '/app/directory', label: 'Organizations', shortLabel: 'Orgs' },
   { to: '/settings/organization', label: 'Manage Organization', shortLabel: 'Manage', requiresOfficerGrant: true, requiresActiveAccess: true },
