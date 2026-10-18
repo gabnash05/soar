@@ -120,10 +120,12 @@ const createProductionGateway = (): BackendGateway => ({
     }
 
     const { auth } = getFirebaseRuntime();
-    if (!auth.currentUser) return null;
-    await reload(auth.currentUser);
+    const user = auth.currentUser;
+    if (!user) return null;
+    await reload(user);
+    await user.getIdToken(true);
     const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
-    return mapSession({ ...session, emailVerified: auth.currentUser.emailVerified });
+    return mapSession({ ...session, emailVerified: user.emailVerified });
   },
 
   async signIn(input) {

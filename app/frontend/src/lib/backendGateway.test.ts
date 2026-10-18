@@ -91,7 +91,7 @@ describe('backend session normalization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getFirebaseConfigStatus.mockReturnValue({ configured: true });
-    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: { emailVerified: true } } });
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: { emailVerified: true, getIdToken: vi.fn(async () => 'fresh-token') } } });
     mocks.authHeaders.mockResolvedValue({ Authorization: 'Bearer trusted-token' });
     mocks.signIn.mockResolvedValue({ user: { emailVerified: false } });
     mocks.apiFetch.mockResolvedValue({
@@ -116,6 +116,18 @@ describe('backend session normalization', () => {
       officerGrants: [],
     });
     expect(mocks.apiFetch).toHaveBeenCalledWith('/session', { headers: { Authorization: 'Bearer trusted-token' } });
+  });
+
+  it('refreshes Firebase ID-token claims after reload before requesting the session', async () => {
+    const user = { emailVerified: true, getIdToken: vi.fn(async () => 'fresh-token') };
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: user } });
+
+    await createBackendGateway().reloadSession();
+
+    expect(mocks.reload).toHaveBeenCalledWith(user);
+    expect(user.getIdToken).toHaveBeenCalledWith(true);
+    expect(mocks.reload.mock.invocationCallOrder[0]).toBeLessThan(user.getIdToken.mock.invocationCallOrder[0]);
+    expect(user.getIdToken.mock.invocationCallOrder[0]).toBeLessThan(mocks.apiFetch.mock.invocationCallOrder[0]);
   });
 
   it('preserves the name-save DTO and waits for the server before changing local session state', async () => {
@@ -203,6 +215,15 @@ describe('backend session normalization', () => {
     expect(mocks.sendEmailVerification).toHaveBeenCalledWith(firebaseUser);
     expect(mocks.apiFetch).toHaveBeenNthCalledWith(2, '/session', { headers: { Authorization: 'Bearer trusted-token' } });
     expect(mocks.signIn).not.toHaveBeenCalled();
+  });
+
+  it('resends verification through the supported Firebase Auth action for the signed-in preview user', async () => {
+    const firebaseUser = { emailVerified: false };
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: firebaseUser } });
+
+    await createBackendGateway().resendEmailVerification();
+
+    expect(mocks.sendEmailVerification).toHaveBeenCalledWith(firebaseUser);
   });
 
   it('recovers a prior Firebase Auth account when its profile write was interrupted', async () => {
