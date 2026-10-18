@@ -6,6 +6,7 @@ type StoredDoc = Record<string, unknown>;
 
 class FakeDocSnapshot {
   constructor(readonly ref: FakeDocRef, private readonly value: StoredDoc | undefined) {}
+  get id() { return this.ref.id; }
   get exists() { return this.value !== undefined; }
   data() { return this.value; }
   get(field: string) { return this.value?.[field]; }
