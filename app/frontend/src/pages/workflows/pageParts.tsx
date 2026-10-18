@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageCircle, Share2 } from 'lucide-react';
 import { Button, ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip } from '../../components/ui';
@@ -286,7 +286,7 @@ export function AnnouncementCard({
   announcement: Announcement;
   session: UserSession;
   client?: WorkflowDataClient;
-  onChanged?: () => void;
+  onChanged?: (announcement: Announcement) => void;
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState(announcement.comments);
@@ -299,28 +299,54 @@ export function AnnouncementCard({
   const [busy, setBusy] = useState(false);
   const [deleteCommentId, setDeleteCommentId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const commentLoadGeneration = useRef(0);
   const media = announcement.media?.length ? announcement.media : announcement.image ? [announcement.image] : [];
   const commentCount = announcement.commentCount ?? announcement.comments.length;
 
+  useEffect(() => () => { commentLoadGeneration.current += 1; }, [announcement.id, client, session]);
+
+  const acceptMutation = (next: WorkflowMutationResult<unknown>) => {
+    if (next.ok && next.persisted !== true) {
+      setResult({ ...next, ok: false, persisted: 'unconfirmed', reason: 'error', message: 'We could not confirm this announcement update. Refresh the post before trying again.' });
+      return false;
+    }
+    setResult(next);
+    return next.ok;
+  };
+
   const loadComments = async () => {
+    const requestGeneration = ++commentLoadGeneration.current;
     setCommentsLoading(true);
     setCommentsError(null);
     try {
       const result = await client.listAnnouncementComments(announcement.id, session);
+      if (commentLoadGeneration.current !== requestGeneration) return;
       setComments(result.data);
     } catch (error) {
-      setCommentsError(safeErrorMessage(error, 'Comments could not be loaded. Please try again.'));
+      if (commentLoadGeneration.current === requestGeneration) setCommentsError(safeErrorMessage(error, 'Comments could not be loaded. Please try again.'));
     } finally {
-      setCommentsLoading(false);
+      if (commentLoadGeneration.current === requestGeneration) setCommentsLoading(false);
+    }
+  };
+
+  const refreshAnnouncement = async () => {
+    try {
+      const result = await client.getAnnouncement(announcement.id, session);
+      if (result.data) onChanged?.(result.data);
+    } catch {
+      // Keep the last confirmed post data if this bounded item refresh is unavailable.
     }
   };
 
   const toggleLike = async () => {
     setBusy(true);
     const next = await client.toggleAnnouncementLike(announcement.id, !announcement.viewerHasLiked, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) onChanged?.();
+    if (confirmed) {
+      if (next.data) onChanged?.(next.data);
+      else await refreshAnnouncement();
+    }
   };
 
   const copyLink = async () => {
@@ -339,12 +365,11 @@ export function AnnouncementCard({
     event.preventDefault();
     setBusy(true);
     const next = await client.addAnnouncementComment(announcement.id, comment, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setComment('');
-      await loadComments();
-      onChanged?.();
+      await Promise.all([loadComments(), refreshAnnouncement()]);
     }
   };
 
@@ -359,13 +384,12 @@ export function AnnouncementCard({
     if (!editingCommentId) return;
     setBusy(true);
     const next = await client.updateAnnouncementComment(announcement.id, editingCommentId, editingBody, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setEditingCommentId(null);
       setEditingBody('');
-      await loadComments();
-      onChanged?.();
+      await Promise.all([loadComments(), refreshAnnouncement()]);
     }
   };
 
@@ -374,14 +398,13 @@ export function AnnouncementCard({
     setBusy(true);
     setDeleteError(null);
     const next = await client.deleteAnnouncementComment(announcement.id, deleteCommentId, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setDeleteCommentId(null);
-      await loadComments();
-      onChanged?.();
+      await Promise.all([loadComments(), refreshAnnouncement()]);
     } else {
-      setDeleteError(next.message);
+      setDeleteError(next.ok ? 'The comment deletion could not be confirmed. Refresh the comments before trying again.' : next.message);
     }
   };
 
