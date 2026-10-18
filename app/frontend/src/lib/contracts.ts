@@ -65,6 +65,8 @@ export interface RegistrationPaymentIntent {
   fixture?: boolean;
 }
 
+export type RegistrationProfile = Pick<RegistrationPaymentInput, 'role' | 'email' | 'displayName' | 'studentId' | 'department' | 'companyName'>;
+
 export interface CheckoutStatus {
   intentId: string;
   status: AccessStatus;
@@ -72,7 +74,14 @@ export interface CheckoutStatus {
   providerReference?: string;
   message: string;
   canCreateAccount: boolean;
+  completed?: boolean;
+  registrationProfile?: RegistrationProfile | null;
   fixture?: boolean;
+}
+
+export interface RegistrationRecoveryResult {
+  accepted: true;
+  delivery: 'sent' | 'not_configured';
 }
 
 export interface RegisterAccountInput {
@@ -115,6 +124,14 @@ export interface RenewalRequest {
   status: 'pending';
   amountPhp: 10;
   providerLabel: string;
+  fixture?: boolean;
+}
+
+export interface RenewalCheckoutStatus {
+  renewalId: string;
+  status: 'pending' | 'confirmed' | 'failed';
+  accessExpiresAt?: string | null;
+  message: string;
   fixture?: boolean;
 }
 

@@ -16,7 +16,7 @@
     "test": "npm run test:payments && npm run test:seed && npm run test:content && npm run test:requests && npm run test:identity && npm run test:organizations && npm run test:http",
     "test:identity": "vitest run src/identity/session.test.ts",
     "test:organizations": "vitest run src/organizations/adminProvisioning.test.ts",
-    "test:payments": "node --test src/payments/__tests__/payments.test.js",
+    "test:payments": "node --test src/payments/__tests__/payments.test.js && node --test src/payments/__tests__/firestoreRepository.test.js",
     "test:seed": "node --test scripts/seed-local-emulator.test.cjs",
     "test:content": "vitest run src/content/__tests__/*.test.ts",
     "test:requests": "vitest run test/requests.service.test.ts src/requests/firestoreStore.test.ts",

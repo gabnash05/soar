@@ -90,6 +90,8 @@ export const RegistrationIntentPage = () => {
       const intent = await startRegistrationPayment(input);
       writeRegistrationDraft({ ...input, intentId: intent.intentId });
       navigateToHostedCheckout(intent.checkoutUrl);
+    } catch {
+      // AuthContext exposes the safe operation-scoped error; keep the entered registration details.
     } finally {
       setSubmitting(false);
     }

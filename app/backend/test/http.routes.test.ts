@@ -128,7 +128,9 @@ describe('SOAR HTTP route contracts', () => {
       getCheckoutStatus: vi.fn(async () => ({ status: 200, body: { intentId: 'intent1', status: 'pending' } })),
       registerAccount: vi.fn(async () => ({ status: 201, body: { uid: 'user1' } })),
       recoverPaidRegistration: vi.fn(async () => ({ status: 200, body: { recovered: true } })),
+      acceptPaidRegistrationRecovery: vi.fn(async () => ({ status: 200, body: { accepted: true } })),
       requestManualRenewal: vi.fn(async () => ({ status: 200, body: { renewalId: 'renewal1' } })),
+      getRenewalStatus: vi.fn(async () => ({ status: 200, body: { renewalId: 'renewal1', status: 'pending' } })),
       getAccessStatus: vi.fn(async () => ({ status: 200, body: { status: 'active' } })),
     });
     mocks.scopedDateEntryQuery.mockImplementation((orgId: string, query: unknown) => ({ ...(query as object), organizationId: orgId }));
@@ -434,6 +436,30 @@ describe('SOAR HTTP route contracts', () => {
       },
     );
     expect(mocks.requestService.createMeetingDocumentTarget).toHaveBeenCalled();
+  });
+
+  it('mounts paid-registration recovery and same-user renewal status routes under /api', async () => {
+    const handlers = mocks.paymentHandlers();
+
+    await withApiServer(async (baseUrl) => {
+      const accepted = await fetch(`${baseUrl}/api/payments/registration/recover/accept`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ intentId: 'intent1', recoveryCode: 'one-time-code' }),
+      });
+      expect(accepted.status).toBe(200);
+      await expect(accepted.json()).resolves.toEqual({ accepted: true });
+
+      const renewal = await fetch(`${baseUrl}/api/payments/renewals/status?renewalId=renewal1`, {
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(renewal.status).toBe(200);
+      await expect(renewal.json()).resolves.toMatchObject({ renewalId: 'renewal1', status: 'pending' });
+    });
+
+    expect(handlers.acceptPaidRegistrationRecovery).toHaveBeenCalled();
+    expect(mocks.requireBearerToken).toHaveBeenCalled();
+    expect(handlers.getRenewalStatus).toHaveBeenCalled();
   });
 
   it('returns plain JSON problem responses for app errors and unknown routes', async () => {
