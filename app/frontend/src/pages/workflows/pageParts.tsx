@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageCircle, Share2 } from 'lucide-react';
-import { Button, ButtonLink, ConfirmDialog, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
+import { Button, ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip } from '../../components/ui';
 import { useAuth, useBackendGateway } from '../../context/AuthContext';
 import type { ApplicationStage, MeetingStatus, UserSession } from '../../lib/contracts';
 import { getWorkflowDataClientForGatewayMode, unavailableWorkflowDataClient } from './adapters';
-import type { Announcement, DateEntry, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from './contracts';
+import type { Announcement, AnnouncementComment, DateEntry, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from './contracts';
 import { formatDateEntry, getMeetingTone, getStageTone, getUnavailableCopy } from './workflowUtils';
 import { cn } from '../../lib/utils';
 import { safeErrorMessage } from '../../lib/safeErrors';
@@ -256,6 +256,12 @@ export function MeetingStatusChip({ status }: { status: MeetingStatus }) {
   return <StatusChip tone={getMeetingTone(status)}>{status}</StatusChip>;
 }
 
+function CommentAuthorBadge({ comment }: { comment: AnnouncementComment }) {
+  if (comment.authorAccountKind !== 'student') return null;
+  const isOfficer = comment.authorOrganizationRole === 'approved_officer';
+  return <RoleBadge kind={isOfficer ? 'officer' : 'student'}>{isOfficer ? 'Officer' : 'Student'}</RoleBadge>;
+}
+
 function LikeIcon({ filled }: { filled: boolean }) {
   return (
     <svg className="like-icon size-[21px] shrink-0" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -280,7 +286,7 @@ export function AnnouncementCard({
   announcement: Announcement;
   session: UserSession;
   client?: WorkflowDataClient;
-  onChanged?: () => void;
+  onChanged?: (announcement: Announcement) => void;
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState(announcement.comments);
@@ -293,28 +299,54 @@ export function AnnouncementCard({
   const [busy, setBusy] = useState(false);
   const [deleteCommentId, setDeleteCommentId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const commentLoadGeneration = useRef(0);
   const media = announcement.media?.length ? announcement.media : announcement.image ? [announcement.image] : [];
   const commentCount = announcement.commentCount ?? announcement.comments.length;
 
+  useEffect(() => () => { commentLoadGeneration.current += 1; }, [announcement.id, client, session]);
+
+  const acceptMutation = (next: WorkflowMutationResult<unknown>) => {
+    if (next.ok && next.persisted !== true) {
+      setResult({ ...next, ok: false, persisted: 'unconfirmed', reason: 'error', message: 'We could not confirm this announcement update. Refresh the post before trying again.' });
+      return false;
+    }
+    setResult(next);
+    return next.ok;
+  };
+
   const loadComments = async () => {
+    const requestGeneration = ++commentLoadGeneration.current;
     setCommentsLoading(true);
     setCommentsError(null);
     try {
       const result = await client.listAnnouncementComments(announcement.id, session);
+      if (commentLoadGeneration.current !== requestGeneration) return;
       setComments(result.data);
     } catch (error) {
-      setCommentsError(safeErrorMessage(error, 'Comments could not be loaded. Please try again.'));
+      if (commentLoadGeneration.current === requestGeneration) setCommentsError(safeErrorMessage(error, 'Comments could not be loaded. Please try again.'));
     } finally {
-      setCommentsLoading(false);
+      if (commentLoadGeneration.current === requestGeneration) setCommentsLoading(false);
+    }
+  };
+
+  const refreshAnnouncement = async () => {
+    try {
+      const result = await client.getAnnouncement(announcement.id, session);
+      if (result.data) onChanged?.(result.data);
+    } catch {
+      // Keep the last confirmed post data if this bounded item refresh is unavailable.
     }
   };
 
   const toggleLike = async () => {
     setBusy(true);
     const next = await client.toggleAnnouncementLike(announcement.id, !announcement.viewerHasLiked, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) onChanged?.();
+    if (confirmed) {
+      if (next.data) onChanged?.(next.data);
+      else await refreshAnnouncement();
+    }
   };
 
   const copyLink = async () => {
@@ -333,12 +365,11 @@ export function AnnouncementCard({
     event.preventDefault();
     setBusy(true);
     const next = await client.addAnnouncementComment(announcement.id, comment, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setComment('');
-      await loadComments();
-      onChanged?.();
+      await Promise.all([loadComments(), refreshAnnouncement()]);
     }
   };
 
@@ -353,13 +384,12 @@ export function AnnouncementCard({
     if (!editingCommentId) return;
     setBusy(true);
     const next = await client.updateAnnouncementComment(announcement.id, editingCommentId, editingBody, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setEditingCommentId(null);
       setEditingBody('');
-      await loadComments();
-      onChanged?.();
+      await Promise.all([loadComments(), refreshAnnouncement()]);
     }
   };
 
@@ -368,14 +398,13 @@ export function AnnouncementCard({
     setBusy(true);
     setDeleteError(null);
     const next = await client.deleteAnnouncementComment(announcement.id, deleteCommentId, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setDeleteCommentId(null);
-      await loadComments();
-      onChanged?.();
+      await Promise.all([loadComments(), refreshAnnouncement()]);
     } else {
-      setDeleteError(next.message);
+      setDeleteError(next.ok ? 'The comment deletion could not be confirmed. Refresh the comments before trying again.' : next.message);
     }
   };
 
@@ -460,7 +489,14 @@ export function AnnouncementCard({
                       </form>
                     ) : (
                       <>
-                        <div className="min-w-0 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_p]:mt-0.5 [&_p]:mb-0 [&_p]:[overflow-wrap:anywhere] [&_p]:text-[var(--color-ink)] [&_span]:mt-1 [&_span]:inline-block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]"><strong>{item.authorName}</strong><p>{item.body}</p>{item.updatedAt ? <span>Edited</span> : null}</div>
+                        <div className="min-w-0 [&_p]:mt-0.5 [&_p]:mb-0 [&_p]:[overflow-wrap:anywhere] [&_p]:text-[var(--color-ink)]">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <strong className="block text-[var(--color-navy)]">{item.authorName}</strong>
+                            <CommentAuthorBadge comment={item} />
+                          </div>
+                          <p>{item.body}</p>
+                          {item.updatedAt ? <span className="mt-1 inline-block text-xs text-[var(--muted-foreground)]">Edited</span> : null}
+                        </div>
                         {(canEdit || canDelete) ? (
                           <div className="flex flex-wrap items-center gap-2 shrink-0">
                             {canEdit ? <Button type="button" variant="quiet" onClick={() => startEditing(item.id, item.body)}>Edit</Button> : null}

@@ -6,8 +6,10 @@ type StoredDoc = Record<string, unknown>;
 
 class FakeDocSnapshot {
   constructor(readonly ref: FakeDocRef, private readonly value: StoredDoc | undefined) {}
+  get id() { return this.ref.id; }
   get exists() { return this.value !== undefined; }
   data() { return this.value; }
+  get(field: string) { return this.value?.[field]; }
 }
 
 class FakeQuerySnapshot {
@@ -16,19 +18,58 @@ class FakeQuerySnapshot {
 }
 
 class FakeCollectionRef {
-  constructor(readonly db: FakeDb, readonly path: string, readonly filters: Array<[string, unknown]> = []) {}
+  constructor(
+    readonly db: FakeDb,
+    readonly path: string,
+    readonly filters: Array<[string, unknown]> = [],
+    readonly orderings: Array<{ field: string; direction: 'asc' | 'desc' }> = [],
+    readonly boundary?: unknown[],
+    readonly maxItems = Number.MAX_SAFE_INTEGER,
+  ) {}
   doc(id?: string) {
     const docId = id ?? `generated-${this.db.generated += 1}`;
     return new FakeDocRef(this.db, `${this.path}/${docId}`);
   }
   where(field: string, operator: string, value: unknown) {
     if (operator !== '==') throw new Error(`unsupported fake operator: ${operator}`);
-    return new FakeCollectionRef(this.db, this.path, [...this.filters, [field, value]]);
+    return new FakeCollectionRef(this.db, this.path, [...this.filters, [field, value]], this.orderings, this.boundary, this.maxItems);
   }
-  orderBy() { return this; }
-  offset() { return this; }
-  limit() { return this; }
-  async get() { return this.db.getCollection(this.path, this.filters); }
+  orderBy(field: string | object, direction: 'asc' | 'desc' = 'asc') {
+    const key = typeof field === 'string' ? field : '__id';
+    return new FakeCollectionRef(this.db, this.path, this.filters, [...this.orderings, { field: key, direction }], this.boundary, this.maxItems);
+  }
+  startAfter(...values: unknown[]) {
+    return new FakeCollectionRef(this.db, this.path, this.filters, this.orderings, values, this.maxItems);
+  }
+  limit(maxItems: number) {
+    return new FakeCollectionRef(this.db, this.path, this.filters, this.orderings, this.boundary, maxItems);
+  }
+  async get() {
+    const snap = this.db.getCollection(this.path, this.filters);
+    const docs = [...snap.docs];
+    const compare = (left: unknown, right: unknown) => {
+      const leftValue = left && typeof left === 'object' && typeof (left as { toMillis?: unknown }).toMillis === 'function' ? (left as Timestamp).toMillis() : left;
+      const rightValue = right && typeof right === 'object' && typeof (right as { toMillis?: unknown }).toMillis === 'function' ? (right as Timestamp).toMillis() : right;
+      return leftValue === rightValue ? 0 : String(leftValue ?? '').localeCompare(String(rightValue ?? ''), undefined, { numeric: true });
+    };
+    const valueAt = (doc: FakeDocSnapshot, field: string) => field === '__id' ? doc.ref.id : doc.get(field);
+    docs.sort((left, right) => {
+      for (const order of this.orderings) {
+        const result = compare(valueAt(left, order.field), valueAt(right, order.field));
+        if (result) return order.direction === 'desc' ? -result : result;
+      }
+      return 0;
+    });
+    const afterBoundary = this.boundary ? docs.filter((doc) => {
+      for (let index = 0; index < this.orderings.length; index += 1) {
+        const order = this.orderings[index];
+        const result = compare(valueAt(doc, order.field), this.boundary?.[index]);
+        if (result) return order.direction === 'desc' ? result < 0 : result > 0;
+      }
+      return false;
+    }) : docs;
+    return new FakeQuerySnapshot(afterBoundary.slice(0, this.maxItems));
+  }
 }
 
 class FakeDocRef {
@@ -122,20 +163,23 @@ function seedComments() {
     createdAt: now,
     updatedAt: now
   });
-  fakeDb.docs.set('accounts/student1', { uid: 'student1', role: 'student', displayName: 'Student One', department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
+  fakeDb.docs.set('accounts/student1', { uid: 'student1', role: 'student', displayName: 'Student One', emailVerified: true, department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
   fakeDb.docs.set('accounts/student2', { uid: 'student2', role: 'student', displayName: 'Student Two', department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
   fakeDb.docs.set('accounts/student3', { uid: 'student3', role: 'student', displayName: 'Student Three', department: 'Civil Engineering Department', departmentKey: 'civil engineering department' });
   fakeDb.docs.set('accounts/student4', { uid: 'student4', role: 'student', displayName: 'Legacy Student' });
   fakeDb.docs.set('accounts/sponsor1', { uid: 'sponsor1', role: 'sponsor', displayName: 'Sponsor', companyName: 'Sponsor Co' });
-  fakeDb.docs.set('accounts/author', { uid: 'author', role: 'student', displayName: 'Author User', email: 'author@example.test' });
-  fakeDb.docs.set('accounts/other', { uid: 'other', role: 'sponsor', displayName: 'Other User', email: 'other@example.test', companyName: 'Private Co' });
+  fakeDb.docs.set('accounts/author', { uid: 'author', role: 'student', displayName: 'Author User', emailVerified: true, email: 'author@example.test' });
+  fakeDb.docs.set('accounts/other', { uid: 'other', role: 'sponsor', displayName: 'Other User', emailVerified: true, email: 'other@example.test', companyName: 'Private Co' });
+  fakeDb.docs.set('accounts/unverified-student', { uid: 'unverified-student', role: 'student', displayName: 'Unverified Student', emailVerified: false });
+  fakeDb.docs.set('accounts/admin-author', { uid: 'admin-author', role: 'admin', displayName: 'Admin Author', emailVerified: true });
   fakeDb.docs.set('organizations/org1/officerGrants/author', { uid: 'author', status: 'active' });
+  fakeDb.docs.set('organizations/org1/officerGrants/unverified-student', { uid: 'unverified-student', status: 'active' });
   fakeDb.docs.set('announcements/post1', {
     announcementId: 'post1',
     orgId: 'org1',
     body: 'Announcement',
     deletedAt: null,
-    commentCount: 2,
+    commentCount: 4,
     createdAt: now,
     updatedAt: now
   });
@@ -154,6 +198,24 @@ function seedComments() {
     authorUid: 'other',
     authorName: 'Other User',
     body: 'Second',
+    createdAt: now,
+    updatedAt: now
+  });
+  fakeDb.docs.set('announcements/post1/comments/comment4', {
+    commentId: 'comment4',
+    announcementId: 'post1',
+    authorUid: 'unverified-student',
+    authorName: 'Unverified Student',
+    body: 'Unverified account',
+    createdAt: now,
+    updatedAt: now
+  });
+  fakeDb.docs.set('announcements/post1/comments/comment5', {
+    commentId: 'comment5',
+    announcementId: 'post1',
+    authorUid: 'admin-author',
+    authorName: 'Admin Author',
+    body: 'Other account kind',
     createdAt: now,
     updatedAt: now
   });
@@ -200,7 +262,7 @@ describe('announcement comment ownership service behavior', () => {
     expect(updated).toMatchObject({ id: 'comment1', body: 'Updated body', viewerCanEdit: true, viewerCanDelete: true });
     expect(updated.updatedAt).toBeDefined();
     expect(fakeDb.docs.get('announcements/post1/comments/comment1')?.editedAt).toBeDefined();
-    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(2);
+    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(4);
   });
 
   it('blocks second-author edits and deletes', async () => {
@@ -208,7 +270,7 @@ describe('announcement comment ownership service behavior', () => {
 
     await expect(updateAnnouncementComment(user('other'), 'post1', 'comment1', { body: 'Nope' })).rejects.toMatchObject({ code: 'comment_owner_required' });
     await expect(deleteAnnouncementComment(user('other'), 'post1', 'comment1')).rejects.toMatchObject({ code: 'comment_owner_required' });
-    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(2);
+    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(4);
   });
 
   it('returns trusted author roles from saved accounts and only the comment organization grant', async () => {
@@ -227,9 +289,15 @@ describe('announcement comment ownership service behavior', () => {
     const comments = await listAnnouncementComments(user('viewer'), 'post1', {});
     expect(comments.items[0]).toMatchObject({ authorAccountKind: 'student', authorOrganizationRole: 'approved_officer' });
     expect(comments.items[0]).not.toHaveProperty('email');
-    expect(comments.items[1]).toMatchObject({ authorAccountKind: 'sponsor' });
+    expect(comments.items[1]).not.toHaveProperty('authorAccountKind');
     expect(comments.items[1]).not.toHaveProperty('authorOrganizationRole');
     expect(comments.items[1]).not.toHaveProperty('companyName');
+    const unverifiedStudent = comments.items.find((item) => item.id === 'comment4');
+    expect(unverifiedStudent).not.toHaveProperty('authorAccountKind');
+    expect(unverifiedStudent).not.toHaveProperty('authorOrganizationRole');
+    const otherAccountKind = comments.items.find((item) => item.id === 'comment5');
+    expect(otherAccountKind).not.toHaveProperty('authorAccountKind');
+    expect(otherAccountKind).not.toHaveProperty('authorOrganizationRole');
 
     const otherOrganizationComments = await listAnnouncementComments(user('viewer'), 'post2', {});
     expect(otherOrganizationComments.items[0]).toMatchObject({ authorAccountKind: 'student' });
@@ -273,12 +341,79 @@ describe('announcement comment ownership service behavior', () => {
     expect(listed.items.find((comment) => comment.id === 'legacy-edited')?.updatedAt).toBe(updatedAt.toDate().toISOString());
   });
 
+  it('uses stable timestamp/id boundaries across deleted announcement, comment, and date cursors', async () => {
+    const { listAnnouncements, listAnnouncementComments, listDateEntries } = await import('../service');
+    const tied = Timestamp.fromDate(new Date('2026-10-12T00:00:00.000Z'));
+    for (const id of ['post-a', 'post-b', 'post-c']) {
+      fakeDb.docs.set(`announcements/${id}`, { announcementId: id, orgId: 'org1', body: id, deletedAt: null, createdAt: tied });
+    }
+    const firstAnnouncementPage = await listAnnouncements(user('viewer'), { limit: 1, orgId: 'org1' });
+    expect(firstAnnouncementPage.items[0].id).toBe('post-c');
+    fakeDb.delete('announcements/post-c');
+    fakeDb.docs.set('announcements/post-d', { announcementId: 'post-d', orgId: 'org1', body: 'Inserted before cursor', deletedAt: null, createdAt: tied });
+    const nextAnnouncementPage = await listAnnouncements(user('viewer'), { limit: 1, orgId: 'org1', pageToken: firstAnnouncementPage.nextPageToken });
+    expect(nextAnnouncementPage.items[0].id).toBe('post-b');
+    const finalAnnouncementPage = await listAnnouncements(user('viewer'), { limit: 1, orgId: 'org1', pageToken: nextAnnouncementPage.nextPageToken });
+    expect(finalAnnouncementPage.items[0].id).toBe('post-a');
+
+    const firstCommentPage = await listAnnouncementComments(user('viewer'), 'post1', { limit: 1 });
+    expect(firstCommentPage.items[0].id).toBe('comment1');
+    fakeDb.delete('announcements/post1/comments/comment1');
+    const nextCommentPage = await listAnnouncementComments(user('viewer'), 'post1', { limit: 1, pageToken: firstCommentPage.nextPageToken });
+    expect(nextCommentPage.items[0].id).toBe('comment2');
+
+    for (const id of ['date-a', 'date-b']) {
+      fakeDb.docs.set(`calendarEntries/${id}`, { entryId: id, orgId: 'org1', kind: 'event', title: id, date: '2026-12-01', startTime: '09:00', details: '' });
+    }
+    const firstDatePage = await listDateEntries(user('viewer'), { limit: 1, organizationId: 'org1' });
+    expect(firstDatePage.items[0].id).toBe('date-a');
+    fakeDb.delete('calendarEntries/date-a');
+    const nextDatePage = await listDateEntries(user('viewer'), { limit: 1, organizationId: 'org1', pageToken: firstDatePage.nextPageToken });
+    expect(nextDatePage.items[0].id).toBe('date-b');
+  });
+
+  it('reaches later saved organizations through bounded directory pages and search scans', async () => {
+    const { listOrganizations } = await import('../service');
+    for (let index = 0; index < 130; index += 1) {
+      const id = `saved-org-${String(index).padStart(3, '0')}`;
+      fakeDb.docs.set(`organizations/${id}`, { orgId: id, name: index === 125 ? 'ZZZ Later Admin Created Unique Guild' : `Saved organization ${String(index).padStart(3, '0')}` });
+    }
+    const firstSearchBatch = await listOrganizations(user('viewer'), { limit: 20, q: 'ZZZ Later Admin Created Unique' });
+    expect(firstSearchBatch.items).toEqual([]);
+    expect(firstSearchBatch.nextPageToken).toBeTruthy();
+    const found = await listOrganizations(user('viewer'), { limit: 20, q: 'ZZZ Later Admin Created Unique', pageToken: firstSearchBatch.nextPageToken });
+    expect(found.items.map((item) => item.name)).toEqual(['ZZZ Later Admin Created Unique Guild']);
+
+    const firstDirectoryPage = await listOrganizations(user('viewer'), { limit: 20 });
+    expect(firstDirectoryPage.items).toHaveLength(20);
+    const cursor = firstDirectoryPage.items.at(-1)?.id;
+    expect(firstDirectoryPage.nextPageToken).toBeTruthy();
+    if (!cursor) throw new Error('Expected a stable organization cursor boundary.');
+    fakeDb.delete(`organizations/${cursor}`);
+    fakeDb.docs.set('organizations/saved-org-009a', { orgId: 'saved-org-009a', name: 'Saved organization 009a' });
+    const nextPage = await listOrganizations(user('viewer'), { limit: 20, pageToken: firstDirectoryPage.nextPageToken });
+    expect(nextPage.items.map((item) => item.id)).toContain('saved-org-020');
+  });
+
+  it('binds strict organization cursors to their search context and stable name/id ties', async () => {
+    const { listOrganizations } = await import('../service');
+    for (const id of ['org-a', 'org-b', 'org-c']) fakeDb.docs.set(`organizations/${id}`, { orgId: id, name: 'Alpha Organization' });
+    const first = await listOrganizations(user('viewer'), { limit: 1, q: 'alpha' });
+    expect(first.items[0].id).toBe('org-a');
+    fakeDb.delete('organizations/org-a');
+    fakeDb.docs.set('organizations/org-aa', { orgId: 'org-aa', name: 'Alpha Organization' });
+    const second = await listOrganizations(user('viewer'), { limit: 1, q: 'alpha', pageToken: first.nextPageToken });
+    expect(second.items[0].id).toBe('org-aa');
+    await expect(listOrganizations(user('viewer'), { limit: 1, q: 'different', pageToken: first.nextPageToken })).rejects.toMatchObject({ code: 'invalid_page_token' });
+    await expect(listOrganizations(user('viewer'), { limit: 1, q: 'alpha', pageToken: '1' })).rejects.toMatchObject({ code: 'invalid_page_token' });
+  });
+
   it('keeps raw pagination values when scoping date-entry queries for the service parser', async () => {
     const { scopedDateEntryQuery } = await import('../service');
     const { dateEntryQuerySchema } = await import('../validation');
     const query = scopedDateEntryQuery('org1', { limit: '20', pageToken: '0' });
 
-    expect(dateEntryQuerySchema.parse(query)).toMatchObject({ organizationId: 'org1', limit: 20, pageToken: 0 });
+    expect(dateEntryQuerySchema.parse(query)).toMatchObject({ organizationId: 'org1', limit: 20, pageToken: '0' });
   });
 
   it('returns confirmed creates without a post-write read and safely replays the same entry key', async () => {
@@ -357,7 +492,7 @@ describe('announcement comment ownership service behavior', () => {
 
     await expect(deleteAnnouncementComment(user('author'), 'post1', 'comment1')).resolves.toMatchObject({ deleted: true });
     expect(fakeDb.docs.has('announcements/post1/comments/comment1')).toBe(false);
-    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(1);
+    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(3);
     await expect(deleteAnnouncementComment(user('author'), 'post1', 'comment1')).rejects.toMatchObject({ code: 'comment_missing' });
   });
 });

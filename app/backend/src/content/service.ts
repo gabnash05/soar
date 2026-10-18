@@ -1,11 +1,12 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { DocumentData, Query } from 'firebase-admin/firestore';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { COLLECTIONS, organizationLogoStoragePath, announcementImageStoragePath, organizationPath, officerGrantPath } from '../contracts/paths';
 import type { OrganizationDocument } from '../contracts/schema';
 import { canonicalDepartment, normalizeDepartmentKey } from '../contracts/validation';
 import { AppError } from '../errors';
 import { db } from '../firebase';
+import { decodeCursor, encodeCursor } from '../pagination';
 import { loadAccount, requireActiveAccess } from '../identity/access';
 import {
   ALLOWED_IMAGE_CONTENT_TYPES,
@@ -46,16 +47,18 @@ function iso(value: unknown): string | undefined {
   return typeof (value as Timestamp | undefined)?.toDate === 'function' ? (value as Timestamp).toDate().toISOString() : undefined;
 }
 
-function pageToken(offset: number, returned: number, limit: number): string | undefined {
-  return returned > limit ? String(offset + limit) : undefined;
+function cursorMillis(value: string): Timestamp {
+  if (!/^\d{1,16}$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new AppError('invalid_page_token', 'The page token has an invalid timestamp boundary.', 400);
+  }
+  return Timestamp.fromMillis(Number(value));
 }
 
-function pageItems<T>(items: T[], limit: number): T[] {
-  return items.slice(0, limit);
-}
-
-function offsetQuery(query: Query<DocumentData>, offset: number, limit: number): Query<DocumentData> {
-  return query.offset(offset).limit(limit + 1);
+function timestampBoundary(value: unknown): string {
+  if (!value || typeof (value as Timestamp).toMillis !== 'function') {
+    throw new AppError('invalid_page_boundary', 'The list item is missing its ordered timestamp.', 500);
+  }
+  return String((value as Timestamp).toMillis());
 }
 
 function routeOrgId(orgId: string): string {
@@ -176,8 +179,10 @@ async function commentFromDoc(data: DocumentData, viewerUid?: string, organizati
   const ownsComment = Boolean(viewerUid && data.authorUid === viewerUid);
   const authorUid = typeof data.authorUid === 'string' ? data.authorUid : '';
   const authorAccount = authorUid ? await db.doc(`accounts/${authorUid}`).get() : undefined;
-  const savedRole = authorAccount?.data()?.role;
-  const authorAccountKind: 'student' | 'sponsor' | undefined = savedRole === 'student' || savedRole === 'sponsor' ? savedRole : undefined;
+  const authorProfile = authorAccount?.data();
+  const authorAccountKind: 'student' | undefined = authorProfile?.role === 'student' && authorProfile?.emailVerified === true
+    ? 'student'
+    : undefined;
   const officerGrant = authorAccountKind === 'student' && organizationId
     ? await db.doc(officerGrantPath(organizationId, authorUid)).get()
     : undefined;
@@ -235,16 +240,35 @@ export async function listOrganizations(user: DecodedIdToken, rawQuery: unknown)
   await requireReadableUser(user);
   const query = organizationListQuerySchema.parse(rawQuery);
   const search = normalizedName(query.q ?? '');
-  const fetchLimit = search ? 100 : query.limit + 1;
-  const snap = await db.collection(COLLECTIONS.organizations).orderBy('name').offset(query.pageToken).limit(fetchLimit).get();
-  const filtered = snap.docs
-    .map((doc) => doc.data())
-    .filter((data) => !search || normalizedName(data.name ?? '').includes(search))
-    .map(summaryFromOrganization);
+  const context = search;
+  const boundary = decodeCursor(query.pageToken, 'organizations', context, 2);
+  let ref: Query<DocumentData> = db.collection(COLLECTIONS.organizations).orderBy('name').orderBy(FieldPath.documentId());
+  if (boundary) ref = ref.startAfter(boundary[0], boundary[1]);
+  if (!search) {
+    const snap = await ref.limit(query.limit + 1).get();
+    const docs = snap.docs.slice(0, query.limit);
+    const items = docs.map((doc) => summaryFromOrganization(doc.data()));
+    const last = docs.at(-1);
+    return {
+      items,
+      ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('organizations', context, [String(last.get('name') ?? ''), last.id]) } : {})
+    };
+  }
 
+  // Name substring search cannot be expressed by Firestore's ordered query, so scan a bounded batch and continue from its stable boundary.
+  const snap = await ref.limit(101).get();
+  const scanned = snap.docs.slice(0, 100);
+  const matches = scanned.filter((doc) => normalizedName(doc.data().name ?? '').includes(search));
+  const docs = matches.slice(0, query.limit);
+  const items = docs.map((doc) => summaryFromOrganization(doc.data()));
+  const nextBoundary = matches.length > query.limit
+    ? docs.at(-1)
+    : snap.docs.length > scanned.length
+      ? scanned.at(-1)
+      : undefined;
   return {
-    items: pageItems(filtered, query.limit),
-    nextPageToken: search ? undefined : pageToken(query.pageToken, filtered.length, query.limit)
+    items,
+    ...(nextBoundary ? { nextPageToken: encodeCursor('organizations', context, [String(nextBoundary.get('name') ?? ''), nextBoundary.id]) } : {})
   };
 }
 
@@ -396,11 +420,19 @@ export async function listAnnouncements(user: DecodedIdToken, rawQuery: unknown)
   if (query.orgId) {
     ref = ref.where('orgId', '==', query.orgId);
   }
-  ref = ref.orderBy('createdAt', 'desc');
-  const snap = await offsetQuery(ref, query.pageToken, query.limit).get();
-  const likeMap = await viewerLikeMap(snap.docs.map((doc) => doc.id), user.uid);
-  const items = snap.docs.map((doc) => announcementFromDoc(doc.data(), likeMap[doc.id] ?? false));
-  return { items: pageItems(items, query.limit), nextPageToken: pageToken(query.pageToken, items.length, query.limit) };
+  const context = query.orgId ?? '';
+  const boundary = decodeCursor(query.pageToken, 'announcements', context, 2);
+  ref = ref.orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc');
+  if (boundary) ref = ref.startAfter(cursorMillis(boundary[0]), boundary[1]);
+  const snap = await ref.limit(query.limit + 1).get();
+  const docs = snap.docs.slice(0, query.limit);
+  const likeMap = await viewerLikeMap(docs.map((doc) => doc.id), user.uid);
+  const items = docs.map((doc) => announcementFromDoc(doc.data(), likeMap[doc.id] ?? false));
+  const last = docs.at(-1);
+  return {
+    items,
+    ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('announcements', context, [timestampBoundary(last.get('createdAt')), last.id]) } : {})
+  };
 }
 
 export async function getAnnouncement(user: DecodedIdToken, announcementIdParam: string) {
@@ -523,10 +555,18 @@ export async function listAnnouncementComments(user: DecodedIdToken, announcemen
   if (!announcement.exists || announcement.data()?.deletedAt) {
     throw new AppError('announcement_missing', 'The announcement was not found.', 404);
   }
-  const snap = await offsetQuery(announcement.ref.collection('comments').orderBy('createdAt', 'asc'), query.pageToken, query.limit).get();
+  const boundary = decodeCursor(query.pageToken, 'announcement-comments', announcementId, 2);
+  let ref = announcement.ref.collection('comments').orderBy('createdAt', 'asc').orderBy(FieldPath.documentId());
+  if (boundary) ref = ref.startAfter(cursorMillis(boundary[0]), boundary[1]);
+  const snap = await ref.limit(query.limit + 1).get();
+  const docs = snap.docs.slice(0, query.limit);
   const organizationId = typeof announcement.data()?.orgId === 'string' ? announcement.data()?.orgId as string : undefined;
-  const items = await Promise.all(snap.docs.map((doc) => commentFromDoc(doc.data(), user.uid, organizationId)));
-  return { items: pageItems(items, query.limit), nextPageToken: pageToken(query.pageToken, items.length, query.limit) };
+  const items = await Promise.all(docs.map((doc) => commentFromDoc(doc.data(), user.uid, organizationId)));
+  const last = docs.at(-1);
+  return {
+    items,
+    ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('announcement-comments', announcementId, [timestampBoundary(last.get('createdAt')), last.id]) } : {})
+  };
 }
 
 export async function addAnnouncementComment(user: DecodedIdToken, announcementIdParam: string, rawBody: unknown) {
@@ -624,10 +664,18 @@ export async function listDateEntries(user: DecodedIdToken, rawQuery: unknown): 
   let ref: Query<DocumentData> = db.collection(COLLECTIONS.calendarEntries);
   if (query.organizationId) ref = ref.where('orgId', '==', query.organizationId);
   if (query.kind) ref = ref.where('kind', '==', query.kind);
-  ref = ref.orderBy('date', 'asc').orderBy('startTime', 'asc');
-  const snap = await offsetQuery(ref, query.pageToken, query.limit).get();
-  const items = snap.docs.map((doc) => dateEntryFromDoc(doc.data()));
-  return { items: pageItems(items, query.limit), nextPageToken: pageToken(query.pageToken, items.length, query.limit) };
+  const context = JSON.stringify([query.organizationId ?? '', query.kind ?? '']);
+  const boundary = decodeCursor(query.pageToken, 'date-entries', context, 3);
+  ref = ref.orderBy('date', 'asc').orderBy('startTime', 'asc').orderBy(FieldPath.documentId());
+  if (boundary) ref = ref.startAfter(boundary[0], boundary[1], boundary[2]);
+  const snap = await ref.limit(query.limit + 1).get();
+  const docs = snap.docs.slice(0, query.limit);
+  const items = docs.map((doc) => dateEntryFromDoc(doc.data()));
+  const last = docs.at(-1);
+  return {
+    items,
+    ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('date-entries', context, [String(last.get('date') ?? ''), String(last.get('startTime') ?? ''), last.id]) } : {})
+  };
 }
 
 export async function createDateEntry(user: DecodedIdToken, orgIdParam: string, rawBody: unknown) {

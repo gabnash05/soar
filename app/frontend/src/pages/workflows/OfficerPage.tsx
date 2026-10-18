@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, ButtonLink, ConfirmDialog, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
 import { safeErrorMessage } from '../../lib/safeErrors';
@@ -223,7 +223,7 @@ export function AnnouncementComposer({
         onSubmitted?.();
       }
     } catch (error) {
-      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: error instanceof Error ? error.message : 'Announcement upload failed.' };
+      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: safeErrorMessage(error, 'Announcement upload failed. Please try again.') };
       setResult(failure);
       onResult?.(failure);
     } finally {
@@ -292,7 +292,7 @@ export function AnnouncementComposer({
   );
 }
 
-function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onDelete: (id: string) => void }) {
+function ManagedAnnouncementList({ dashboard, session, client, onDelete, removedAnnouncementIds }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onDelete: (id: string) => void; removedAnnouncementIds: ReadonlySet<string> }) {
   const [items, setItems] = useState<Announcement[]>([]);
   const [cursor, setCursor] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
@@ -307,9 +307,15 @@ function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { das
   const busy = useRef(false);
   const sentinel = useRef<HTMLDivElement>(null);
   const organizationId = dashboard.organization.id;
+  const renderedGeneration = generation.current;
+  const currentContext = useRef({ session, client, organizationId, generation: renderedGeneration });
+  useLayoutEffect(() => {
+    currentContext.current = { session, client, organizationId, generation: renderedGeneration };
+  }, [client, organizationId, renderedGeneration, session]);
 
   const loadFirst = useCallback(async () => {
     const current = ++generation.current;
+    currentContext.current = { session, client, organizationId, generation: current };
     busy.current = true;
     setLoading(true);
     setError(null);
@@ -362,6 +368,13 @@ function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { das
     return () => observer.disconnect();
   }, [cursor, loadNext, loading, loadingMore, pageError]);
 
+  const reconcileAnnouncement = useCallback((updated: Announcement) => {
+    const context = currentContext.current;
+    if (context.session !== session || context.client !== client || context.organizationId !== organizationId || context.generation !== renderedGeneration || updated.organizationId !== organizationId) return;
+    setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+  }, [client, organizationId, renderedGeneration, session.uid]);
+  const visibleItems = items.filter((item) => !removedAnnouncementIds.has(item.id));
+
   const saveAnnouncement = async (event: FormEvent) => {
     event.preventDefault();
     if (!editingAnnouncement) return;
@@ -369,8 +382,8 @@ function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { das
     setEditError(null);
     try {
       const result = await client.updateAnnouncement(editingAnnouncement.id, organizationId, editBody, session);
-      if (!result.ok || !result.data) {
-        setEditError(result.message || 'The announcement could not be updated.');
+      if (!result.ok || result.persisted !== true || !result.data || result.data.organizationId !== organizationId) {
+        setEditError(result.ok ? 'The announcement update could not be confirmed. Refresh the post before trying again.' : result.message || 'The announcement could not be updated.');
         return;
       }
       const updatedAnnouncement = result.data;
@@ -386,10 +399,10 @@ function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { das
   return <div className="mx-auto grid w-[min(720px,100%)] min-w-0 gap-4" aria-label="Managed announcements">
     {loading ? <LoadingBlock label="Loading organization announcements" /> : null}
     {error ? <ErrorState onRetry={loadFirst}>{error}</ErrorState> : null}
-    {!loading && !error && items.length === 0 ? <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p> : null}
-    {items.map((item) => {
+    {!loading && !error && visibleItems.length === 0 && !cursor ? <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p> : null}
+    {visibleItems.map((item) => {
       const images = (item.media?.length ? item.media : item.image ? [item.image] : []).filter((media) => !media.contentType?.startsWith('video/'));
-      return <div key={item.id} className="grid gap-2"><AnnouncementCard announcement={{ ...item, image: images[0], media: images.length ? images : undefined }} session={session} client={client} onChanged={loadFirst} /><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => { setEditError(null); setEditBody(item.body); setEditingAnnouncement(item); }}>Edit announcement</Button><Button type="button" variant="danger" onClick={() => onDelete(item.id)}>Delete announcement</Button></div></div>;
+      return <div key={`${session.uid}:${item.id}`} className="grid gap-2"><AnnouncementCard announcement={{ ...item, image: images[0], media: images.length ? images : undefined }} session={session} client={client} onChanged={reconcileAnnouncement} /><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => { setEditError(null); setEditBody(item.body); setEditingAnnouncement(item); }}>Edit announcement</Button><Button type="button" variant="danger" onClick={() => onDelete(item.id)}>Delete announcement</Button></div></div>;
     })}
     {pageError ? <div role="alert" className="py-4 text-center text-sm">Could not load more announcements: {pageError} <Button type="button" variant="secondary" onClick={loadNext}>Retry loading announcements</Button></div> : null}
     {cursor && !pageError ? <div ref={sentinel} className="flex min-h-12 items-center justify-center py-3" aria-live="polite">{loadingMore ? <span role="status">Loading more announcements…</span> : <Button type="button" variant="secondary" onClick={loadNext}>Load more announcements</Button>}</div> : null}
@@ -415,22 +428,35 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
   const [deleteAnnouncementId, setDeleteAnnouncementId] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [removedAnnouncementIdsByScope, setRemovedAnnouncementIdsByScope] = useState<Record<string, string[]>>({});
   const [refreshKey, setRefreshKey] = useState(0);
+  const organizationId = dashboard.organization.id;
+  const removalScope = `${session.uid}:${organizationId}`;
+  const removedAnnouncementIds = new Set(removedAnnouncementIdsByScope[removalScope] ?? []);
   const refreshAnnouncements = useCallback(() => {
     onChanged();
     setRefreshKey((key) => key + 1);
   }, [onChanged]);
 
   const confirmDeleteAnnouncement = async () => {
-    if (!deleteAnnouncementId) return;
+    const deletingId = deleteAnnouncementId;
+    if (!deletingId) return;
     setDeleteBusy(true);
     setDeleteError(null);
-    const next = await client.deleteAnnouncement(deleteAnnouncementId, dashboard.organization.id, session);
+    const response = await client.deleteAnnouncement(deletingId, organizationId, session);
+    const confirmed = response.ok && response.persisted === true;
+    const next = response.ok && !confirmed
+      ? { ...response, ok: false, persisted: 'unconfirmed' as const, reason: 'error' as const, message: 'The announcement deletion could not be confirmed. Refresh the list before trying again.' }
+      : response;
     setResult(next);
     setDeleteBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setDeleteAnnouncementId(null);
-      refreshAnnouncements();
+      setRemovedAnnouncementIdsByScope((current) => {
+        const existing = current[removalScope] ?? [];
+        return existing.includes(deletingId) ? current : { ...current, [removalScope]: [...existing, deletingId] };
+      });
+      onChanged();
     } else {
       setDeleteError(next.message);
     }
@@ -462,7 +488,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
           <ResultMessage result={composerResult} />
         </>
       ) : null}
-      <ManagedAnnouncementList key={`${dashboard.organization.id}-${refreshKey}`} dashboard={dashboard} session={session} client={client} onDelete={(id) => { setDeleteError(null); setDeleteAnnouncementId(id); }} />
+      <ManagedAnnouncementList key={`${session.uid}:${dashboard.organization.id}-${refreshKey}`} dashboard={dashboard} session={session} client={client} removedAnnouncementIds={removedAnnouncementIds} onDelete={(id) => { setDeleteError(null); setDeleteAnnouncementId(id); }} />
       <ResultMessage result={result} />
       <ConfirmDialog
         open={Boolean(deleteAnnouncementId)}
