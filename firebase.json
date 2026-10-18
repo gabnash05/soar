@@ -11,13 +11,6 @@
     "public": "app/frontend/dist",
     "rewrites": [
       {
-        "glob": "/api/**",
-        "function": {
-          "functionId": "api",
-          "region": "asia-southeast1"
-        }
-      },
-      {
         "glob": "**",
         "destination": "/index.html"
       }

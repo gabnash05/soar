@@ -6,6 +6,7 @@ type StoredDoc = Record<string, unknown>;
 
 class FakeDocSnapshot {
   constructor(readonly ref: FakeDocRef, private readonly value: StoredDoc | undefined) {}
+  get id() { return this.ref.id; }
   get exists() { return this.value !== undefined; }
   data() { return this.value; }
   get(field: string) { return this.value?.[field]; }
@@ -132,8 +133,15 @@ class FakeDb {
 }
 
 const fakeDb = new FakeDb();
+const storageMocks = vi.hoisted(() => ({
+  createSignedObjectDownloadUrl: vi.fn(),
+  createSignedObjectUploadTarget: vi.fn(async () => undefined),
+  getStoredObjectMetadata: vi.fn(),
+  isSupabaseStorageEnabled: vi.fn(() => false),
+}));
 
 vi.doMock('../../firebase', () => ({ db: fakeDb }));
+vi.doMock('../../storage/objectStorage', () => storageMocks);
 vi.doMock('../../identity/access', () => ({
   requireActiveAccess: vi.fn(async () => undefined),
   loadAccount: vi.fn(async (uid: string) => ({ uid, role: 'student', displayName: uid === 'author' ? 'Author User' : 'Other User' }))
@@ -162,20 +170,23 @@ function seedComments() {
     createdAt: now,
     updatedAt: now
   });
-  fakeDb.docs.set('accounts/student1', { uid: 'student1', role: 'student', displayName: 'Student One', department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
+  fakeDb.docs.set('accounts/student1', { uid: 'student1', role: 'student', displayName: 'Student One', emailVerified: true, department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
   fakeDb.docs.set('accounts/student2', { uid: 'student2', role: 'student', displayName: 'Student Two', department: 'Computer Engineering Department', departmentKey: 'computer engineering department' });
   fakeDb.docs.set('accounts/student3', { uid: 'student3', role: 'student', displayName: 'Student Three', department: 'Civil Engineering Department', departmentKey: 'civil engineering department' });
   fakeDb.docs.set('accounts/student4', { uid: 'student4', role: 'student', displayName: 'Legacy Student' });
   fakeDb.docs.set('accounts/sponsor1', { uid: 'sponsor1', role: 'sponsor', displayName: 'Sponsor', companyName: 'Sponsor Co' });
-  fakeDb.docs.set('accounts/author', { uid: 'author', role: 'student', displayName: 'Author User', email: 'author@example.test' });
-  fakeDb.docs.set('accounts/other', { uid: 'other', role: 'sponsor', displayName: 'Other User', email: 'other@example.test', companyName: 'Private Co' });
+  fakeDb.docs.set('accounts/author', { uid: 'author', role: 'student', displayName: 'Author User', emailVerified: true, email: 'author@example.test' });
+  fakeDb.docs.set('accounts/other', { uid: 'other', role: 'sponsor', displayName: 'Other User', emailVerified: true, email: 'other@example.test', companyName: 'Private Co' });
+  fakeDb.docs.set('accounts/unverified-student', { uid: 'unverified-student', role: 'student', displayName: 'Unverified Student', emailVerified: false });
+  fakeDb.docs.set('accounts/admin-author', { uid: 'admin-author', role: 'admin', displayName: 'Admin Author', emailVerified: true });
   fakeDb.docs.set('organizations/org1/officerGrants/author', { uid: 'author', status: 'active' });
+  fakeDb.docs.set('organizations/org1/officerGrants/unverified-student', { uid: 'unverified-student', status: 'active' });
   fakeDb.docs.set('announcements/post1', {
     announcementId: 'post1',
     orgId: 'org1',
     body: 'Announcement',
     deletedAt: null,
-    commentCount: 2,
+    commentCount: 4,
     createdAt: now,
     updatedAt: now
   });
@@ -197,11 +208,31 @@ function seedComments() {
     createdAt: now,
     updatedAt: now
   });
+  fakeDb.docs.set('announcements/post1/comments/comment4', {
+    commentId: 'comment4',
+    announcementId: 'post1',
+    authorUid: 'unverified-student',
+    authorName: 'Unverified Student',
+    body: 'Unverified account',
+    createdAt: now,
+    updatedAt: now
+  });
+  fakeDb.docs.set('announcements/post1/comments/comment5', {
+    commentId: 'comment5',
+    announcementId: 'post1',
+    authorUid: 'admin-author',
+    authorName: 'Admin Author',
+    body: 'Other account kind',
+    createdAt: now,
+    updatedAt: now
+  });
 }
 
 describe('announcement comment ownership service behavior', () => {
   beforeEach(() => {
     seedComments();
+    storageMocks.createSignedObjectDownloadUrl.mockReset();
+    storageMocks.isSupabaseStorageEnabled.mockReturnValue(false);
   });
 
   it('lets an approved organization officer update only the post body', async () => {
@@ -240,7 +271,7 @@ describe('announcement comment ownership service behavior', () => {
     expect(updated).toMatchObject({ id: 'comment1', body: 'Updated body', viewerCanEdit: true, viewerCanDelete: true });
     expect(updated.updatedAt).toBeDefined();
     expect(fakeDb.docs.get('announcements/post1/comments/comment1')?.editedAt).toBeDefined();
-    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(2);
+    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(4);
   });
 
   it('blocks second-author edits and deletes', async () => {
@@ -248,7 +279,7 @@ describe('announcement comment ownership service behavior', () => {
 
     await expect(updateAnnouncementComment(user('other'), 'post1', 'comment1', { body: 'Nope' })).rejects.toMatchObject({ code: 'comment_owner_required' });
     await expect(deleteAnnouncementComment(user('other'), 'post1', 'comment1')).rejects.toMatchObject({ code: 'comment_owner_required' });
-    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(2);
+    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(4);
   });
 
   it('returns trusted author roles from saved accounts and only the comment organization grant', async () => {
@@ -267,9 +298,15 @@ describe('announcement comment ownership service behavior', () => {
     const comments = await listAnnouncementComments(user('viewer'), 'post1', {});
     expect(comments.items[0]).toMatchObject({ authorAccountKind: 'student', authorOrganizationRole: 'approved_officer' });
     expect(comments.items[0]).not.toHaveProperty('email');
-    expect(comments.items[1]).toMatchObject({ authorAccountKind: 'sponsor' });
+    expect(comments.items[1]).not.toHaveProperty('authorAccountKind');
     expect(comments.items[1]).not.toHaveProperty('authorOrganizationRole');
     expect(comments.items[1]).not.toHaveProperty('companyName');
+    const unverifiedStudent = comments.items.find((item) => item.id === 'comment4');
+    expect(unverifiedStudent).not.toHaveProperty('authorAccountKind');
+    expect(unverifiedStudent).not.toHaveProperty('authorOrganizationRole');
+    const otherAccountKind = comments.items.find((item) => item.id === 'comment5');
+    expect(otherAccountKind).not.toHaveProperty('authorAccountKind');
+    expect(otherAccountKind).not.toHaveProperty('authorOrganizationRole');
 
     const otherOrganizationComments = await listAnnouncementComments(user('viewer'), 'post2', {});
     expect(otherOrganizationComments.items[0]).toMatchObject({ authorAccountKind: 'student' });
@@ -380,6 +417,30 @@ describe('announcement comment ownership service behavior', () => {
     await expect(listOrganizations(user('viewer'), { limit: 1, q: 'alpha', pageToken: '1' })).rejects.toMatchObject({ code: 'invalid_page_token' });
   });
 
+  it('signs only referenced active organization media for authenticated users', async () => {
+    const { getMediaDownloadUrl } = await import('../service');
+    const mediaPath = 'announcement-images/org1/post-media/photo.png';
+    fakeDb.docs.set('announcements/post-media', {
+      announcementId: 'post-media',
+      orgId: 'org1',
+      body: 'Media announcement',
+      media: [{ storagePath: mediaPath, contentType: 'image/png', sizeBytes: 12 }],
+      deletedAt: null,
+    });
+    storageMocks.isSupabaseStorageEnabled.mockReturnValue(true);
+    storageMocks.getStoredObjectMetadata.mockResolvedValue({ contentType: 'image/png', sizeBytes: 12, customMetadata: {} });
+    storageMocks.createSignedObjectDownloadUrl.mockResolvedValue('https://private.example.test/signed-image');
+
+    await expect(getMediaDownloadUrl(user('viewer'), mediaPath)).resolves.toEqual({ url: 'https://private.example.test/signed-image' });
+    await expect(getMediaDownloadUrl(user('viewer'), 'announcement-images/org1/post-media/not-referenced.png')).rejects.toMatchObject({ code: 'media_missing' });
+    fakeDb.docs.set('announcements/post-deleted', {
+      announcementId: 'post-deleted', orgId: 'org1', deletedAt: Timestamp.now(),
+      media: [{ storagePath: 'announcement-images/org1/post-deleted/photo.png' }],
+    });
+    await expect(getMediaDownloadUrl(user('viewer'), 'announcement-images/org1/post-deleted/photo.png')).rejects.toMatchObject({ code: 'media_missing' });
+    expect(storageMocks.createSignedObjectDownloadUrl).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps raw pagination values when scoping date-entry queries for the service parser', async () => {
     const { scopedDateEntryQuery } = await import('../service');
     const { dateEntryQuerySchema } = await import('../validation');
@@ -464,7 +525,7 @@ describe('announcement comment ownership service behavior', () => {
 
     await expect(deleteAnnouncementComment(user('author'), 'post1', 'comment1')).resolves.toMatchObject({ deleted: true });
     expect(fakeDb.docs.has('announcements/post1/comments/comment1')).toBe(false);
-    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(1);
+    expect(fakeDb.docs.get('announcements/post1')?.commentCount).toBe(3);
     await expect(deleteAnnouncementComment(user('author'), 'post1', 'comment1')).rejects.toMatchObject({ code: 'comment_missing' });
   });
 });

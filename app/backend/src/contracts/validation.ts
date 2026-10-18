@@ -50,6 +50,30 @@ export const uidSchema = trimmedString.min(1).max(128);
 export const orgIdSchema = trimmedString.min(2).max(128).regex(/^[A-Za-z0-9_-]+$/);
 export const slugSchema = trimmedString.min(2).max(140).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
+export const previewRegistrationSchema = z.object({
+  role: z.enum(ACCOUNT_ROLES),
+  displayName: displayNameSchema,
+  studentId: studentIdSchema.optional(),
+  department: departmentSchema.optional(),
+  companyName: companyNameSchema,
+}).strict().superRefine((value, ctx) => {
+  if (value.role === 'student' && !value.studentId) {
+    ctx.addIssue({ code: 'custom', path: ['studentId'], message: 'studentId is required for student accounts.' });
+  }
+
+  if (value.role === 'student' && !value.department) {
+    ctx.addIssue({ code: 'custom', path: ['department'], message: 'department is required for student accounts.' });
+  }
+
+  if (value.role === 'sponsor' && value.studentId) {
+    ctx.addIssue({ code: 'custom', path: ['studentId'], message: 'Sponsors must not include a studentId.' });
+  }
+
+  if (value.role === 'sponsor' && value.department) {
+    ctx.addIssue({ code: 'custom', path: ['department'], message: 'Sponsors must not include a department.' });
+  }
+});
+
 export const paidRegistrationCompletionSchema = z.object({
   email: emailSchema,
   password: passwordSchema,

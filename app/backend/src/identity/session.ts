@@ -29,6 +29,8 @@ export async function getUserSession(user: DecodedIdToken) {
   ]);
 
   const expiresAt = access.accessExpiresAt?.toDate().toISOString();
+  const startsAt = access.accessStartsAt?.toDate().toISOString();
+  const previewAccess = access.provenance === 'unpaid-preview';
   return {
     uid: user.uid,
     email: account.email,
@@ -39,12 +41,14 @@ export async function getUserSession(user: DecodedIdToken) {
     emailVerified: user.email_verified === true || account.emailVerified,
     access: {
       status: access.status === 'revoked' ? 'expired' : access.status,
+      provenance: access.provenance,
       annualFeePhp: 10,
-      feePhp: 10,
-      periodMonths: 6,
-      periodLabel: '6 months',
+      feePhp: previewAccess ? 0 : 10,
+      periodMonths: previewAccess ? undefined : 6,
+      periodLabel: previewAccess ? 'Unpaid preview' : '6 months',
+      startsAt,
       expiresAt,
-      renewalAvailable: access.status !== 'active'
+      renewalAvailable: !previewAccess && access.status !== 'active'
     },
     officerGrants
   };

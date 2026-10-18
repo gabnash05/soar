@@ -1,8 +1,11 @@
 import {
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   reload,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
 } from '@firebase/auth';
 import {
@@ -11,9 +14,12 @@ import {
   type EmailChangeInput,
   type NameChangeInput,
   type NameChangeResult,
+  type PreviewRegistrationInput,
   type RegisterAccountInput,
   type RegistrationPaymentInput,
   type RegistrationPaymentIntent,
+  type RegistrationRecoveryResult,
+  type RenewalCheckoutStatus,
   type RenewalRequest,
   type RenewalRequestInput,
   type SignInInput,
@@ -24,6 +30,25 @@ import { UserFacingError } from './safeErrors';
 import { getFirebaseConfigStatus, getFirebaseRuntime } from './firebase';
 import { createFixtureGateway } from './fixtures';
 
+export async function reauthenticateCurrentUser(password: string, expectedUid: string): Promise<void> {
+  const { auth } = getFirebaseRuntime();
+  const user = auth.currentUser;
+  if (!user?.email || user.uid !== expectedUid) {
+    throw new UserFacingError('Your sign-in session is unavailable. Sign in again before saving organization changes.');
+  }
+  if (!user.emailVerified) {
+    throw new UserFacingError('Verify your email before approving organization changes.');
+  }
+  if (!user.providerData.some((provider) => provider.providerId === 'password')) {
+    throw new UserFacingError('This account does not use email/password sign-in. Sign in with an email/password account to approve organization changes.');
+  }
+
+  const credential = EmailAuthProvider.credential(user.email, password);
+  await reauthenticateWithCredential(user, credential);
+  // Force the next authenticated API request to carry the refreshed recent-auth claim.
+  await user.getIdToken(true);
+}
+
 export interface BackendGateway {
   readonly mode: 'production' | 'fixture';
   readonly label: string;
@@ -32,10 +57,14 @@ export interface BackendGateway {
   signOut(): Promise<void>;
   sendPasswordRecovery(email: string): Promise<void>;
   startRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
+  registerPreviewAccount(input: PreviewRegistrationInput): Promise<UserSession>;
   getCheckoutStatus(intentId: string): Promise<CheckoutStatus>;
+  requestPaidRegistrationRecovery(email: string): Promise<RegistrationRecoveryResult>;
+  acceptPaidRegistrationRecovery(intentId: string, recoveryCode: string): Promise<void>;
   registerAccount(input: RegisterAccountInput): Promise<UserSession>;
   resendEmailVerification(): Promise<void>;
   requestManualRenewal(input: RenewalRequestInput): Promise<RenewalRequest>;
+  getRenewalStatus(renewalId: string): Promise<RenewalCheckoutStatus>;
   getAccessStatus(): Promise<UserSession['access']>;
   updateDisplayName(input: NameChangeInput): Promise<NameChangeResult>;
   requestEmailChange(input: EmailChangeInput): Promise<void>;
@@ -53,12 +82,14 @@ type RawAccess = Omit<Partial<AccessEntitlement>, 'status'> & {
 const normalizeAccess = (access: RawAccess): AccessEntitlement => {
   const status = access.status === 'none' ? 'missing' : access.status;
   const normalizedStatus = status ?? (access.active ? 'active' : 'missing');
+  const previewAccess = access.provenance === 'unpaid-preview';
   return {
     status: normalizedStatus,
+    provenance: access.provenance,
     annualFeePhp: 10,
-    feePhp: access.feePhp ?? 10,
-    periodMonths: access.periodMonths ?? 6,
-    periodLabel: access.periodLabel ?? '6 months',
+    feePhp: access.feePhp ?? (previewAccess ? 0 : 10),
+    periodMonths: access.periodMonths ?? (previewAccess ? undefined : 6),
+    periodLabel: access.periodLabel ?? (previewAccess ? 'Unpaid preview' : '6 months'),
     startsAt: access.startsAt,
     expiresAt: access.expiresAt ?? access.accessExpiresAt,
     lastPaymentReference: access.lastPaymentReference ?? access.latestPaymentId ?? undefined,
@@ -89,10 +120,12 @@ const createProductionGateway = (): BackendGateway => ({
     }
 
     const { auth } = getFirebaseRuntime();
-    if (!auth.currentUser) return null;
-    await reload(auth.currentUser);
+    const user = auth.currentUser;
+    if (!user) return null;
+    await reload(user);
+    await user.getIdToken(true);
     const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
-    return mapSession({ ...session, emailVerified: auth.currentUser.emailVerified });
+    return mapSession({ ...session, emailVerified: user.emailVerified });
   },
 
   async signIn(input) {
@@ -121,13 +154,58 @@ const createProductionGateway = (): BackendGateway => ({
     });
   },
 
+  async registerPreviewAccount(input: PreviewRegistrationInput) {
+    const { auth } = getFirebaseRuntime();
+    let credential: Awaited<ReturnType<typeof createUserWithEmailAndPassword>>;
+    try {
+      credential = await createUserWithEmailAndPassword(auth, input.email.trim(), input.password);
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+      if (code !== 'auth/email-already-in-use') throw error;
+      // The Auth user may exist from a previous attempt whose profile write did not finish.
+      credential = await signInWithEmailAndPassword(auth, input.email.trim(), input.password);
+    }
+
+    await apiFetch('/accounts/preview-registration', {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({
+        role: input.role,
+        displayName: input.displayName.trim(),
+        studentId: input.role === 'student' ? input.studentId?.trim() : undefined,
+        department: input.role === 'student' ? input.department : undefined,
+        companyName: input.role === 'sponsor' ? input.companyName?.trim() || undefined : undefined,
+      }),
+    });
+
+    if (!credential.user.emailVerified) await sendEmailVerification(credential.user);
+    const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
+    return mapSession({ ...session, emailVerified: credential.user.emailVerified });
+  },
+
   async getCheckoutStatus(intentId) {
     return apiFetch<CheckoutStatus>(`/payments/registration/status?intentId=${encodeURIComponent(intentId)}`);
   },
 
+  async requestPaidRegistrationRecovery(email) {
+    return apiFetch<RegistrationRecoveryResult>('/payments/registration/recover', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async acceptPaidRegistrationRecovery(intentId, recoveryCode) {
+    await apiFetch('/payments/registration/recover/accept', {
+      method: 'POST',
+      body: JSON.stringify({ intentId, recoveryCode }),
+    });
+  },
+
   async registerAccount(input) {
     const checkout = await this.getCheckoutStatus(input.intentId);
-    if (!checkout.canCreateAccount || checkout.status !== 'active') {
+    if (!checkout.canCreateAccount) {
       throw new UserFacingError('Payment is not confirmed yet. Account creation remains locked.');
     }
 
@@ -155,6 +233,12 @@ const createProductionGateway = (): BackendGateway => ({
       method: 'POST',
       headers: await authHeaders(),
       body: JSON.stringify(input),
+    });
+  },
+
+  async getRenewalStatus(renewalId) {
+    return apiFetch<RenewalCheckoutStatus>(`/payments/renewals/status?renewalId=${encodeURIComponent(renewalId)}`, {
+      headers: await authHeaders(),
     });
   },
 

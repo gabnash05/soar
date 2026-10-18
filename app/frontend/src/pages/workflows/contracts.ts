@@ -29,6 +29,10 @@ export interface WorkflowImage {
 export interface AnnouncementComment {
   id: string;
   authorUid?: string;
+  /** Trusted verified account role supplied by the API or the local fixture adapter. */
+  authorAccountKind?: 'student';
+  /** Trusted approved role scoped to this comment's organization. */
+  authorOrganizationRole?: 'approved_officer';
   authorName: string;
   body: string;
   createdAt: string;

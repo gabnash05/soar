@@ -6,6 +6,7 @@ import type { OrganizationDocument } from '../contracts/schema';
 import { canonicalDepartment, normalizeDepartmentKey } from '../contracts/validation';
 import { AppError } from '../errors';
 import { db } from '../firebase';
+import { createSignedObjectDownloadUrl, createSignedObjectUploadTarget, getStoredObjectMetadata, isSupabaseStorageEnabled } from '../storage/objectStorage';
 import { decodeCursor, encodeCursor } from '../pagination';
 import { loadAccount, requireActiveAccess } from '../identity/access';
 import {
@@ -179,8 +180,10 @@ async function commentFromDoc(data: DocumentData, viewerUid?: string, organizati
   const ownsComment = Boolean(viewerUid && data.authorUid === viewerUid);
   const authorUid = typeof data.authorUid === 'string' ? data.authorUid : '';
   const authorAccount = authorUid ? await db.doc(`accounts/${authorUid}`).get() : undefined;
-  const savedRole = authorAccount?.data()?.role;
-  const authorAccountKind: 'student' | 'sponsor' | undefined = savedRole === 'student' || savedRole === 'sponsor' ? savedRole : undefined;
+  const authorProfile = authorAccount?.data();
+  const authorAccountKind: 'student' | undefined = authorProfile?.role === 'student' && authorProfile?.emailVerified === true
+    ? 'student'
+    : undefined;
   const officerGrant = authorAccountKind === 'student' && organizationId
     ? await db.doc(officerGrantPath(organizationId, authorUid)).get()
     : undefined;
@@ -227,6 +230,17 @@ function validateAnnouncementMedia(orgId: string, announcementId: string, media:
     if (!match || match.orgId !== orgId || match.announcementId !== announcementId) {
       throw new AppError('invalid_image_path', 'Announcement images must stay under the matching organization and announcement folder.', 400);
     }
+  }
+}
+
+async function verifySupabaseImage(path: string, contentType?: string, sizeBytes?: number): Promise<void> {
+  if (!isSupabaseStorageEnabled()) return;
+  const metadata = await getStoredObjectMetadata(path);
+  if (!ALLOWED_IMAGE_CONTENT_TYPES.includes(metadata.contentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number]) ||
+      metadata.sizeBytes <= 0 || metadata.sizeBytes > MAX_IMAGE_SIZE_BYTES ||
+      (contentType !== undefined && metadata.contentType !== contentType) ||
+      (sizeBytes !== undefined && metadata.sizeBytes !== sizeBytes)) {
+    throw new AppError('uploaded_image_mismatch', 'The uploaded image does not match its approved type or size.', 400);
   }
 }
 
@@ -315,7 +329,10 @@ export async function updateOrganizationProfile(user: DecodedIdToken, orgIdParam
   }
   const logoPath = input.logo?.storagePath ?? input.logoPath;
   if (logoPath !== undefined) {
-    if (logoPath) validateLogoPath(orgId, logoPath);
+    if (logoPath) {
+      validateLogoPath(orgId, logoPath);
+      await verifySupabaseImage(logoPath);
+    }
     update.logoPath = logoPath;
   }
   if (input.recruitment !== undefined) {
@@ -367,10 +384,13 @@ export async function createLogoImageTarget(user: DecodedIdToken, orgIdParam: st
   const orgId = routeOrgId(orgIdParam);
   await assertCanManageOrganization(user, orgId);
   const input = imageTargetRequestSchema.omit({ announcementId: true }).parse(rawBody);
+  const storagePath = organizationLogoStoragePath(orgId, sanitizeTargetFileName(input.fileName));
+  const uploadTarget = await createSignedObjectUploadTarget(storagePath);
   return {
-    storagePath: organizationLogoStoragePath(orgId, sanitizeTargetFileName(input.fileName)),
+    storagePath,
     contentType: input.contentType,
     sizeBytes: input.sizeBytes,
+    ...(uploadTarget ?? {}),
     allowedContentTypes: ALLOWED_IMAGE_CONTENT_TYPES,
     maxSizeBytes: MAX_IMAGE_SIZE_BYTES
   };
@@ -381,11 +401,14 @@ export async function createAnnouncementImageTarget(user: DecodedIdToken, orgIdP
   await assertCanManageOrganization(user, orgId);
   const input = imageTargetRequestSchema.parse(rawBody);
   const announcementId = input.announcementId ?? db.collection(COLLECTIONS.announcements).doc().id;
+  const storagePath = announcementImageStoragePath(orgId, announcementId, sanitizeTargetFileName(input.fileName));
+  const uploadTarget = await createSignedObjectUploadTarget(storagePath);
   return {
     announcementId,
-    storagePath: announcementImageStoragePath(orgId, announcementId, sanitizeTargetFileName(input.fileName)),
+    storagePath,
     contentType: input.contentType,
     sizeBytes: input.sizeBytes,
+    ...(uploadTarget ?? {}),
     allowedContentTypes: ALLOWED_IMAGE_CONTENT_TYPES,
     maxSizeBytes: MAX_IMAGE_SIZE_BYTES
   };
@@ -396,14 +419,14 @@ export async function createAnnouncementMediaTargets(user: DecodedIdToken, orgId
   await assertCanManageOrganization(user, orgId);
   const input = mediaTargetRequestSchema.parse(rawBody);
   const announcementId = input.announcementId ?? db.collection(COLLECTIONS.announcements).doc().id;
+  const items = await Promise.all(input.files.map(async (file) => {
+    const storagePath = announcementImageStoragePath(orgId, announcementId, sanitizeTargetFileName(file.fileName));
+    const uploadTarget = await createSignedObjectUploadTarget(storagePath);
+    return { announcementId, storagePath, contentType: file.contentType, sizeBytes: file.sizeBytes, ...(uploadTarget ?? {}) };
+  }));
   return {
     announcementId,
-    items: input.files.map((file) => ({
-      announcementId,
-      storagePath: announcementImageStoragePath(orgId, announcementId, sanitizeTargetFileName(file.fileName)),
-      contentType: file.contentType,
-      sizeBytes: file.sizeBytes
-    })),
+    items,
     allowedContentTypes: ALLOWED_IMAGE_CONTENT_TYPES,
     maxItems: MAX_ANNOUNCEMENT_MEDIA_ITEMS,
     maxSizeBytes: MAX_IMAGE_SIZE_BYTES,
@@ -444,6 +467,48 @@ export async function getAnnouncement(user: DecodedIdToken, announcementIdParam:
   return announcementFromDoc(snap.data() ?? {}, likeSnap.exists);
 }
 
+export async function getMediaDownloadUrl(user: DecodedIdToken, rawPath: unknown): Promise<{ url: string }> {
+  await requireReadableUser(user);
+  if (!isSupabaseStorageEnabled() || typeof rawPath !== 'string' || rawPath.length > 512) {
+    throw new AppError('media_missing', 'The requested media was not found.', 404);
+  }
+  const path = rawPath.trim();
+  const logoMatch = /^organization-logos\/([A-Za-z0-9_-]+)\/[A-Za-z0-9][A-Za-z0-9._-]*$/.exec(path);
+  const announcementMatch = announcementImagePathMatch(path);
+  let referenced = false;
+  if (logoMatch) {
+    const organization = await db.doc(organizationPath(logoMatch[1])).get();
+    referenced = organization.exists && organization.data()?.logoPath === path;
+    if (!referenced) {
+      const oldLogo = await db.collection(COLLECTIONS.announcements).where('organizationLogoPath', '==', path).limit(1).get();
+      referenced = oldLogo.docs.some((doc) => !doc.data().deletedAt && doc.data().orgId === logoMatch[1]);
+    }
+  } else if (announcementMatch) {
+    const announcement = await db.collection(COLLECTIONS.announcements).doc(announcementMatch.announcementId).get();
+    const data = announcement.data();
+    referenced = Boolean(announcement.exists && !data?.deletedAt && data?.orgId === announcementMatch.orgId && mediaFromAnnouncement(data ?? {}).some((media) => media.storagePath === path));
+  } else {
+    throw new AppError('media_missing', 'The requested media was not found.', 404);
+  }
+  if (!referenced) {
+    try {
+      await assertCanManageOrganization(user, logoMatch?.[1] ?? announcementMatch?.orgId ?? '');
+    } catch (error) {
+      if (error instanceof AppError && (error.code === 'organization_management_required' || error.code === 'organization_missing')) {
+        throw new AppError('media_missing', 'The requested media was not found.', 404);
+      }
+      throw error;
+    }
+  }
+  const metadata = await getStoredObjectMetadata(path);
+  if (!ALLOWED_IMAGE_CONTENT_TYPES.includes(metadata.contentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number]) || metadata.sizeBytes <= 0 || metadata.sizeBytes > MAX_IMAGE_SIZE_BYTES) {
+    throw new AppError('media_missing', 'The requested media was not found.', 404);
+  }
+  const url = await createSignedObjectDownloadUrl(path);
+  if (!url) throw new AppError('storage_not_configured', 'Private file storage is not configured.', 503);
+  return { url };
+}
+
 export async function createAnnouncement(user: DecodedIdToken, orgIdParam: string, rawBody: unknown) {
   const orgId = routeOrgId(orgIdParam);
   const organization = await assertCanManageOrganization(user, orgId);
@@ -452,6 +517,7 @@ export async function createAnnouncement(user: DecodedIdToken, orgIdParam: strin
   const mediaAnnouncementId = media.map((item) => announcementImagePathMatch(item.storagePath)?.announcementId).find(Boolean);
   const announcementId = routeDocumentId(input.announcementId ?? mediaAnnouncementId ?? db.collection(COLLECTIONS.announcements).doc().id, 'announcement');
   validateAnnouncementMedia(orgId, announcementId, media);
+  await Promise.all(media.map((image) => verifySupabaseImage(image.storagePath, image.contentType, image.sizeBytes)));
 
   const now = Timestamp.now();
   const docRef = db.collection(COLLECTIONS.announcements).doc(announcementId);

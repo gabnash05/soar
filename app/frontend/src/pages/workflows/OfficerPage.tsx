@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, ButtonLink, ConfirmDialog, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
+import { reauthenticateCurrentUser } from '../../lib/backendGateway';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
 import { safeErrorMessage } from '../../lib/safeErrors';
 import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
@@ -56,13 +57,18 @@ function profileInputDirty(form: OrganizationProfileInput, dashboard: OfficerDas
   );
 }
 
-export function ProfileRecruitmentSection({ dashboard, session, client, onChanged, formId = `profile-recruitment-form-${dashboard.organization.id}`, onDirtyChange }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; formId?: string; onDirtyChange?: (dirty: boolean) => void }) {
+export type PasswordReauthenticator = (password: string, expectedUid: string) => Promise<void>;
+
+export function ProfileRecruitmentSection({ dashboard, session, client, onChanged, formId = `profile-recruitment-form-${dashboard.organization.id}`, onDirtyChange, reauthenticate = reauthenticateCurrentUser }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; formId?: string; onDirtyChange?: (dirty: boolean) => void; reauthenticate?: PasswordReauthenticator }) {
   const [form, setForm] = useState<OrganizationProfileInput>(() => toProfileInput(dashboard));
   const [logoError, setLogoError] = useState('');
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
   const [confirmSaveError, setConfirmSaveError] = useState<string | null>(null);
+  const [approvalPassword, setApprovalPassword] = useState('');
+  const savingRef = useRef(false);
+  const fixtureApproval = import.meta.env.VITE_SOAR_USE_FIXTURES === 'true' && client.mode === 'fixture';
   const dirty = profileInputDirty(form, dashboard);
 
   useEffect(() => {
@@ -78,21 +84,51 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setConfirmSaveError(null);
+    setApprovalPassword('');
     setConfirmSaveOpen(true);
   };
 
-  const confirmSave = async () => {
+  const cancelApproval = () => {
+    if (savingRef.current) return;
+    setApprovalPassword('');
+    setConfirmSaveError(null);
+    setConfirmSaveOpen(false);
+  };
+
+  const confirmSave = async (event: FormEvent) => {
+    event.preventDefault();
+    if (savingRef.current || (!fixtureApproval && !approvalPassword)) return;
+    savingRef.current = true;
     setBusy(true);
     setConfirmSaveError(null);
-    const next = await client.saveOrganizationProfile(form, session);
-    setResult(next);
-    setBusy(false);
-    if (next.ok) {
-      setConfirmSaveOpen(false);
-      onDirtyChange?.(false);
-      onChanged();
-    } else {
-      setConfirmSaveError(next.message);
+    try {
+      if (fixtureApproval) {
+        setApprovalPassword('');
+      } else {
+        const verification = reauthenticate(approvalPassword, session.uid);
+        setApprovalPassword('');
+        await verification;
+      }
+      const next = await client.saveOrganizationProfile(form, session);
+      setResult(next);
+      if (next.ok) {
+        setConfirmSaveOpen(false);
+        onDirtyChange?.(false);
+        onChanged();
+      } else {
+        setConfirmSaveError(next.message);
+      }
+    } catch (error) {
+      setApprovalPassword('');
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+      setConfirmSaveError(
+        ['auth/wrong-password', 'auth/invalid-credential', 'auth/invalid-login-credentials'].includes(code)
+          ? 'That password could not be verified. Check it and try again. Your draft is unchanged.'
+          : `${safeErrorMessage(error, 'Could not verify your password or save changes.')} Your draft is unchanged.`,
+      );
+    } finally {
+      setBusy(false);
+      savingRef.current = false;
     }
   };
 
@@ -145,17 +181,37 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
           <Button type="submit" disabled={busy}>Save profile</Button>
         </div>
       </form>
-      <ConfirmDialog
+      <ModalDialog
         open={confirmSaveOpen}
-        title="Save profile changes?"
-        description={`These changes update the public profile for ${dashboard.organization.name}. Review the fields before saving.`}
-        confirmLabel="Save profile"
-        cancelLabel="Review changes"
-        busy={busy}
-        error={confirmSaveError}
-        onOpenChange={setConfirmSaveOpen}
-        onConfirm={confirmSave}
-      />
+        title="Approve organization changes"
+        description={fixtureApproval
+          ? 'This simulated preview uses local approval only. It does not request a real password or contact Firebase, account, or payment services.'
+          : `Enter your sign-in password to approve and save changes to ${dashboard.organization.name}. Your password is used only to reauthenticate your account and is never sent with the organization update.`}
+        onClose={cancelApproval}
+      >
+        <form className="grid gap-4" onSubmit={confirmSave}>
+          {!fixtureApproval ? (
+            <div className="grid min-w-0 gap-1.5">
+              <label className="text-[13px] font-bold text-[var(--color-navy)]" htmlFor="organization-approval-password">Password</label>
+              <input
+                id="organization-approval-password"
+                className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={approvalPassword}
+                onChange={(event) => { setApprovalPassword(event.target.value); setConfirmSaveError(null); }}
+                disabled={busy}
+              />
+            </div>
+          ) : null}
+          {confirmSaveError ? <p className="m-0 text-sm font-bold text-[var(--color-orange-deep)]" role="alert">{confirmSaveError}</p> : null}
+          <div className="flex flex-wrap justify-end gap-2 max-sm:[&>button]:w-full">
+            <Button type="button" variant="secondary" disabled={busy} onClick={cancelApproval}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={busy || (!fixtureApproval && !approvalPassword)}>{busy ? (fixtureApproval ? 'Saving simulated changes…' : 'Verifying…') : fixtureApproval ? 'Approve simulated changes' : 'Approve and save changes'}</Button>
+          </div>
+        </form>
+      </ModalDialog>
     </section>
   );
 }
@@ -223,7 +279,7 @@ export function AnnouncementComposer({
         onSubmitted?.();
       }
     } catch (error) {
-      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: error instanceof Error ? error.message : 'Announcement upload failed.' };
+      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: safeErrorMessage(error, 'Announcement upload failed. Please try again.') };
       setResult(failure);
       onResult?.(failure);
     } finally {
@@ -292,7 +348,7 @@ export function AnnouncementComposer({
   );
 }
 
-function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onDelete: (id: string) => void }) {
+function ManagedAnnouncementList({ dashboard, session, client, onDelete, removedAnnouncementIds }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onDelete: (id: string) => void; removedAnnouncementIds: ReadonlySet<string> }) {
   const [items, setItems] = useState<Announcement[]>([]);
   const [cursor, setCursor] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
@@ -307,9 +363,15 @@ function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { das
   const busy = useRef(false);
   const sentinel = useRef<HTMLDivElement>(null);
   const organizationId = dashboard.organization.id;
+  const renderedGeneration = generation.current;
+  const currentContext = useRef({ session, client, organizationId, generation: renderedGeneration });
+  useLayoutEffect(() => {
+    currentContext.current = { session, client, organizationId, generation: renderedGeneration };
+  }, [client, organizationId, renderedGeneration, session]);
 
   const loadFirst = useCallback(async () => {
     const current = ++generation.current;
+    currentContext.current = { session, client, organizationId, generation: current };
     busy.current = true;
     setLoading(true);
     setError(null);
@@ -362,6 +424,13 @@ function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { das
     return () => observer.disconnect();
   }, [cursor, loadNext, loading, loadingMore, pageError]);
 
+  const reconcileAnnouncement = useCallback((updated: Announcement) => {
+    const context = currentContext.current;
+    if (context.session !== session || context.client !== client || context.organizationId !== organizationId || context.generation !== renderedGeneration || updated.organizationId !== organizationId) return;
+    setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+  }, [client, organizationId, renderedGeneration, session.uid]);
+  const visibleItems = items.filter((item) => !removedAnnouncementIds.has(item.id));
+
   const saveAnnouncement = async (event: FormEvent) => {
     event.preventDefault();
     if (!editingAnnouncement) return;
@@ -369,8 +438,8 @@ function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { das
     setEditError(null);
     try {
       const result = await client.updateAnnouncement(editingAnnouncement.id, organizationId, editBody, session);
-      if (!result.ok || !result.data) {
-        setEditError(result.message || 'The announcement could not be updated.');
+      if (!result.ok || result.persisted !== true || !result.data || result.data.organizationId !== organizationId) {
+        setEditError(result.ok ? 'The announcement update could not be confirmed. Refresh the post before trying again.' : result.message || 'The announcement could not be updated.');
         return;
       }
       const updatedAnnouncement = result.data;
@@ -386,10 +455,10 @@ function ManagedAnnouncementList({ dashboard, session, client, onDelete }: { das
   return <div className="mx-auto grid w-[min(720px,100%)] min-w-0 gap-4" aria-label="Managed announcements">
     {loading ? <LoadingBlock label="Loading organization announcements" /> : null}
     {error ? <ErrorState onRetry={loadFirst}>{error}</ErrorState> : null}
-    {!loading && !error && items.length === 0 ? <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p> : null}
-    {items.map((item) => {
+    {!loading && !error && visibleItems.length === 0 && !cursor ? <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p> : null}
+    {visibleItems.map((item) => {
       const images = (item.media?.length ? item.media : item.image ? [item.image] : []).filter((media) => !media.contentType?.startsWith('video/'));
-      return <div key={item.id} className="grid gap-2"><AnnouncementCard announcement={{ ...item, image: images[0], media: images.length ? images : undefined }} session={session} client={client} onChanged={loadFirst} /><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => { setEditError(null); setEditBody(item.body); setEditingAnnouncement(item); }}>Edit announcement</Button><Button type="button" variant="danger" onClick={() => onDelete(item.id)}>Delete announcement</Button></div></div>;
+      return <div key={`${session.uid}:${item.id}`} className="grid gap-2"><AnnouncementCard announcement={{ ...item, image: images[0], media: images.length ? images : undefined }} session={session} client={client} onChanged={reconcileAnnouncement} /><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => { setEditError(null); setEditBody(item.body); setEditingAnnouncement(item); }}>Edit announcement</Button><Button type="button" variant="danger" onClick={() => onDelete(item.id)}>Delete announcement</Button></div></div>;
     })}
     {pageError ? <div role="alert" className="py-4 text-center text-sm">Could not load more announcements: {pageError} <Button type="button" variant="secondary" onClick={loadNext}>Retry loading announcements</Button></div> : null}
     {cursor && !pageError ? <div ref={sentinel} className="flex min-h-12 items-center justify-center py-3" aria-live="polite">{loadingMore ? <span role="status">Loading more announcements…</span> : <Button type="button" variant="secondary" onClick={loadNext}>Load more announcements</Button>}</div> : null}
@@ -415,22 +484,35 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
   const [deleteAnnouncementId, setDeleteAnnouncementId] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [removedAnnouncementIdsByScope, setRemovedAnnouncementIdsByScope] = useState<Record<string, string[]>>({});
   const [refreshKey, setRefreshKey] = useState(0);
+  const organizationId = dashboard.organization.id;
+  const removalScope = `${session.uid}:${organizationId}`;
+  const removedAnnouncementIds = new Set(removedAnnouncementIdsByScope[removalScope] ?? []);
   const refreshAnnouncements = useCallback(() => {
     onChanged();
     setRefreshKey((key) => key + 1);
   }, [onChanged]);
 
   const confirmDeleteAnnouncement = async () => {
-    if (!deleteAnnouncementId) return;
+    const deletingId = deleteAnnouncementId;
+    if (!deletingId) return;
     setDeleteBusy(true);
     setDeleteError(null);
-    const next = await client.deleteAnnouncement(deleteAnnouncementId, dashboard.organization.id, session);
+    const response = await client.deleteAnnouncement(deletingId, organizationId, session);
+    const confirmed = response.ok && response.persisted === true;
+    const next = response.ok && !confirmed
+      ? { ...response, ok: false, persisted: 'unconfirmed' as const, reason: 'error' as const, message: 'The announcement deletion could not be confirmed. Refresh the list before trying again.' }
+      : response;
     setResult(next);
     setDeleteBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setDeleteAnnouncementId(null);
-      refreshAnnouncements();
+      setRemovedAnnouncementIdsByScope((current) => {
+        const existing = current[removalScope] ?? [];
+        return existing.includes(deletingId) ? current : { ...current, [removalScope]: [...existing, deletingId] };
+      });
+      onChanged();
     } else {
       setDeleteError(next.message);
     }
@@ -462,7 +544,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
           <ResultMessage result={composerResult} />
         </>
       ) : null}
-      <ManagedAnnouncementList key={`${dashboard.organization.id}-${refreshKey}`} dashboard={dashboard} session={session} client={client} onDelete={(id) => { setDeleteError(null); setDeleteAnnouncementId(id); }} />
+      <ManagedAnnouncementList key={`${session.uid}:${dashboard.organization.id}-${refreshKey}`} dashboard={dashboard} session={session} client={client} removedAnnouncementIds={removedAnnouncementIds} onDelete={(id) => { setDeleteError(null); setDeleteAnnouncementId(id); }} />
       <ResultMessage result={result} />
       <ConfirmDialog
         open={Boolean(deleteAnnouncementId)}
