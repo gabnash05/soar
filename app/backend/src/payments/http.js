@@ -77,7 +77,7 @@ function mapCheckoutStatus(status) {
   if (status.completed) return 'active';
   if (status.status === 'cancelled') return 'cancelled';
   if (status.status === 'expired') return 'expired';
-  if (status.paymentStatus === 'failed' || status.status === 'checkout_failed') return 'failed';
+  if (['failed', 'invalid'].includes(status.paymentStatus) || status.status === 'checkout_failed') return 'failed';
   return 'pending';
 }
 
@@ -90,6 +90,7 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
         email: input.email,
         fullName: input.displayName || input.fullName,
         studentId: input.studentId,
+        department: input.department,
         companyName: input.companyName,
       }, { ip: request && request.ip });
       return ok({
@@ -115,12 +116,23 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
         return problem({ name: 'PaymentAccessError', code: 'invalid_registration_binding', message: 'Registration binding cookie is missing or does not match this intent.' });
       }
       const status = await service.getRegistrationStatus(binding);
+      const checkoutStatus = mapCheckoutStatus(status);
       return ok({
         intentId: status.intentId,
-        status: mapCheckoutStatus(status),
+        status: checkoutStatus,
         amountPhp: amountPhp(),
-        message: status.canComplete ? 'Payment confirmed. You can create your SOAR account.' : 'Waiting for provider-confirmed payment.',
+        message: status.completed
+          ? 'Account setup is complete. Sign in to continue.'
+          : status.canComplete
+            ? 'Payment confirmed. You can create your SOAR account.'
+            : checkoutStatus === 'failed'
+              ? 'Checkout could not be completed. Start a new checkout to try again.'
+              : checkoutStatus === 'expired'
+                ? 'This checkout has expired. Start a new checkout to continue.'
+                : 'Waiting for provider-confirmed payment.',
         canCreateAccount: status.canComplete,
+        completed: status.completed,
+        registrationProfile: status.registrationProfile,
       });
     } catch (error) {
       return problem(error);
@@ -161,6 +173,15 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
     }
   }
 
+  async function getRenewalStatus(request) {
+    try {
+      const renewalId = String((queryOf(request).renewalId || bodyOf(request).renewalId || '')).trim();
+      return ok(await service.getRenewalStatus({ renewalId }, { auth: request && request.auth }));
+    } catch (error) {
+      return problem(error);
+    }
+  }
+
   async function getAccessStatus(request) {
     try {
       return ok(await service.getAccessStatus({ uid: request && request.auth && request.auth.uid }, { auth: request && request.auth }));
@@ -183,7 +204,19 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
 
   async function recoverPaidRegistration(request) {
     try {
-      return ok(await service.requestPaidRegistrationRecovery(bodyOf(request)));
+      return ok(await service.requestPaidRegistrationRecovery(bodyOf(request), { ip: request && request.ip }));
+    } catch (error) {
+      return problem(error);
+    }
+  }
+
+  async function acceptPaidRegistrationRecovery(request) {
+    try {
+      const input = bodyOf(request);
+      const result = await service.acceptPaidRegistrationRecovery({ intentId: input.intentId, recoverySecret: input.recoveryCode }, { ip: request && request.ip });
+      return ok({ accepted: true }, {
+        'Set-Cookie': cookieHeader(buildRegistrationBinding(result.intentId, result.private.registrationSecret), { secure: secureCookies }),
+      });
     } catch (error) {
       return problem(error);
     }
@@ -194,9 +227,11 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
     getCheckoutStatus,
     registerAccount,
     requestManualRenewal,
+    getRenewalStatus,
     getAccessStatus,
     paymongoWebhook,
     recoverPaidRegistration,
+    acceptPaidRegistrationRecovery,
   };
 }
 

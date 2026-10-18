@@ -1,6 +1,6 @@
 'use strict';
 
-const { ACCESS_YEARS, ENTITLEMENT_STATUSES } = require('./constants');
+const { ACCESS_MONTHS, ENTITLEMENT_STATUSES } = require('./constants');
 
 function toDate(value) {
   if (!value) return null;
@@ -21,12 +21,13 @@ function daysInUtcMonth(year, monthZeroBased) {
   return new Date(Date.UTC(year, monthZeroBased + 1, 0)).getUTCDate();
 }
 
-function addCalendarYearsUtc(value, years = ACCESS_YEARS) {
+function addCalendarMonthsUtc(value, months = ACCESS_MONTHS) {
   const source = toDate(value);
   if (!source || Number.isNaN(source.getTime())) throw new TypeError('valid date required');
 
-  const targetYear = source.getUTCFullYear() + years;
-  const targetMonth = source.getUTCMonth();
+  const totalMonths = source.getUTCMonth() + months;
+  const targetYear = source.getUTCFullYear() + Math.floor(totalMonths / 12);
+  const targetMonth = ((totalMonths % 12) + 12) % 12;
   const targetDay = Math.min(source.getUTCDate(), daysInUtcMonth(targetYear, targetMonth));
 
   return new Date(Date.UTC(
@@ -44,7 +45,7 @@ function computeNextAccessExpiry({ currentAccessExpiresAt, paidAt, now = new Dat
   const paidDate = toDate(paidAt) || toDate(now);
   const currentExpiry = toDate(currentAccessExpiresAt);
   const base = currentExpiry && currentExpiry.getTime() > paidDate.getTime() ? currentExpiry : paidDate;
-  return addCalendarYearsUtc(base, ACCESS_YEARS);
+  return addCalendarMonthsUtc(base, ACCESS_MONTHS);
 }
 
 function entitlementStatus(entitlement, now = new Date()) {
@@ -58,7 +59,7 @@ function entitlementStatus(entitlement, now = new Date()) {
 module.exports = {
   toDate,
   dateToIso,
-  addCalendarYearsUtc,
+  addCalendarMonthsUtc,
   computeNextAccessExpiry,
   entitlementStatus,
 };

@@ -53,10 +53,11 @@ export const apiFetch = async <T>(path: string, init?: RequestInit): Promise<T> 
       throw new ValidationProblemError(message, problem.problems ?? {});
     }
 
-    const error = new Error(message) as Error & { code?: string; action?: string; status?: number };
+    const error = new Error(message) as Error & { code?: string; action?: string; status?: number; nextChangeAllowedAt?: string };
     error.code = problem.code;
     error.action = problem.action;
     error.status = response.status;
+    error.nextChangeAllowedAt = problem.nextChangeAllowedAt;
     throw error;
   }
 

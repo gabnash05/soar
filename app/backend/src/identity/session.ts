@@ -2,6 +2,26 @@ import type { DecodedIdToken } from 'firebase-admin/auth';
 import { getAccessState, listApprovedOfficerGrants, syncVerifiedAuthEmail } from './access';
 
 export async function getUserSession(user: DecodedIdToken) {
+  if (user.soarAdmin === true) {
+    const email = typeof user.email === 'string' ? user.email : '';
+    return {
+      uid: user.uid,
+      email,
+      displayName: typeof user.name === 'string' ? user.name : email || 'Administrator',
+      accountKind: 'admin' as const,
+      emailVerified: user.email_verified === true,
+      access: {
+        status: 'missing' as const,
+        annualFeePhp: 10 as const,
+        feePhp: 10 as const,
+        periodMonths: 6,
+        periodLabel: '6 months',
+        renewalAvailable: true
+      },
+      officerGrants: []
+    };
+  }
+
   const [account, access, officerGrants] = await Promise.all([
     syncVerifiedAuthEmail(user.uid),
     getAccessState(user.uid),
@@ -14,12 +34,15 @@ export async function getUserSession(user: DecodedIdToken) {
     email: account.email,
     displayName: account.displayName,
     accountKind: account.role,
-    studentId: account.studentId,
-    companyName: account.companyName,
+    ...(account.role === 'student' ? { studentId: account.studentId, department: account.department } : {}),
+    ...(account.role === 'sponsor' ? { companyName: account.companyName } : {}),
     emailVerified: user.email_verified === true || account.emailVerified,
     access: {
       status: access.status === 'revoked' ? 'expired' : access.status,
       annualFeePhp: 10,
+      feePhp: 10,
+      periodMonths: 6,
+      periodLabel: '6 months',
       expiresAt,
       renewalAvailable: access.status !== 'active'
     },

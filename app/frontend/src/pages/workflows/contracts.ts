@@ -10,11 +10,11 @@ export interface WorkflowQueryResult<T> {
 
 export interface WorkflowMutationResult<T = undefined> {
   ok: boolean;
-  persisted: boolean;
+  persisted: boolean | 'unconfirmed';
   source: WorkflowDataMode;
   message: string;
   data?: T;
-  reason?: 'validation' | 'permission' | 'duplicate' | 'unavailable' | 'not-found' | 'error';
+  reason?: 'validation' | 'permission' | 'duplicate' | 'closed' | 'unavailable' | 'not-found' | 'error';
 }
 
 export interface WorkflowImage {
@@ -29,8 +29,8 @@ export interface WorkflowImage {
 export interface AnnouncementComment {
   id: string;
   authorUid?: string;
-  /** Trusted account role supplied by the API or the local fixture adapter. */
-  authorAccountKind?: 'student' | 'sponsor';
+  /** Trusted verified account role supplied by the API or the local fixture adapter. */
+  authorAccountKind?: 'student';
   /** Trusted approved role scoped to this comment's organization. */
   authorOrganizationRole?: 'approved_officer';
   authorName: string;
@@ -99,6 +99,7 @@ export interface OrganizationSummary {
 
 export interface OrganizationProfile extends OrganizationSummary {
   description: string;
+  applicationsOpen?: boolean;
   recruitment: RecruitmentOpportunity;
   posts: Announcement[];
   dateEntries: DateEntry[];
@@ -188,6 +189,7 @@ export interface AnnouncementInput {
 
 export interface DateEntryInput {
   id?: string;
+  idempotencyKey?: string;
   organizationId: string;
   kind: DateEntryKind;
   title: string;
@@ -215,16 +217,28 @@ export interface OrganizationDepartmentStudentCount {
   generatedAt: string;
 }
 
+export interface AnnouncementPage {
+  items: Announcement[];
+  nextPageToken?: string;
+}
+
+export interface OrganizationPage {
+  items: OrganizationSummary[];
+  nextPageToken?: string;
+}
+
 export interface WorkflowDataClient {
   readonly mode: WorkflowDataMode;
   readonly label: string;
-  listAnnouncements(session: UserSession): Promise<WorkflowQueryResult<Announcement[]>>;
+  listAnnouncements(session: UserSession, page?: { limit: number; pageToken?: string; organizationId?: string }): Promise<WorkflowQueryResult<AnnouncementPage>>;
+  getAnnouncement(announcementId: string, session: UserSession): Promise<WorkflowQueryResult<Announcement | undefined>>;
+  listAnnouncementComments(announcementId: string, session: UserSession): Promise<WorkflowQueryResult<AnnouncementComment[]>>;
   toggleAnnouncementLike(announcementId: string, liked: boolean, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   addAnnouncementComment(announcementId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<AnnouncementComment>>;
   updateAnnouncementComment(announcementId: string, commentId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<AnnouncementComment>>;
   deleteAnnouncementComment(announcementId: string, commentId: string, session: UserSession): Promise<WorkflowMutationResult>;
 
-  listOrganizations(session: UserSession): Promise<WorkflowQueryResult<OrganizationSummary[]>>;
+  listOrganizations(session: UserSession, page?: { limit?: number; pageToken?: string; query?: string }): Promise<WorkflowQueryResult<OrganizationPage>>;
   getOrganization(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OrganizationProfile | undefined>>;
 
   confirmExternalApplication(input: ApplicationConfirmationInput, session: UserSession): Promise<WorkflowMutationResult<ApplicationRecord>>;
@@ -236,11 +250,13 @@ export interface WorkflowDataClient {
 
   getOfficerDashboard(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OfficerDashboard | undefined>>;
   saveOrganizationProfile(input: OrganizationProfileInput, session: UserSession): Promise<WorkflowMutationResult<OrganizationProfile>>;
+  setApplicationsOpen(organizationId: string, applicationsOpen: boolean, session: UserSession): Promise<WorkflowMutationResult<{ applicationsOpen: boolean }>>;
   publishAnnouncement(input: AnnouncementInput, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
+  updateAnnouncement(announcementId: string, organizationId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   deleteAnnouncement(announcementId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
   getOrganizationDepartmentStudentCount(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OrganizationDepartmentStudentCount | undefined>>;
   updateApplicationStage(applicationId: string, stage: ApplicationStage, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<ApplicationRecord>>;
-  saveDateEntry(input: DateEntryInput, session: UserSession): Promise<WorkflowMutationResult<DateEntry>>;
+  saveDateEntry(input: DateEntryInput, session: UserSession, signal?: AbortSignal): Promise<WorkflowMutationResult<DateEntry>>;
   deleteDateEntry(dateEntryId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
   decideMeetingRequest(meetingRequestId: string, status: Exclude<MeetingStatus, 'Pending'>, organizationId: string, session: UserSession): Promise<WorkflowMutationResult<MeetingRequest>>;
 }

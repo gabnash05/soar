@@ -20,8 +20,17 @@ service firebase.storage {
         && entitlementDoc().data.accessExpiresAt > request.time;
     }
 
+    function accountDoc() {
+      return firestore.get(/databases/(default)/documents/accounts/$(request.auth.uid));
+    }
+
+    function hasPublicAccountRole() {
+      return firestore.exists(/databases/(default)/documents/accounts/$(request.auth.uid))
+        && (accountDoc().data.role == 'student' || accountDoc().data.role == 'sponsor');
+    }
+
     function activeUser() {
-      return emailVerified() && hasActiveAccess();
+      return emailVerified() && hasActiveAccess() && hasPublicAccountRole();
     }
 
     function organizationDoc(orgId) {
@@ -50,6 +59,16 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
     }
 
+    function validMeetingDocumentUpload(orgId, requestId) {
+      return request.resource != null
+        && activeUser()
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType == 'application/pdf'
+        && request.resource.metadata.orgId == orgId
+        && request.resource.metadata.meetingRequestId == requestId
+        && request.resource.metadata.requesterUid == request.auth.uid;
+    }
+
     match /organization-logos/{orgId}/{fileName} {
       allow read: if activeUser();
       allow write: if canManageOrganization(orgId) && validImageUpload();
@@ -60,6 +79,12 @@ service firebase.storage {
       allow read: if activeUser();
       allow write: if canManageOrganization(orgId) && validImageUpload();
       allow delete: if canManageOrganization(orgId);
+    }
+
+    match /meeting-request-documents/{orgId}/{requestId}/{fileName} {
+      allow read: if false;
+      allow write: if validMeetingDocumentUpload(orgId, requestId);
+      allow delete: if activeUser() && resource.metadata.requesterUid == request.auth.uid;
     }
 
     match /{allPaths=**} {

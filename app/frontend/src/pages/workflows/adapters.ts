@@ -5,6 +5,7 @@ import { validateAnnouncementMediaFiles, validateMeetingDocumentFile } from '../
 import type {
   Announcement,
   AnnouncementComment,
+  AnnouncementPage,
   AnnouncementInput,
   ApplicationConfirmationInput,
   ApplicationRecord,
@@ -13,6 +14,7 @@ import type {
   MeetingRequest,
   MeetingRequestInput,
   OfficerDashboard,
+  OrganizationPage,
   OrganizationProfile,
   OrganizationProfileInput,
   OrganizationSummary,
@@ -57,12 +59,14 @@ function unavailableMutation<T = undefined>(): Promise<WorkflowMutationResult<T>
 export const unavailableWorkflowDataClient: WorkflowDataClient = {
   mode: 'unavailable',
   label: 'Workflow services unavailable',
-  listAnnouncements: () => unavailableQuery<Announcement[]>([]),
+  listAnnouncements: () => unavailableQuery<AnnouncementPage>({ items: [] }),
+  getAnnouncement: () => unavailableQuery<Announcement | undefined>(undefined),
+  listAnnouncementComments: () => unavailableQuery<AnnouncementComment[]>([]),
   toggleAnnouncementLike: () => unavailableMutation<Announcement>(),
   addAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
   updateAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
   deleteAnnouncementComment: () => unavailableMutation(),
-  listOrganizations: () => unavailableQuery<OrganizationSummary[]>([]),
+  listOrganizations: () => unavailableQuery<OrganizationPage>({ items: [] }),
   getOrganization: () => unavailableQuery<OrganizationProfile | undefined>(undefined),
   confirmExternalApplication: () => unavailableMutation<ApplicationRecord>(),
   listMyApplications: () => unavailableQuery<ApplicationRecord[]>([]),
@@ -71,7 +75,9 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   requestMeeting: () => unavailableMutation<MeetingRequest>(),
   getOfficerDashboard: () => unavailableQuery<OfficerDashboard | undefined>(undefined),
   saveOrganizationProfile: () => unavailableMutation<OrganizationProfile>(),
+  setApplicationsOpen: () => unavailableMutation<{ applicationsOpen: boolean }>(),
   publishAnnouncement: () => unavailableMutation<Announcement>(),
+  updateAnnouncement: () => unavailableMutation<Announcement>(),
   deleteAnnouncement: () => unavailableMutation(),
   getOrganizationDepartmentStudentCount: () => unavailableQuery<OrganizationDepartmentStudentCount | undefined>(undefined),
   updateApplicationStage: () => unavailableMutation<ApplicationRecord>(),
@@ -512,6 +518,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
   function hydrateOrganization(profile: OrganizationProfile, session: UserSession): OrganizationProfile {
     return {
       ...clone(profile),
+      applicationsOpen: profile.applicationsOpen !== false,
       posts: announcements.filter((announcement) => announcement.organizationId === profile.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((announcement) => hydrateAnnouncement(announcement, session)),
       dateEntries: dateEntries.filter((entry) => entry.organizationId === profile.id).sort(compareDateEntries),
     };
@@ -544,9 +551,33 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
     mode: 'fixture',
     label: 'Workflow fixture data',
 
-    async listAnnouncements(session) {
+    async listAnnouncements(session, page = { limit: 15 }) {
+      const sorted = announcements.filter((item) => !page.organizationId || item.organizationId === page.organizationId).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const offset = Number(page.pageToken ?? 0);
+      const selected = sorted.slice(offset, offset + page.limit);
       return {
-        data: announcements.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((announcement) => hydrateAnnouncement(announcement, session)),
+        data: {
+          items: selected.map((announcement) => hydrateAnnouncement(announcement, session)),
+          nextPageToken: offset + selected.length < sorted.length ? String(offset + selected.length) : undefined,
+        },
+        source: 'fixture',
+        message: 'Demo mode: sample workflow changes are simulated locally.',
+      };
+    },
+
+    async getAnnouncement(announcementId, session) {
+      const announcement = announcements.find((item) => item.id === announcementId);
+      return {
+        data: announcement ? hydrateAnnouncement(announcement, session) : undefined,
+        source: 'fixture',
+        message: 'Demo mode: sample workflow changes are simulated locally.',
+      };
+    },
+
+    async listAnnouncementComments(announcementId) {
+      const announcement = announcements.find((item) => item.id === announcementId);
+      return {
+        data: announcement ? clone(announcement.comments) : [],
         source: 'fixture',
         message: 'Demo mode: sample workflow changes are simulated locally.',
       };
@@ -570,7 +601,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       const comment: AnnouncementComment = {
         id: `comment-${nextId++}`,
         authorUid: session.uid,
-        authorAccountKind: session.accountKind,
+        ...(session.accountKind === 'student' ? { authorAccountKind: 'student' as const } : {}),
         ...(isApprovedOfficerFor(session, announcement.organizationId) ? { authorOrganizationRole: 'approved_officer' as const } : {}),
         authorName: session.displayName,
         body: trimmed,
@@ -607,9 +638,22 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       return { ok: true, persisted: true, source: 'fixture', message: 'Comment deleted in demo mode.' };
     },
 
-    async listOrganizations() {
+    async listOrganizations(_session, page = {}) {
+      const limit = page.limit ?? 20;
+      const query = page.query?.trim().toLocaleLowerCase() ?? '';
+      const cursorMatch = page.pageToken === undefined ? null : /^fixture:([^:]*):(0|[1-9]\d*)$/.exec(page.pageToken);
+      if (page.pageToken !== undefined && !cursorMatch) throw new Error('The organization page token is invalid.');
+      let offset = 0;
+      if (cursorMatch) {
+        let cursorQuery = '';
+        try { cursorQuery = decodeURIComponent(cursorMatch[1]); } catch { throw new Error('The organization page token is invalid.'); }
+        if (cursorQuery !== query) throw new Error('The organization page token does not match this search.');
+        offset = Number(cursorMatch[2]);
+      }
+      const filtered = organizations.map(toSummary).filter((organization) => !query || organization.name.toLocaleLowerCase().includes(query));
+      const items = filtered.slice(offset, offset + limit);
       return {
-        data: clone(organizations.map(toSummary)),
+        data: { items: clone(items), nextPageToken: offset + items.length < filtered.length ? `fixture:${encodeURIComponent(query)}:${offset + items.length}` : undefined },
         source: 'fixture',
         message: 'Demo mode: organization records are local samples.',
       };
@@ -630,12 +674,13 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       if (!input.confirmedExternalSubmission) return failure('validation', 'Confirm the external form was submitted before adding a tracker entry.');
       const organization = getOrganizationById(input.organizationId);
       if (!organization || organization.recruitment.id !== input.opportunityId) return failure('not-found', 'Recruitment opportunity not found.');
-      if (hasDuplicateApplication(applications, session.uid, input.opportunityId)) {
-        return failure('duplicate', 'This student already has a tracker entry for this recruitment opportunity.');
+      if (organization.applicationsOpen === false) return failure('closed', 'Applications are closed for this organization.');
+      if (hasDuplicateApplication(applications, session.uid, input.organizationId)) {
+        return failure('duplicate', 'You already have an application for this organization.');
       }
       const now = new Date().toISOString();
       const application: ApplicationRecord = {
-        id: `app-${session.uid}-${input.opportunityId}`,
+        id: `app-${session.uid}-${input.organizationId}`,
         organizationId: organization.id,
         organizationName: organization.name,
         opportunityId: organization.recruitment.id,
@@ -758,6 +803,15 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       return success('Organization profile saved in demo mode.', hydrateOrganization(organization, session));
     },
 
+    async setApplicationsOpen(organizationId, applicationsOpen, session) {
+      const permission = assertOfficer<{ applicationsOpen: boolean }>(organizationId, session);
+      if (permission) return permission;
+      const organization = getOrganizationById(organizationId);
+      if (!organization) return failure('not-found', 'Organization not found.');
+      organization.applicationsOpen = applicationsOpen;
+      return success(applicationsOpen ? 'Applications are open in demo mode.' : 'Applications are closed in demo mode.', { applicationsOpen });
+    },
+
     async publishAnnouncement(input, session) {
       const permission = assertOfficer<Announcement>(input.organizationId, session);
       if (permission) return permission;
@@ -790,6 +844,17 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       };
       announcements.unshift(announcement);
       return success('Announcement published in demo mode.', hydrateAnnouncement(announcement, session));
+    },
+
+    async updateAnnouncement(announcementId, organizationId, body, session) {
+      const permission = assertOfficer<Announcement>(organizationId, session);
+      if (permission) return permission;
+      const announcement = announcements.find((item) => item.id === announcementId && item.organizationId === organizationId);
+      if (!announcement) return failure('not-found', 'Announcement not found.');
+      const trimmed = body.trim();
+      if (!trimmed) return failure('validation', 'Announcement text is required.');
+      announcement.body = trimmed;
+      return success('Announcement updated in demo mode.', hydrateAnnouncement(announcement, session));
     },
 
     async deleteAnnouncement(announcementId, organizationId, session) {

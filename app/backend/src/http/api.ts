@@ -5,23 +5,37 @@ import { AppError, assertAppError } from '../errors';
 import { requireBearerToken } from './auth';
 import { getUserSession } from '../identity/session';
 import { requestVerifiedEmailChange, updateDisplayName } from '../identity/accountSettings';
-import { approveOfficerGrant, assignInitialOrganizationOwner, revokeOfficerGrant } from '../organizations/service';
+import {
+  approveOfficerGrant,
+  assignAdminOfficerGrant,
+  assignInitialOrganizationOwner,
+  listAdminOrganizations,
+  revokeOfficerGrant,
+  searchAdminStudents
+} from '../organizations/service';
 import { attachAuthToPaymentRequest, paymentHandlers, sendPaymentResult } from '../paymentsAdapter';
 import {
   addAnnouncementComment,
   createAnnouncement,
   createAnnouncementImageTarget,
+  createAnnouncementMediaTargets,
   createDateEntry,
   createLogoImageTarget,
   deleteAnnouncement,
+  deleteAnnouncementComment,
   deleteDateEntry,
+  getAnnouncement,
+  getMediaDownloadUrl,
   getOrganizationProfile,
+  getStudentDepartmentCounts,
   listAnnouncementComments,
   listAnnouncements,
   listDateEntries,
   listOrganizations,
   scopedDateEntryQuery,
   setAnnouncementLike,
+  updateAnnouncement,
+  updateAnnouncementComment,
   updateDateEntry,
   updateOrganizationProfile
 } from '../content/service';
@@ -35,7 +49,12 @@ function sendError(res: Response, error: unknown): void {
   }
 
   const appError = assertAppError(error);
-  res.status(appError.status).json({ code: appError.code, message: appError.message, action: appError.action });
+  res.status(appError.status).json({
+    code: appError.code,
+    message: appError.message,
+    action: appError.action,
+    ...(appError.nextChangeAllowedAt ? { nextChangeAllowedAt: appError.nextChangeAllowedAt } : {})
+  });
 }
 
 function getParam(req: Request, name: string): string {
@@ -57,6 +76,12 @@ function asyncRoute(handler: (req: Request, res: Response) => Promise<void>) {
   };
 }
 
+function assertPaymentsEnabled(): void {
+  if (process.env.SOAR_DISABLE_PAYMENTS?.trim().toLowerCase() === 'true') {
+    throw new AppError('payments_unavailable', 'Registration and payment features are unavailable in this non-production preview.', 503);
+  }
+}
+
 async function requireAdmin(req: Request) {
   const user = await requireBearerToken(req);
   if (user.soarAdmin !== true) {
@@ -68,9 +93,14 @@ async function requireAdmin(req: Request) {
 
 export function createApiApp() {
   const app = express();
-  app.use(cors({ origin: true }));
+  const trustedAppOrigin = new URL(process.env.SOAR_APP_BASE_URL || 'http://localhost:5173').origin;
+  app.use(cors({
+    origin: (origin, callback) => callback(null, origin === trustedAppOrigin ? origin : false),
+    credentials: true
+  }));
 
   app.post(['/webhooks/paymongo', '/api/webhooks/paymongo'], express.raw({ type: '*/*', limit: '256kb' }), asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     (req as Request & { rawBody?: Buffer }).rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body ?? ''), 'utf8');
     await sendPaymentResult(res, paymentHandlers().paymongoWebhook(req));
   }));
@@ -80,6 +110,11 @@ export function createApiApp() {
   app.get(['/health', '/api/health'], (_req, res) => {
     res.json({ ok: true, service: 'soar-backend', scope: 'identity-payments-content-requests-foundation' });
   });
+
+  app.get(['/storage/download-url', '/api/storage/download-url'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await getMediaDownloadUrl(user, req.query.path));
+  }));
 
   app.get(['/session', '/api/session'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
@@ -97,24 +132,40 @@ export function createApiApp() {
   }));
 
   app.post(['/payments/registration/start', '/api/payments/registration/start'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     await sendPaymentResult(res, paymentHandlers().startRegistrationPayment(req));
   }));
 
   app.get(['/payments/registration/status', '/api/payments/registration/status'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     await sendPaymentResult(res, paymentHandlers().getCheckoutStatus(req));
   }));
 
   app.post(['/payments/registration/complete', '/api/payments/registration/complete'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     await sendPaymentResult(res, paymentHandlers().registerAccount(req));
   }));
 
   app.post(['/payments/registration/recover', '/api/payments/registration/recover'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     await sendPaymentResult(res, paymentHandlers().recoverPaidRegistration(req));
   }));
 
+  app.post(['/payments/registration/recover/accept', '/api/payments/registration/recover/accept'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
+    await sendPaymentResult(res, paymentHandlers().acceptPaidRegistrationRecovery(req));
+  }));
+
   app.post(['/payments/renewals/start', '/api/payments/renewals/start'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
     const user = await requireBearerToken(req);
     await sendPaymentResult(res, paymentHandlers().requestManualRenewal(attachAuthToPaymentRequest(req, user)));
+  }));
+
+  app.get(['/payments/renewals/status', '/api/payments/renewals/status'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
+    const user = await requireBearerToken(req);
+    await sendPaymentResult(res, paymentHandlers().getRenewalStatus(attachAuthToPaymentRequest(req, user)));
   }));
 
   app.get(['/payments/access/status', '/api/payments/access/status'], asyncRoute(async (req, res) => {
@@ -132,6 +183,11 @@ export function createApiApp() {
     res.json(await getOrganizationProfile(user, getParam(req, 'orgId')));
   }));
 
+  app.get(['/organizations/:orgId/student-department-counts', '/api/organizations/:orgId/student-department-counts'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await getStudentDepartmentCounts(user, getParam(req, 'orgId')));
+  }));
+
   app.patch(['/organizations/:orgId', '/api/organizations/:orgId'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.json(await updateOrganizationProfile(user, getParam(req, 'orgId'), req.body));
@@ -147,14 +203,29 @@ export function createApiApp() {
     res.json(await listAnnouncements(user, req.query));
   }));
 
+  app.get(['/announcements/:announcementId', '/api/announcements/:announcementId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await getAnnouncement(user, getParam(req, 'announcementId')));
+  }));
+
   app.post(['/organizations/:orgId/announcements/image-targets', '/api/organizations/:orgId/announcements/image-targets'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.status(201).json(await createAnnouncementImageTarget(user, getParam(req, 'orgId'), req.body));
   }));
 
+  app.post(['/organizations/:orgId/announcements/media-targets', '/api/organizations/:orgId/announcements/media-targets'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.status(201).json(await createAnnouncementMediaTargets(user, getParam(req, 'orgId'), req.body));
+  }));
+
   app.post(['/organizations/:orgId/announcements', '/api/organizations/:orgId/announcements'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.status(201).json(await createAnnouncement(user, getParam(req, 'orgId'), req.body));
+  }));
+
+  app.patch(['/organizations/:orgId/announcements/:announcementId', '/api/organizations/:orgId/announcements/:announcementId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await updateAnnouncement(user, getParam(req, 'orgId'), getParam(req, 'announcementId'), req.body));
   }));
 
   app.delete(['/organizations/:orgId/announcements/:announcementId', '/api/organizations/:orgId/announcements/:announcementId'], asyncRoute(async (req, res) => {
@@ -180,6 +251,16 @@ export function createApiApp() {
   app.post(['/announcements/:announcementId/comments', '/api/announcements/:announcementId/comments'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.status(201).json(await addAnnouncementComment(user, getParam(req, 'announcementId'), req.body));
+  }));
+
+  app.patch(['/announcements/:announcementId/comments/:commentId', '/api/announcements/:announcementId/comments/:commentId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await updateAnnouncementComment(user, getParam(req, 'announcementId'), getParam(req, 'commentId'), req.body));
+  }));
+
+  app.delete(['/announcements/:announcementId/comments/:commentId', '/api/announcements/:announcementId/comments/:commentId'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    res.json(await deleteAnnouncementComment(user, getParam(req, 'announcementId'), getParam(req, 'commentId')));
   }));
 
   app.get(['/date-entries', '/api/date-entries'], asyncRoute(async (req, res) => {
@@ -217,9 +298,24 @@ export function createApiApp() {
     res.json(await revokeOfficerGrant(user, getParam(req, 'orgId'), getParam(req, 'uid')));
   }));
 
+  app.get(['/admin/organizations', '/api/admin/organizations'], asyncRoute(async (req, res) => {
+    await requireAdmin(req);
+    res.json(await listAdminOrganizations(req.query));
+  }));
+
+  app.get(['/admin/students', '/api/admin/students'], asyncRoute(async (req, res) => {
+    await requireAdmin(req);
+    res.json(await searchAdminStudents(req.query));
+  }));
+
   app.post(['/admin/organizations', '/api/admin/organizations'], asyncRoute(async (req, res) => {
     const admin = await requireAdmin(req);
     res.status(201).json(await assignInitialOrganizationOwner(req.body, admin.uid));
+  }));
+
+  app.post(['/admin/organizations/:orgId/officer-grants', '/api/admin/organizations/:orgId/officer-grants'], asyncRoute(async (req, res) => {
+    const admin = await requireAdmin(req);
+    res.json(await assignAdminOfficerGrant(getParam(req, 'orgId'), req.body, admin.uid));
   }));
 
   mountRequestRoutes(app, asyncRoute);

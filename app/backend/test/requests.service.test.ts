@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { AccountRole, ApplicationStatus, MeetingStatus, OrganizationDocument } from '../src/contracts/schema';
@@ -18,6 +18,7 @@ class FakeRequestStore implements RequestStore {
   calendarEntries = new Map<string, CalendarEntryDocument>();
   applications = new Map<string, ApplicationDocument>();
   meetings = new Map<string, MeetingRequestDocument>();
+  closeIntakeBeforeNextApplicationCreate = false;
 
   async getAccount(uid: string) {
     return this.accounts.get(uid);
@@ -36,7 +37,17 @@ class FakeRequestStore implements RequestStore {
   }
 
   async createApplicationIfAbsent(applicationId: string, application: ApplicationDocument) {
-    if (this.applications.has(applicationId)) return 'exists' as const;
+    if (this.closeIntakeBeforeNextApplicationCreate) {
+      this.closeIntakeBeforeNextApplicationCreate = false;
+      const organization = this.organizations.get(application.orgId);
+      if (organization) organization.applicationsOpen = false;
+    }
+    const organization = this.organizations.get(application.orgId);
+    if (!organization) return 'organization_missing' as const;
+    if (organization.applicationsOpen === false) return 'closed' as const;
+    if (this.applications.has(applicationId) || [...this.applications.values()].some(
+      (existing) => existing.studentUid === application.studentUid && existing.orgId === application.orgId,
+    )) return 'exists' as const;
     this.applications.set(applicationId, application);
     return 'created' as const;
   }
@@ -91,6 +102,7 @@ class FakeRequestStore implements RequestStore {
 function seedStore() {
   const store = new FakeRequestStore();
   store.accounts.set('student', { uid: 'student', role: 'student', displayName: 'Student User' });
+  store.accounts.set('student2', { uid: 'student2', role: 'student', displayName: 'Second Student' });
   store.accounts.set('sponsor', { uid: 'sponsor', role: 'sponsor', displayName: 'Sponsor User' });
   store.accounts.set('owner', { uid: 'owner', role: 'student', displayName: 'Owner User' });
   store.accounts.set('officer', { uid: 'officer', role: 'student', displayName: 'Officer User' });
@@ -133,11 +145,12 @@ function seedStore() {
   return store;
 }
 
-function serviceFor(store: FakeRequestStore) {
+function serviceFor(store: FakeRequestStore, verifyMeetingDocumentUpload = async () => undefined) {
   return createRequestService({
     store,
     ensureActiveAccess: async () => undefined,
-    now: () => fixedNow
+    now: () => fixedNow,
+    verifyMeetingDocumentUpload
   });
 }
 
@@ -177,7 +190,7 @@ describe('request service application workflow', () => {
     expect(store.applications.size).toBe(1);
   });
 
-  it('prevents duplicate applications per student and opportunity', async () => {
+  it('prevents a second application by the same student when the organization posts a different opportunity', async () => {
     const service = serviceFor(store);
     const input = {
       organizationId: 'org1',
@@ -187,7 +200,102 @@ describe('request service application workflow', () => {
     };
 
     await service.confirmExternalApplication(user('student'), input);
+    const organization = store.organizations.get('org1')!;
+    organization.recruitment = { ...(organization.recruitment ?? {}), opportunityId: 'org1-member-2027', title: 'Member 2027' };
+    await expectCode(service.confirmExternalApplication(user('student'), { ...input, opportunityId: 'org1-member-2027' }), 'duplicate_application');
+    expect(store.applications.size).toBe(1);
+  });
+
+  it('serializes concurrent same-account organization submissions to one application', async () => {
+    const service = serviceFor(store);
+    const input = {
+      organizationId: 'org1',
+      opportunityId: 'org1-member-2026',
+      externalFormOpened: true,
+      confirmedExternalSubmission: true
+    };
+
+    const results = await Promise.allSettled(Array.from({ length: 8 }, () => service.confirmExternalApplication(user('student'), input)));
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(7);
+    expect(store.applications.size).toBe(1);
+    expect(await service.listMyApplications(user('student'))).toHaveLength(1);
+  });
+
+  it('keeps application uniqueness independent across accounts and organizations', async () => {
+    const service = serviceFor(store);
+    const organization = store.organizations.get('org1')!;
+    store.organizations.set('org2', {
+      ...organization,
+      orgId: 'org2',
+      name: 'Architecture Club',
+      slug: 'architecture-club',
+      recruitment: { ...(organization.recruitment ?? {}), opportunityId: 'org2-member-2026' }
+    });
+    const confirmation = (studentUid: string, organizationId: string, opportunityId: string) => service.confirmExternalApplication(user(studentUid), {
+      organizationId,
+      opportunityId,
+      externalFormOpened: true,
+      confirmedExternalSubmission: true
+    });
+
+    await Promise.all([
+      confirmation('student', 'org1', 'org1-member-2026'),
+      confirmation('student', 'org2', 'org2-member-2026'),
+      confirmation('student2', 'org1', 'org1-member-2026')
+    ]);
+    expect(store.applications.size).toBe(3);
+  });
+
+  it('rejects closed intake, including a close racing an already-open confirmation', async () => {
+    const service = serviceFor(store);
+    const input = {
+      organizationId: 'org1',
+      opportunityId: 'org1-member-2026',
+      externalFormOpened: true,
+      confirmedExternalSubmission: true
+    };
+    store.organizations.get('org1')!.applicationsOpen = false;
+    await expectCode(service.confirmExternalApplication(user('student'), input), 'applications_closed');
+    expect(store.applications.size).toBe(0);
+
+    store.organizations.get('org1')!.applicationsOpen = true;
+    store.closeIntakeBeforeNextApplicationCreate = true;
+    await expectCode(service.confirmExternalApplication(user('student'), input), 'applications_closed');
+    expect(store.organizations.get('org1')?.applicationsOpen).toBe(false);
+    expect(store.applications.size).toBe(0);
+  });
+
+  it('preserves an existing legacy application and its status across close and reopen', async () => {
+    const service = serviceFor(store);
+    store.applications.set('legacy-application-record', {
+      applicationId: 'legacy-application-record',
+      studentUid: 'student',
+      studentName: 'Student User',
+      orgId: 'org1',
+      organizationName: 'Robotics Club',
+      opportunityId: 'org1-member-2025',
+      opportunityTitle: 'Member 2025',
+      status: 'Declined',
+      externalFormOpenedAt: fixedNow,
+      externalSubmissionConfirmedAt: fixedNow,
+      createdAt: fixedNow,
+      updatedAt: fixedNow
+    });
+    const input = {
+      organizationId: 'org1',
+      opportunityId: 'org1-member-2026',
+      externalFormOpened: true,
+      confirmedExternalSubmission: true
+    };
+
+    store.organizations.get('org1')!.applicationsOpen = false;
+    await expect(service.listMyApplications(user('student'))).resolves.toMatchObject([{ id: 'legacy-application-record', stage: 'Declined' }]);
+    store.organizations.get('org1')!.applicationsOpen = true;
     await expectCode(service.confirmExternalApplication(user('student'), input), 'duplicate_application');
+    expect(store.applications.size).toBe(1);
+    expect(store.applications.get('legacy-application-record')?.status).toBe('Declined');
+    await expect(service.listMyApplications(user('student'))).resolves.toMatchObject([{ id: 'legacy-application-record', stage: 'Declined' }]);
   });
 
   it('blocks sponsor applications and non-manager applicant queues', async () => {
@@ -243,6 +351,96 @@ describe('request service meeting workflow', () => {
     expect(studentMeeting.status).toBe('Pending');
     expect(sponsorMeeting.status).toBe('Pending');
     expect(store.meetings.size).toBe(2);
+    expect(store.meetings.get(studentMeeting.id)).not.toHaveProperty('document');
+    expect(store.meetings.get(sponsorMeeting.id)).not.toHaveProperty('note');
+    expect(store.meetings.get(sponsorMeeting.id)).not.toHaveProperty('document');
+  });
+
+  it('creates validated private PDF document targets and stores matching request metadata', async () => {
+    const verifyUpload = vi.fn(async () => undefined);
+    const service = serviceFor(store, verifyUpload);
+    const target = await service.createMeetingDocumentTarget(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      fileName: 'formal-request.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024
+    });
+
+    expect(target.storagePath).toMatch(/^meeting-request-documents\/org1\/meeting_/);
+    expect(target.allowedContentTypes).toEqual(['application/pdf']);
+
+    const meeting = await service.requestMeeting(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      document: {
+        storagePath: target.storagePath,
+        fileName: 'formal-request.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1024
+      }
+    });
+
+    expect(meeting.document?.storagePath).toBe(target.storagePath);
+    expect(verifyUpload).toHaveBeenCalledWith(expect.objectContaining({ requesterUid: 'student', orgId: 'org1', meetingRequestId: target.meetingRequestId }));
+    await expectValidation(service.createMeetingDocumentTarget(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      fileName: 'script.html',
+      contentType: 'text/html',
+      sizeBytes: 1024
+    }));
+  });
+
+  it('rejects missing or mismatched actual meeting document uploads before creating the request', async () => {
+    const service = serviceFor(store, async () => {
+      throw Object.assign(new Error('missing upload'), { code: 'meeting_document_missing' });
+    });
+    const target = await service.createMeetingDocumentTarget(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      fileName: 'formal-request.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024
+    });
+
+    await expect(service.requestMeeting(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      document: {
+        storagePath: target.storagePath,
+        fileName: 'formal-request.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1024
+      }
+    })).rejects.toMatchObject({ code: 'meeting_document_missing' });
+    expect(store.meetings.size).toBe(0);
+  });
+
+  it('rejects meeting document paths that do not match the deterministic request id', async () => {
+    const service = serviceFor(store);
+    await expectCode(service.requestMeeting(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      document: {
+        storagePath: 'meeting-request-documents/org1/meeting_attacker/formal-request.pdf',
+        fileName: 'formal-request.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1024
+      }
+    }), 'invalid_meeting_document_path');
   });
 
   it('rejects duplicate identical meeting requests and event entries', async () => {
@@ -264,18 +462,32 @@ describe('request service meeting workflow', () => {
     }), 'date_entry_not_availability');
   });
 
-  it('returns requester history and organization queues through scoped service methods', async () => {
+  it('returns requester history, private documents, and organization queues through scoped service methods', async () => {
     const service = serviceFor(store);
-    await service.requestMeeting(user('student'), {
+    const target = await service.createMeetingDocumentTarget(user('student'), {
       organizationId: 'org1',
       dateEntryId: 'availability1',
       requestedDate: '2026-11-12',
-      requestedTime: '09:30'
+      requestedTime: '09:30',
+      fileName: 'formal-request.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024
+    });
+    const meeting = await service.requestMeeting(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      document: { storagePath: target.storagePath, fileName: 'formal-request.pdf', contentType: 'application/pdf', sizeBytes: 1024 }
     });
 
     await expect(service.listMyMeetings(user('student'))).resolves.toHaveLength(1);
-    await expect(service.listOrganizationMeetings(user('officer'), 'org1')).resolves.toHaveLength(1);
-    await expectCode(service.listOrganizationMeetings(user('foreign'), 'org1'), 'not_organization_manager');
+    await expect(service.getMeetingDocument(user('student'), meeting.id)).resolves.toMatchObject({ document: { storagePath: target.storagePath } });
+    await expect(service.getMeetingDocument(user('officer'), meeting.id)).resolves.toMatchObject({ document: { storagePath: target.storagePath } });
+    await expectCode(service.getMeetingDocument(user('foreign'), meeting.id), 'not_organization_manager');
+    store.grants.set('org1/officer', { status: 'revoked' });
+    await expectCode(service.getMeetingDocument(user('officer'), meeting.id), 'not_organization_manager');
+    await expect(service.listOrganizationMeetings(user('owner'), 'org1')).resolves.toHaveLength(1);
   });
 
   it('lets approved organization managers approve or decline requests without an interview stage', async () => {

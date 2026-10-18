@@ -1,12 +1,16 @@
 import { z } from 'zod';
-import { orgIdSchema } from '../contracts/validation';
+import { departmentSchema, orgIdSchema } from '../contracts/validation';
 
 export const ALLOWED_IMAGE_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
 export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+export const MAX_ANNOUNCEMENT_MEDIA_ITEMS = 4;
+export const MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES = 30 * 1024 * 1024;
 
 const trimmedString = z.string().trim();
 const optionalText = (max: number) => trimmedString.max(max).optional();
 const blankableText = (max: number) => z.string().trim().max(max).optional();
+const organizationDepartmentUpdateSchema = z.union([departmentSchema, z.literal('')]);
+
 const httpUrl = trimmedString.url().max(2048).refine((value) => {
   try {
     const url = new URL(value);
@@ -18,7 +22,7 @@ const httpUrl = trimmedString.url().max(2048).refine((value) => {
 
 export const paginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
-  pageToken: z.string().regex(/^\d+$/).optional().transform((value) => value ? Number(value) : 0)
+  pageToken: z.string().min(1).max(2048).optional()
 });
 
 export const organizationListQuerySchema = paginationSchema.extend({
@@ -26,10 +30,13 @@ export const organizationListQuerySchema = paginationSchema.extend({
 });
 
 export const organizationProfileUpdateSchema = z.object({
+  applicationsOpen: z.boolean().optional(),
   name: optionalText(140),
   shortDescription: blankableText(180),
   description: blankableText(4000),
   contactEmail: z.union([trimmedString.email().max(254), z.literal('')]).optional(),
+  contactPhone: z.string().trim().max(40).regex(/^$|^\+?[0-9][0-9\s().-]{5,30}(?:\s?(?:x|ext\.?|extension)\s?\d{1,6})?$/i, 'Use a valid contact phone number.').optional(),
+  department: organizationDepartmentUpdateSchema.optional(),
   logoPath: z.string().trim().max(512).optional(),
   logo: z.object({
     storagePath: z.string().trim().max(512),
@@ -51,26 +58,60 @@ export const imageTargetRequestSchema = z.object({
   announcementId: z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/).optional()
 }).strict();
 
+const announcementMediaTargetFileSchema = z.object({
+  fileName: trimmedString.min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'Use a simple file name without folders.'),
+  contentType: z.enum(ALLOWED_IMAGE_CONTENT_TYPES),
+  sizeBytes: z.number().int().min(1).max(MAX_IMAGE_SIZE_BYTES)
+}).strict();
+
+export const mediaTargetRequestSchema = z.object({
+  announcementId: z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/).optional(),
+  files: z.array(announcementMediaTargetFileSchema).min(1).max(MAX_ANNOUNCEMENT_MEDIA_ITEMS)
+}).strict().superRefine((value, ctx) => {
+  const total = value.files.reduce((sum, file) => sum + file.sizeBytes, 0);
+  if (total > MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES) {
+    ctx.addIssue({ code: 'custom', path: ['files'], message: 'Announcement images exceed the total upload limit.' });
+  }
+});
+
 export const announcementQuerySchema = paginationSchema.extend({
   orgId: orgIdSchema.optional()
 });
 
+const announcementMediaItemSchema = z.object({
+  storagePath: z.string().trim().max(512),
+  contentType: z.enum(ALLOWED_IMAGE_CONTENT_TYPES),
+  sizeBytes: z.number().int().min(1).max(MAX_IMAGE_SIZE_BYTES),
+  alt: z.string().trim().max(180).optional().default('')
+}).strict();
+
+export const announcementUpdateSchema = z.object({
+  body: trimmedString.min(1).max(4000)
+}).strict();
+
 export const announcementCreateSchema = z.object({
   announcementId: z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/).optional(),
   body: trimmedString.min(1).max(4000),
-  image: z.object({
-    storagePath: z.string().trim().max(512),
-    contentType: z.enum(ALLOWED_IMAGE_CONTENT_TYPES),
-    sizeBytes: z.number().int().min(1).max(MAX_IMAGE_SIZE_BYTES),
-    alt: z.string().trim().max(180).optional().default('')
-  }).optional()
-}).strict();
+  image: announcementMediaItemSchema.optional(),
+  media: z.array(announcementMediaItemSchema).min(1).max(MAX_ANNOUNCEMENT_MEDIA_ITEMS).optional()
+}).strict().superRefine((value, ctx) => {
+  if (value.image && value.media) {
+    ctx.addIssue({ code: 'custom', path: ['media'], message: 'Use either legacy image or media, not both.' });
+  }
+  const media = value.media ?? (value.image ? [value.image] : []);
+  const total = media.reduce((sum, item) => sum + item.sizeBytes, 0);
+  if (total > MAX_ANNOUNCEMENT_MEDIA_TOTAL_BYTES) {
+    ctx.addIssue({ code: 'custom', path: ['media'], message: 'Announcement images exceed the total upload limit.' });
+  }
+});
 
 export const commentQuerySchema = paginationSchema;
 
 export const commentCreateSchema = z.object({
   body: trimmedString.min(1).max(1200)
 }).strict();
+
+export const commentUpdateSchema = commentCreateSchema;
 
 export const dateEntryKinds = ['event', 'availability'] as const;
 
@@ -97,6 +138,9 @@ export const dateEntryUpsertSchema = z.object({
     ctx.addIssue({ code: 'custom', path: ['endTime'], message: 'End time must be after start time.' });
   }
 });
+
+const dateEntryIdSchema = z.string().trim().min(4).max(128).regex(/^[A-Za-z0-9_-]+$/);
+export const dateEntryCreateSchema = dateEntryUpsertSchema.safeExtend({ entryId: dateEntryIdSchema.optional() });
 
 export function normalizedName(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');

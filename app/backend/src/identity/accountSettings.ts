@@ -13,8 +13,6 @@ export async function updateDisplayName(user: DecodedIdToken, body: unknown): Pr
   await requireActiveAccess(user);
   const { displayName } = displayNameUpdateSchema.parse(body);
   const accountRef = db.doc(accountPath(user.uid));
-  let nextChangeAllowedAt: string | undefined;
-
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(accountRef);
     if (!snap.exists) {
@@ -26,8 +24,14 @@ export async function updateDisplayName(user: DecodedIdToken, body: unknown): Pr
     if (lastChanged instanceof Timestamp) {
       const elapsed = Date.now() - lastChanged.toMillis();
       if (elapsed < THIRTY_DAYS_MS) {
-        nextChangeAllowedAt = new Date(lastChanged.toMillis() + THIRTY_DAYS_MS).toISOString();
-        throw new AppError('name_change_cooldown', `You can change your name after ${nextChangeAllowedAt}.`, 409);
+        const nextChangeAllowedAt = new Date(lastChanged.toMillis() + THIRTY_DAYS_MS).toISOString();
+        throw new AppError(
+          'name_change_cooldown',
+          'Name changes are limited to once every 30 days. Please try again later.',
+          409,
+          undefined,
+          nextChangeAllowedAt
+        );
       }
     }
 

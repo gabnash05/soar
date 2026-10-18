@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageCircle, Share2 } from 'lucide-react';
 import { Button, ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip } from '../../components/ui';
@@ -8,6 +8,7 @@ import { getWorkflowDataClientForGatewayMode, unavailableWorkflowDataClient } fr
 import type { Announcement, AnnouncementComment, DateEntry, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from './contracts';
 import { formatDateEntry, getApprovedOfficerGrants, getMeetingTone, getStageTone, getUnavailableCopy } from './workflowUtils';
 import { cn } from '../../lib/utils';
+import { safeErrorMessage } from '../../lib/safeErrors';
 
 export function useWorkflowDataClient(): WorkflowDataClient {
   const gateway = useBackendGateway();
@@ -213,7 +214,7 @@ export function DateEntryList({ title, entries, emptyCopy, action }: { title: st
                 <span>{formatDateEntry(entry)} · {entry.details}</span>
               </div>
               <StatusChip className="min-h-6 shrink-0 whitespace-nowrap px-2 text-[0.7rem]" tone={entry.kind === 'event' ? 'neutral' : 'info'}>
-                {entry.kind === 'event' ? 'Event' : 'Availability'}
+                <span aria-label={entry.kind === 'event' ? 'Dated event' : 'Meeting/interview availability'}>{entry.kind === 'event' ? 'Event' : 'Availability'}</span>
               </StatusChip>
             </li>
           ))}
@@ -279,9 +280,12 @@ export function AnnouncementCard({
   announcement: Announcement;
   session: UserSession;
   client?: WorkflowDataClient;
-  onChanged?: () => void;
+  onChanged?: (announcement: Announcement) => void;
 }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [comments, setComments] = useState(announcement.comments);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
   const [comment, setComment] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState('');
@@ -289,6 +293,7 @@ export function AnnouncementCard({
   const [busy, setBusy] = useState(false);
   const [deleteCommentId, setDeleteCommentId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const commentLoadGeneration = useRef(0);
   const media = announcement.media?.length ? announcement.media : announcement.image ? [announcement.image] : [];
   const commentCount = announcement.commentCount ?? announcement.comments.length;
 
@@ -296,19 +301,57 @@ export function AnnouncementCard({
     const isAuthor = item.authorUid === session.uid;
     const hasOrganizationGrant = isAuthor && getApprovedOfficerGrants(session).some((grant) => grant.organizationId === announcement.organizationId);
     if (item.authorOrganizationRole === 'approved_officer' || hasOrganizationGrant) {
-      return { kind: 'officer' as const, label: `Approved officer · ${announcement.organizationName}` };
+      return { kind: 'officer' as const, label: 'Officer' };
     }
     const accountKind = item.authorAccountKind ?? (isAuthor ? session.accountKind : undefined);
-    if (accountKind === 'student' || accountKind === 'sponsor') return { kind: accountKind, label: undefined };
+    if (accountKind === 'student') return { kind: 'student' as const, label: undefined };
     return { kind: 'unknown' as const, label: undefined };
+  };
+
+  useEffect(() => () => { commentLoadGeneration.current += 1; }, [announcement.id, client, session]);
+
+  const acceptMutation = (next: WorkflowMutationResult<unknown>) => {
+    if (next.ok && next.persisted !== true) {
+      setResult({ ...next, ok: false, persisted: 'unconfirmed', reason: 'error', message: 'We could not confirm this announcement update. Refresh the post before trying again.' });
+      return false;
+    }
+    setResult(next);
+    return next.ok;
+  };
+
+  const loadComments = async () => {
+    const requestGeneration = ++commentLoadGeneration.current;
+    setCommentsLoading(true);
+    setCommentsError(null);
+    try {
+      const result = await client.listAnnouncementComments(announcement.id, session);
+      if (commentLoadGeneration.current !== requestGeneration) return;
+      setComments(result.data);
+    } catch (error) {
+      if (commentLoadGeneration.current === requestGeneration) setCommentsError(safeErrorMessage(error, 'Comments could not be loaded. Please try again.'));
+    } finally {
+      if (commentLoadGeneration.current === requestGeneration) setCommentsLoading(false);
+    }
+  };
+
+  const refreshAnnouncement = async () => {
+    try {
+      const result = await client.getAnnouncement(announcement.id, session);
+      if (result.data) onChanged?.(result.data);
+    } catch {
+      // Keep the last confirmed post data if this bounded item refresh is unavailable.
+    }
   };
 
   const toggleLike = async () => {
     setBusy(true);
     const next = await client.toggleAnnouncementLike(announcement.id, !announcement.viewerHasLiked, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) onChanged?.();
+    if (confirmed) {
+      if (next.data) onChanged?.(next.data);
+      else await refreshAnnouncement();
+    }
   };
 
   const copyLink = async () => {
@@ -327,11 +370,11 @@ export function AnnouncementCard({
     event.preventDefault();
     setBusy(true);
     const next = await client.addAnnouncementComment(announcement.id, comment, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setComment('');
-      onChanged?.();
+      await Promise.all([loadComments(), refreshAnnouncement()]);
     }
   };
 
@@ -346,12 +389,12 @@ export function AnnouncementCard({
     if (!editingCommentId) return;
     setBusy(true);
     const next = await client.updateAnnouncementComment(announcement.id, editingCommentId, editingBody, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setEditingCommentId(null);
       setEditingBody('');
-      onChanged?.();
+      await Promise.all([loadComments(), refreshAnnouncement()]);
     }
   };
 
@@ -360,13 +403,13 @@ export function AnnouncementCard({
     setBusy(true);
     setDeleteError(null);
     const next = await client.deleteAnnouncementComment(announcement.id, deleteCommentId, session);
-    setResult(next);
+    const confirmed = acceptMutation(next);
     setBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setDeleteCommentId(null);
-      onChanged?.();
+      await Promise.all([loadComments(), refreshAnnouncement()]);
     } else {
-      setDeleteError(next.message);
+      setDeleteError(next.ok ? 'The comment deletion could not be confirmed. Refresh the comments before trying again.' : next.message);
     }
   };
 
@@ -384,14 +427,10 @@ export function AnnouncementCard({
         </div>
       </div>
       {media.length ? (
-        <div className={cn('grid gap-2 [&_img]:min-h-[180px] [&_img]:max-h-[420px] [&_video]:min-h-[180px] [&_video]:max-h-[420px]', media.length > 1 && 'md:grid-cols-2')}>
+        <div className={cn('grid gap-2 [&_img]:min-h-[180px] [&_img]:max-h-[420px]', media.length > 1 && 'md:grid-cols-2')}>
           {media.map((item, index) => (
-            <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover [&_video]:block [&_video]:max-h-[340px] [&_video]:w-full [&_video]:bg-[var(--color-ink)] [&_video]:object-cover" key={`${item.url}-${index}`}>
-              {item.contentType?.startsWith('video/') ? (
-                <video src={item.url} controls preload="metadata" aria-label={item.alt || `Announcement video ${index + 1}`} />
-              ) : (
-                <img src={item.url} alt={item.alt} loading="lazy" decoding="async" />
-              )}
+            <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover" key={`${item.url}-${index}`}>
+              <img src={item.url} alt={item.alt} loading="lazy" decoding="async" />
             </figure>
           ))}
         </div>
@@ -415,7 +454,11 @@ export function AnnouncementCard({
           <span className="sr-only">{announcement.viewerHasLiked ? 'Liked' : 'Like'}</span>
           <span className="like-count min-w-[1.2em] tabular-nums" aria-hidden="true">{announcement.likeCount}</span>
         </Button>
-        <Button type="button" variant="quiet" onClick={() => setCommentsOpen((open) => !open)}>
+        <Button type="button" variant="quiet" onClick={() => {
+          const opening = !commentsOpen;
+          setCommentsOpen(opening);
+          if (opening) void loadComments();
+        }}>
           <MessageCircle aria-hidden="true" className="size-4" />
           {commentsOpen ? 'Hide comments' : 'Open comments'} ({commentCount})
         </Button>
@@ -431,9 +474,11 @@ export function AnnouncementCard({
             <textarea id={`comment-${announcement.id}`} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Keep comments respectful and specific." />
             <Button type="submit" variant="secondary" disabled={busy}>Add comment</Button>
           </form>
-          {announcement.comments.length ? (
+          {commentsLoading ? <p role="status">Loading comments…</p> : null}
+          {commentsError ? <div className="grid gap-2" role="alert"><p>{commentsError}</p><Button type="button" variant="secondary" onClick={() => void loadComments()}>Try again</Button></div> : null}
+          {!commentsLoading && !commentsError && comments.length ? (
             <ul className="m-0 grid list-none gap-2.5 p-0 text-[var(--muted-foreground)] [&_li]:flex [&_li]:items-start [&_li]:justify-between [&_li]:gap-3 [&_li]:border-t [&_li]:border-[color-mix(in_oklch,var(--color-border)_72%,transparent)] [&_li]:py-2.5 [&_li:first-child]:border-t-0 max-sm:[&_li]:flex-col">
-              {announcement.comments.map((item) => {
+              {comments.map((item) => {
                 const canEdit = item.viewerCanEdit || item.authorUid === session.uid;
                 const canDelete = item.viewerCanDelete || item.authorUid === session.uid;
                 const role = commentRole(item);
@@ -470,7 +515,7 @@ export function AnnouncementCard({
                 );
               })}
             </ul>
-          ) : <p className="text-xs text-[var(--muted-foreground)]">No comments yet.</p>}
+          ) : !commentsLoading && !commentsError ? <p className="text-xs text-[var(--muted-foreground)]">No comments yet.</p> : null}
         </section>
       ) : null}
       <ResultMessage result={result} />

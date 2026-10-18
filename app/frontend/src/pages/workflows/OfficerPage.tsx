@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, ButtonLink, ConfirmDialog, LoadingBlock, ModalDialog, RoleBadge, StateBlock } from '../../components/ui';
 import { reauthenticateCurrentUser } from '../../lib/backendGateway';
 import type { ApplicationStage, UserSession } from '../../lib/contracts';
-import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, WORKFLOW_VIDEO_MAX_BYTES, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
+import { safeErrorMessage } from '../../lib/safeErrors';
+import { ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES, ANNOUNCEMENT_MEDIA_MAX_ITEMS, formatBytes, openPrivateMeetingDocument, validateAnnouncementMediaFiles, validateWorkflowImageFile } from '../../lib/storageUploads';
 import { createEmptyOfficerDateEntry } from './adapters';
-import type { AnnouncementInput, DateEntry, DateEntryInput, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
+import type { Announcement, AnnouncementInput, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, OrganizationProfileInput, WorkflowDataClient, WorkflowMutationResult } from './contracts';
 import {
+  AnnouncementCard,
   ErrorState,
   MeetingStatusChip,
   OrganizationAvatar,
@@ -122,9 +124,7 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
       setConfirmSaveError(
         ['auth/wrong-password', 'auth/invalid-credential', 'auth/invalid-login-credentials'].includes(code)
           ? 'That password could not be verified. Check it and try again. Your draft is unchanged.'
-          : error instanceof Error
-            ? `${error.message} Your draft is unchanged.`
-            : 'Could not verify your password or save changes. Your draft is unchanged.',
+          : `${safeErrorMessage(error, 'Could not verify your password or save changes.')} Your draft is unchanged.`,
       );
     } finally {
       setBusy(false);
@@ -167,7 +167,7 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
               }}
             />
             {logoError ? <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{logoError}</span> : <span className="text-xs text-[var(--muted-foreground)]">PNG, JPEG, GIF, or WebP. Maximum 5 MB. Existing logo stays if no file is selected.</span>}
-            {form.logoUrl ? <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover [&_video]:block [&_video]:max-h-[340px] [&_video]:w-full [&_video]:bg-[var(--color-ink)] [&_video]:object-cover [&_img]:bg-[var(--color-white)] [&_img]:object-contain [&_img]:p-3"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
+            {form.logoUrl ? <figure className="overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-off-white)] [&_img]:block [&_img]:max-h-[340px] [&_img]:w-full [&_img]:object-cover [&_img]:bg-[var(--color-white)] [&_img]:object-contain [&_img]:p-3"><img src={form.logoUrl} alt={`${form.name} logo preview`} /></figure> : null}
           </div>
           <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="external-form">External form URL <span>Optional</span></label><input id="external-form" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="url" value={form.externalFormUrl ?? ''} onChange={(event) => setForm((current) => ({ ...current, externalFormUrl: event.target.value }))} /></div>
         </div>
@@ -279,7 +279,7 @@ export function AnnouncementComposer({
         onSubmitted?.();
       }
     } catch (error) {
-      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: error instanceof Error ? error.message : 'Announcement upload failed.' };
+      const failure: WorkflowMutationResult<unknown> = { ok: false, persisted: false, source: client.mode, reason: 'error', message: safeErrorMessage(error, 'Announcement upload failed. Please try again.') };
       setResult(failure);
       onResult?.(failure);
     } finally {
@@ -303,7 +303,7 @@ export function AnnouncementComposer({
             className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]"
             type="file"
             multiple
-            accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
+            accept="image/png,image/jpeg,image/webp,image/gif"
             onChange={(event) => {
               const files = Array.from(event.target.files ?? []);
               setImageError('');
@@ -320,14 +320,14 @@ export function AnnouncementComposer({
           {imageError ? (
             <span className="text-xs text-[var(--muted-foreground)] border-[var(--color-orange-deep)] text-[var(--color-orange-deep)]" role="alert">{imageError}</span>
           ) : (
-            <span className="text-xs text-[var(--muted-foreground)]">Up to {ANNOUNCEMENT_MEDIA_MAX_ITEMS} total images or videos. Images can be PNG, JPEG, GIF, or WebP; one MP4/WebM video may be attached up to {formatBytes(WORKFLOW_VIDEO_MAX_BYTES)}. {formatBytes(ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES)} combined maximum.</span>
+            <span className="text-xs text-[var(--muted-foreground)]">Up to {ANNOUNCEMENT_MEDIA_MAX_ITEMS} images. Use PNG, JPEG, GIF, or WebP, up to {formatBytes(ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES)} combined.</span>
           )}
         </div>
         {media.length ? (
-          <ul className="m-0 grid list-none gap-2.5 p-0 [&_li]:grid [&_li]:grid-cols-[96px_minmax(0,1fr)] [&_li]:items-center [&_li]:gap-3 [&_li]:rounded-[var(--radius-md)] [&_li]:border [&_li]:border-[var(--color-border)] [&_li]:bg-[var(--color-white)] [&_li]:p-2.5 max-sm:[&_li]:grid-cols-1 [&_img]:size-auto [&_img]:h-[76px] [&_img]:w-24 [&_img]:rounded-[var(--radius-sm)] [&_img]:bg-[var(--color-ink)] [&_img]:object-cover [&_video]:h-[76px] [&_video]:w-24 [&_video]:rounded-[var(--radius-sm)] [&_video]:bg-[var(--color-ink)] [&_video]:object-cover max-sm:[&_img]:h-[150px] max-sm:[&_img]:w-full max-sm:[&_video]:h-[150px] max-sm:[&_video]:w-full [&_strong]:block [&_span]:block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]" aria-label="Selected announcement images">
+          <ul className="m-0 grid list-none gap-2.5 p-0 [&_li]:grid [&_li]:grid-cols-[96px_minmax(0,1fr)] [&_li]:items-center [&_li]:gap-3 [&_li]:rounded-[var(--radius-md)] [&_li]:border [&_li]:border-[var(--color-border)] [&_li]:bg-[var(--color-white)] [&_li]:p-2.5 max-sm:[&_li]:grid-cols-1 [&_img]:size-auto [&_img]:h-[76px] [&_img]:w-24 [&_img]:rounded-[var(--radius-sm)] [&_img]:bg-[var(--color-ink)] [&_img]:object-cover max-sm:[&_img]:h-[150px] max-sm:[&_img]:w-full [&_strong]:block [&_span]:block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]" aria-label="Selected announcement images">
             {media.map((item, index) => (
               <li key={`${item.alt}-${index}`}>
-                {item.contentType?.startsWith('video/') ? <video src={item.url} controls preload="metadata" aria-label={item.alt} /> : <img src={item.url} alt={item.alt} />}
+                <img src={item.url} alt={item.alt} />
                 <div>
                   <strong>{item.alt}</strong>
                   <span>{item.sizeBytes ? formatBytes(item.sizeBytes) : 'Ready to upload'}</span>
@@ -348,6 +348,134 @@ export function AnnouncementComposer({
   );
 }
 
+function ManagedAnnouncementList({ dashboard, session, client, onDelete, removedAnnouncementIds }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onDelete: (id: string) => void; removedAnnouncementIds: ReadonlySet<string> }) {
+  const [items, setItems] = useState<Announcement[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
+  const [editBody, setEditBody] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const busy = useRef(false);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const organizationId = dashboard.organization.id;
+  const renderedGeneration = generation.current;
+  const currentContext = useRef({ session, client, organizationId, generation: renderedGeneration });
+  useLayoutEffect(() => {
+    currentContext.current = { session, client, organizationId, generation: renderedGeneration };
+  }, [client, organizationId, renderedGeneration, session]);
+
+  const loadFirst = useCallback(async () => {
+    const current = ++generation.current;
+    currentContext.current = { session, client, organizationId, generation: current };
+    busy.current = true;
+    setLoading(true);
+    setError(null);
+    setPageError(null);
+    setItems([]);
+    setCursor(undefined);
+    try {
+      const result = await client.listAnnouncements(session, { limit: 15, organizationId });
+      if (generation.current !== current) return;
+      setItems(result.data.items);
+      setCursor(result.data.nextPageToken);
+    } catch (caught) {
+      if (generation.current === current) setError(caught instanceof Error ? caught.message : 'Unable to load announcements.');
+    } finally {
+      if (generation.current === current) { busy.current = false; setLoading(false); }
+    }
+  }, [client, organizationId, session]);
+
+  const loadNext = useCallback(async () => {
+    if (!cursor || busy.current || loading || loadingMore) return;
+    const current = generation.current;
+    busy.current = true;
+    setLoadingMore(true);
+    setPageError(null);
+    try {
+      const result = await client.listAnnouncements(session, { limit: 15, pageToken: cursor, organizationId });
+      if (generation.current !== current) return;
+      setItems((previous) => {
+        const ids = new Set(previous.map((item) => item.id));
+        return [...previous, ...result.data.items.filter((item) => !ids.has(item.id))];
+      });
+      setCursor(result.data.nextPageToken);
+    } catch (caught) {
+      if (generation.current === current) setPageError(caught instanceof Error ? caught.message : 'Unable to load more announcements.');
+    } finally {
+      if (generation.current === current) { busy.current = false; setLoadingMore(false); }
+    }
+  }, [client, cursor, loading, loadingMore, organizationId, session]);
+
+  useEffect(() => {
+    void loadFirst();
+    return () => { generation.current += 1; busy.current = false; };
+  }, [loadFirst]);
+
+  useEffect(() => {
+    const target = sentinel.current;
+    if (!target || !cursor || loading || loadingMore || pageError || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) void loadNext(); }, { root: null, rootMargin: '0px', threshold: 0 });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [cursor, loadNext, loading, loadingMore, pageError]);
+
+  const reconcileAnnouncement = useCallback((updated: Announcement) => {
+    const context = currentContext.current;
+    if (context.session !== session || context.client !== client || context.organizationId !== organizationId || context.generation !== renderedGeneration || updated.organizationId !== organizationId) return;
+    setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+  }, [client, organizationId, renderedGeneration, session.uid]);
+  const visibleItems = items.filter((item) => !removedAnnouncementIds.has(item.id));
+
+  const saveAnnouncement = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingAnnouncement) return;
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      const result = await client.updateAnnouncement(editingAnnouncement.id, organizationId, editBody, session);
+      if (!result.ok || result.persisted !== true || !result.data || result.data.organizationId !== organizationId) {
+        setEditError(result.ok ? 'The announcement update could not be confirmed. Refresh the post before trying again.' : result.message || 'The announcement could not be updated.');
+        return;
+      }
+      const updatedAnnouncement = result.data;
+      setItems((current) => current.map((item) => item.id === updatedAnnouncement.id ? updatedAnnouncement : item));
+      setEditingAnnouncement(null);
+    } catch (caught) {
+      setEditError(caught instanceof Error ? caught.message : 'The announcement could not be updated.');
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  return <div className="mx-auto grid w-[min(720px,100%)] min-w-0 gap-4" aria-label="Managed announcements">
+    {loading ? <LoadingBlock label="Loading organization announcements" /> : null}
+    {error ? <ErrorState onRetry={loadFirst}>{error}</ErrorState> : null}
+    {!loading && !error && visibleItems.length === 0 && !cursor ? <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p> : null}
+    {visibleItems.map((item) => {
+      const images = (item.media?.length ? item.media : item.image ? [item.image] : []).filter((media) => !media.contentType?.startsWith('video/'));
+      return <div key={`${session.uid}:${item.id}`} className="grid gap-2"><AnnouncementCard announcement={{ ...item, image: images[0], media: images.length ? images : undefined }} session={session} client={client} onChanged={reconcileAnnouncement} /><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => { setEditError(null); setEditBody(item.body); setEditingAnnouncement(item); }}>Edit announcement</Button><Button type="button" variant="danger" onClick={() => onDelete(item.id)}>Delete announcement</Button></div></div>;
+    })}
+    {pageError ? <div role="alert" className="py-4 text-center text-sm">Could not load more announcements: {pageError} <Button type="button" variant="secondary" onClick={loadNext}>Retry loading announcements</Button></div> : null}
+    {cursor && !pageError ? <div ref={sentinel} className="flex min-h-12 items-center justify-center py-3" aria-live="polite">{loadingMore ? <span role="status">Loading more announcements…</span> : <Button type="button" variant="secondary" onClick={loadNext}>Load more announcements</Button>}</div> : null}
+    {!loading && items.length > 0 && !cursor ? <p className="py-5 text-center text-sm text-[var(--muted-foreground)]" role="status">You’re all caught up.</p> : null}
+    <ModalDialog open={Boolean(editingAnnouncement)} title="Edit announcement" dirty={Boolean(editingAnnouncement && editBody !== editingAnnouncement.body)} onClose={() => setEditingAnnouncement(null)}>
+      {editingAnnouncement ? <form className="grid gap-3" onSubmit={saveAnnouncement}>
+        <label className="grid min-w-0 gap-1.5 text-[13px] font-bold text-[var(--color-navy)]" htmlFor={`edit-announcement-${editingAnnouncement.id}`}>Announcement text
+          <textarea id={`edit-announcement-${editingAnnouncement.id}`} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[150px] resize-y" maxLength={4000} required value={editBody} onChange={(event) => setEditBody(event.target.value)} />
+        </label>
+        <p className="m-0 text-xs text-[var(--muted-foreground)]">Attached images, likes, comments, and publication date will be kept.</p>
+        {editError ? <p className="m-0 text-sm text-[var(--color-orange-deep)]" role="alert">{editError}</p> : null}
+        <div className="flex flex-wrap justify-end gap-2"><Button type="submit" disabled={editBusy || !editBody.trim()}>{editBusy ? 'Saving…' : 'Save announcement'}</Button></div>
+      </form> : null}
+    </ModalDialog>
+  </div>;
+}
+
 export function AnnouncementSection({ dashboard, session, client, onChanged, allowPosting = true }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void; allowPosting?: boolean }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [composerResult, setComposerResult] = useState<WorkflowMutationResult<unknown> | null>(null);
@@ -356,16 +484,34 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
   const [deleteAnnouncementId, setDeleteAnnouncementId] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [removedAnnouncementIdsByScope, setRemovedAnnouncementIdsByScope] = useState<Record<string, string[]>>({});
+  const [refreshKey, setRefreshKey] = useState(0);
+  const organizationId = dashboard.organization.id;
+  const removalScope = `${session.uid}:${organizationId}`;
+  const removedAnnouncementIds = new Set(removedAnnouncementIdsByScope[removalScope] ?? []);
+  const refreshAnnouncements = useCallback(() => {
+    onChanged();
+    setRefreshKey((key) => key + 1);
+  }, [onChanged]);
 
   const confirmDeleteAnnouncement = async () => {
-    if (!deleteAnnouncementId) return;
+    const deletingId = deleteAnnouncementId;
+    if (!deletingId) return;
     setDeleteBusy(true);
     setDeleteError(null);
-    const next = await client.deleteAnnouncement(deleteAnnouncementId, dashboard.organization.id, session);
+    const response = await client.deleteAnnouncement(deletingId, organizationId, session);
+    const confirmed = response.ok && response.persisted === true;
+    const next = response.ok && !confirmed
+      ? { ...response, ok: false, persisted: 'unconfirmed' as const, reason: 'error' as const, message: 'The announcement deletion could not be confirmed. Refresh the list before trying again.' }
+      : response;
     setResult(next);
     setDeleteBusy(false);
-    if (next.ok) {
+    if (confirmed) {
       setDeleteAnnouncementId(null);
+      setRemovedAnnouncementIdsByScope((current) => {
+        const existing = current[removalScope] ?? [];
+        return existing.includes(deletingId) ? current : { ...current, [removalScope]: [...existing, deletingId] };
+      });
       onChanged();
     } else {
       setDeleteError(next.message);
@@ -388,7 +534,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
                 organizationName={dashboard.organization.name}
                 session={session}
                 client={client}
-                onChanged={onChanged}
+                onChanged={refreshAnnouncements}
                 onDirtyChange={setComposerDirty}
                 onResult={setComposerResult}
                 onSubmitted={() => setComposerOpen(false)}
@@ -398,16 +544,7 @@ export function AnnouncementSection({ dashboard, session, client, onChanged, all
           <ResultMessage result={composerResult} />
         </>
       ) : null}
-      {dashboard.announcements.length ? (
-        <ul className="m-0 grid list-none gap-1 p-0 [&_li]:flex [&_li]:min-w-0 [&_li]:items-center [&_li]:gap-2.5 [&_li]:border-b [&_li]:border-[var(--color-border)] [&_li]:py-3 max-[820px]:[&_li]:items-start gap-0">
-          {dashboard.announcements.map((announcement) => (
-            <li key={announcement.id}>
-              <div className="min-w-0 flex-1 [&_strong]:block [&_strong]:text-[var(--color-navy)] [&_span]:mt-0.5 [&_span]:block [&_span]:[overflow-wrap:anywhere] [&_span]:text-[0.88rem] [&_span]:text-[var(--muted-foreground)]"><strong>{announcement.body}</strong><span>{new Date(announcement.createdAt).toLocaleDateString()}</span></div>
-              <Button type="button" variant="danger" onClick={() => { setDeleteError(null); setDeleteAnnouncementId(announcement.id); }}>Delete</Button>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="m-0 max-w-[68ch] text-[var(--muted-foreground)]">No announcements yet.</p>}
+      <ManagedAnnouncementList key={`${session.uid}:${dashboard.organization.id}-${refreshKey}`} dashboard={dashboard} session={session} client={client} removedAnnouncementIds={removedAnnouncementIds} onDelete={(id) => { setDeleteError(null); setDeleteAnnouncementId(id); }} />
       <ResultMessage result={result} />
       <ConfirmDialog
         open={Boolean(deleteAnnouncementId)}
@@ -465,10 +602,63 @@ export function ApplicantsSection({ dashboard, session, client, onChanged }: { d
   );
 }
 
+export const DATE_ENTRY_SAVE_TIMEOUT_MS = 75_000;
+const DATE_ENTRY_RECONCILIATION_TIMEOUT_MS = 15_000;
+
+function createDateEntryDraft(organizationId: string): DateEntryInput {
+  const idempotencyKey = globalThis.crypto?.randomUUID?.()
+    ?? `date-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+  return { ...createEmptyOfficerDateEntry(organizationId), idempotencyKey };
+}
+
+class DateEntrySaveTimeoutError extends Error {
+  readonly code = 'date_entry_save_unconfirmed';
+
+  constructor() {
+    super('Dated-entry save timed out before the server confirmed the result.');
+    this.name = 'DateEntrySaveTimeoutError';
+  }
+}
+
+function withDeadline<T>(promise: Promise<T>, timeoutMs: number, onTimeout: () => Error): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(onTimeout()), timeoutMs);
+  });
+  return Promise.race([promise, deadline]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
+function dateEntryMatchesInput(entry: DateEntry, input: DateEntryInput): boolean {
+  return entry.organizationId === input.organizationId && entry.kind === input.kind &&
+    entry.title === input.title.trim() && entry.date === input.date &&
+    (entry.startTime ?? '') === (input.startTime ?? '') && (entry.endTime ?? '') === (input.endTime ?? '') &&
+    entry.details === input.details.trim();
+}
+
+function isDefiniteDateEntryFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const details = error as Error & { code?: unknown; status?: unknown };
+  return details.code === 'validation_problem' || details.status === 400 || details.status === 401 || details.status === 403 || details.status === 404;
+}
+
+function dateEntryFailureMessage(error: unknown): string {
+  const fallback = 'We could not save this dated entry. Your details are still here; check them and try again.';
+  if (error && typeof error === 'object') {
+    const details = error as Error & { code?: unknown };
+    if (details.code === 'validation_problem') return 'Check the title, date, times, and details, then try again.';
+    if (details.code === 'date_entry_conflict') return 'A previous save for this draft has different details. Refresh your organization dates before trying again.';
+    if (typeof details.code === 'string') return safeErrorMessage(error, fallback);
+  }
+  return fallback;
+}
+
 export function DateEntriesSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
-  const [form, setForm] = useState<DateEntryInput>(() => createEmptyOfficerDateEntry(dashboard.organization.id));
+  const [form, setForm] = useState<DateEntryInput>(() => createDateEntryDraft(dashboard.organization.id));
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checkingSavedState, setCheckingSavedState] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [deleteDateEntryId, setDeleteDateEntryId] = useState<string | null>(null);
@@ -476,7 +666,7 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
-    setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+    setForm(createDateEntryDraft(dashboard.organization.id));
     setDialogOpen(false);
     setDirty(false);
   }, [dashboard.organization.id]);
@@ -487,7 +677,7 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
   };
 
   const openCreate = () => {
-    setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+    setForm(createDateEntryDraft(dashboard.organization.id));
     setResult(null);
     setDirty(false);
     setDialogOpen(true);
@@ -500,17 +690,112 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
     setDialogOpen(true);
   };
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    const next = await client.saveDateEntry(form, session);
-    setResult(next);
-    setBusy(false);
-    if (next.ok) {
-      setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+  const reconcileSave = async (submitted: DateEntryInput): Promise<boolean> => {
+    const savedEntryId = submitted.id ?? submitted.idempotencyKey;
+    if (!savedEntryId) return false;
+
+    setCheckingSavedState(true);
+    try {
+      const refreshed = await withDeadline(
+        client.getOfficerDashboard(submitted.organizationId, session),
+        DATE_ENTRY_RECONCILIATION_TIMEOUT_MS,
+        () => new Error('The saved-entry check timed out.'),
+      );
+      const savedEntry = refreshed.data?.dateEntries.find((entry) => entry.id === savedEntryId);
+      if (!savedEntry) return false;
+      if (!dateEntryMatchesInput(savedEntry, submitted)) {
+        setResult({
+          ok: false,
+          persisted: false,
+          source: client.mode,
+          reason: 'duplicate',
+          message: 'A dated entry with this save key exists with different details. Your draft is preserved; refresh the organization dates before retrying.',
+        });
+        onChanged();
+        return true;
+      }
+
+      setResult({
+        ok: true,
+        persisted: true,
+        source: client.mode,
+        message: 'The dated entry is saved and confirmed in your organization dates.',
+        data: savedEntry,
+      });
+      setForm(createDateEntryDraft(dashboard.organization.id));
       setDirty(false);
       setDialogOpen(false);
       onChanged();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setCheckingSavedState(false);
+    }
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
+    const submitted = { ...form };
+    const controller = new AbortController();
+    setBusy(true);
+    setResult(null);
+    try {
+      const next = await withDeadline(
+        client.saveDateEntry(submitted, session, controller.signal),
+        DATE_ENTRY_SAVE_TIMEOUT_MS,
+        () => {
+          controller.abort();
+          return new DateEntrySaveTimeoutError();
+        },
+      );
+      if (!next.ok || next.persisted !== true) {
+        if (next.ok || next.reason === 'error' || next.reason === 'unavailable' || next.persisted === 'unconfirmed') {
+          const reconciled = await reconcileSave(submitted);
+          if (!reconciled) {
+            setResult({
+              ok: false,
+              persisted: 'unconfirmed',
+              source: client.mode,
+              reason: 'error',
+              message: 'The save status is unconfirmed. We checked your organization dates once but did not find this entry. Your details are still here; retrying this draft will not create a duplicate.',
+            });
+          }
+        } else {
+          setResult(next);
+        }
+        return;
+      }
+
+      setResult(next);
+      setForm(createDateEntryDraft(dashboard.organization.id));
+      setDirty(false);
+      setDialogOpen(false);
+      onChanged();
+    } catch (error) {
+      if (!isDefiniteDateEntryFailure(error)) {
+        const reconciled = await reconcileSave(submitted);
+        if (reconciled) return;
+        setResult({
+          ok: false,
+          persisted: 'unconfirmed',
+          source: client.mode,
+          reason: 'error',
+          message: 'The save status is unconfirmed. We checked your organization dates once but did not find this entry. Your details are still here; retrying this draft will not create a duplicate.',
+        });
+      } else {
+        setResult({
+          ok: false,
+          persisted: false,
+          source: client.mode,
+          reason: error && typeof error === 'object' && (error as { code?: unknown }).code === 'validation_problem' ? 'validation' : 'error',
+          message: dateEntryFailureMessage(error),
+        });
+      }
+    } finally {
+      setBusy(false);
+      setCheckingSavedState(false);
     }
   };
 
@@ -536,23 +821,23 @@ export function DateEntriesSection({ dashboard, session, client, onChanged }: { 
         description="Post public events or meeting/interview availability for this organization."
         action={<Button type="button" onClick={openCreate}>Add dated entry</Button>}
       />
-      <ModalDialog open={dialogOpen} title={form.id ? 'Edit dated entry' : 'Add dated entry'} dirty={dirty} onClose={() => {
+      <ModalDialog open={dialogOpen} title={form.id ? 'Edit dated entry' : 'Add dated entry'} dirty={dirty} busy={busy} onClose={() => {
         setDialogOpen(false);
         setDirty(false);
-        setForm(createEmptyOfficerDateEntry(dashboard.organization.id));
+        setForm(createDateEntryDraft(dashboard.organization.id));
       }}>
         <form className="grid gap-4 grid gap-3.5" onSubmit={submit}>
           <div className="grid md:grid-cols-2">
-            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-kind">Entry type</label><select data-autofocus id="entry-kind" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.kind} onChange={(event) => patchForm({ kind: event.target.value as DateEntryInput['kind'] })}><option value="event">Public event</option><option value="availability">Meeting/interview availability</option></select></div>
-            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-title">Title</label><input id="entry-title" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.title} onChange={(event) => patchForm({ title: event.target.value })} /></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-kind">Entry type</label><select data-autofocus id="entry-kind" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.kind} disabled={busy} onChange={(event) => patchForm({ kind: event.target.value as DateEntryInput['kind'] })}><option value="event">Public event</option><option value="availability">Meeting/interview availability</option></select></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-title">Title</label><input id="entry-title" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={form.title} disabled={busy} onChange={(event) => patchForm({ title: event.target.value })} /></div>
           </div>
           <div className="grid md:grid-cols-3">
-            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-date">Date</label><input id="entry-date" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="date" value={form.date} onChange={(event) => patchForm({ date: event.target.value })} /></div>
-            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-start">Start time <span>Optional</span></label><input id="entry-start" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.startTime ?? ''} onChange={(event) => patchForm({ startTime: event.target.value })} /></div>
-            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-end">End time <span>Optional</span></label><input id="entry-end" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.endTime ?? ''} onChange={(event) => patchForm({ endTime: event.target.value })} /></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-date">Date</label><input id="entry-date" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="date" value={form.date} disabled={busy} onChange={(event) => patchForm({ date: event.target.value })} /></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-start">Start time <span>Optional</span></label><input id="entry-start" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.startTime ?? ''} disabled={busy} onChange={(event) => patchForm({ startTime: event.target.value })} /></div>
+            <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-end">End time <span>Optional</span></label><input id="entry-end" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" type="time" value={form.endTime ?? ''} disabled={busy} onChange={(event) => patchForm({ endTime: event.target.value })} /></div>
           </div>
-          <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-details">Short details</label><textarea id="entry-details" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.details} onChange={(event) => patchForm({ details: event.target.value })} /></div>
-          <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save dated entry'}</Button></div>
+          <div className="grid min-w-0 gap-1.5"><label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="entry-details">Short details</label><textarea id="entry-details" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={form.details} disabled={busy} onChange={(event) => patchForm({ details: event.target.value })} /></div>
+          <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full"><Button type="submit" disabled={busy}>{busy ? checkingSavedState ? 'Checking…' : 'Saving…' : 'Save dated entry'}</Button></div>
           <ResultMessage result={result} />
         </form>
       </ModalDialog>
@@ -631,18 +916,22 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
               <td><MeetingStatusChip status={request.status} /></td>
               <td><FormalRequestDocumentButton request={request} /></td>
               <td>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="secondary" disabled={request.status === 'Approved'} onClick={async () => {
-                    const next = await client.decideMeetingRequest(request.id, 'Approved', dashboard.organization.id, session);
-                    setResult(next);
-                    if (next.ok) onChanged();
-                  }}>Approve</Button>
-                  <Button type="button" variant="danger" disabled={request.status === 'Declined'} onClick={async () => {
-                    const next = await client.decideMeetingRequest(request.id, 'Declined', dashboard.organization.id, session);
-                    setResult(next);
-                    if (next.ok) onChanged();
-                  }}>Decline</Button>
-                </div>
+                {request.requesterUid === session.uid ? (
+                  <span className="text-xs text-[var(--muted-foreground)]">Your request · check My requests for status.</span>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="secondary" disabled={request.status === 'Approved'} onClick={async () => {
+                      const next = await client.decideMeetingRequest(request.id, 'Approved', dashboard.organization.id, session);
+                      setResult(next);
+                      if (next.ok) onChanged();
+                    }}>Approve</Button>
+                    <Button type="button" variant="danger" disabled={request.status === 'Declined'} onClick={async () => {
+                      const next = await client.decideMeetingRequest(request.id, 'Declined', dashboard.organization.id, session);
+                      setResult(next);
+                      if (next.ok) onChanged();
+                    }}>Decline</Button>
+                  </div>
+                )}
               </td>
             </tr>
           ))}
@@ -653,14 +942,14 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
   );
 }
 
-export function OfficerOrganizationPicker({ selectedOrganizationId, onChange, session }: { selectedOrganizationId: string; onChange: (value: string) => void; session: UserSession }) {
+export function OfficerOrganizationPicker({ selectedOrganizationId, onChange, session, disabled = false, id = 'managed-organization' }: { selectedOrganizationId: string; onChange: (value: string) => void; session: UserSession; disabled?: boolean; id?: string }) {
   const grants = getApprovedOfficerGrants(session);
   if (grants.length <= 1) return null;
   return (
     <section className="max-w-[480px] py-3" aria-label="Managed organization">
       <div className="grid min-w-0 gap-1.5">
-        <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="managed-organization">Organization</label>
-        <select id="managed-organization" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={selectedOrganizationId} onChange={(event) => onChange(event.target.value)}>
+        <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor={id}>Organization</label>
+        <select id={id} disabled={disabled} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" value={selectedOrganizationId} onChange={(event) => onChange(event.target.value)}>
           {grants.map((grant) => <option key={grant.organizationId} value={grant.organizationId}>{grant.organizationName}</option>)}
         </select>
       </div>
@@ -695,7 +984,7 @@ export function OfficerOrganizationManagement({ organizationId, session, client 
   return (
     <aside className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-blue)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] [&_p]:m-0" role="note">
       <strong>Organization management</strong>
-      <p>Edit profile details, announcements, and dated entries from the dedicated Manage Organization sidebar tab.</p>
+      <p>Edit profile details, application intake, announcements, and dated entries from Manage Organization.</p>
       <ButtonLink to={`/settings/organization?organizationId=${encodeURIComponent(organizationId)}`} variant="primary">Manage organization</ButtonLink>
     </aside>
   );
@@ -725,7 +1014,7 @@ export function OfficerApplicationsReview({ session, client }: { session: UserSe
   );
 }
 
-export function OfficerMeetingReview({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
+export function OfficerMeetingReview({ session, client, confirmedRequests = [] }: { session: UserSession; client: WorkflowDataClient; confirmedRequests?: MeetingRequest[] }) {
   const grants = getApprovedOfficerGrants(session);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState(grants[0]?.organizationId ?? '');
 
@@ -743,7 +1032,15 @@ export function OfficerMeetingReview({ session, client }: { session: UserSession
       </header>
       <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={setSelectedOrganizationId} session={session} />
       <OfficerDashboardBlock organizationId={selectedOrganizationId} session={session} client={client}>
-        {(dashboard, reload) => <MeetingDecisionsSection dashboard={dashboard} session={session} client={client} onChanged={reload} />}
+        {(dashboard, reload) => {
+          const requestsById = new Map<string, MeetingRequest>();
+          confirmedRequests
+            .filter((request) => request.requesterUid === session.uid && request.organizationId === dashboard.organization.id)
+            .forEach((request) => requestsById.set(request.id, request));
+          dashboard.meetingRequests.forEach((request) => requestsById.set(request.id, request));
+          const reconciledDashboard = { ...dashboard, meetingRequests: Array.from(requestsById.values()) };
+          return <MeetingDecisionsSection dashboard={reconciledDashboard} session={session} client={client} onChanged={reload} />;
+        }}
       </OfficerDashboardBlock>
     </section>
   );

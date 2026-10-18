@@ -14,6 +14,7 @@ Implemented in this PR:
 - Server-side paid-registration completion helper for the payment lane.
 - Account settings endpoints for display-name changes and verified email-change requests.
 - Organization initial-owner setup and owner-managed officer grant endpoints.
+- Department-linked organization records and organization-manager department student-count contracts.
 - Firestore rules for account, entitlement, organization, officer-grant, application, meeting, announcement, and calendar-entry boundaries.
 - Storage rules for organization logos and announcement images.
 - Firestore emulator rule tests covering direct SDK bypasses for identity, access, organization grants, applications, and meetings.
@@ -51,6 +52,8 @@ Required fields:
   email: string;
   emailVerified: boolean;
   studentId?: string;
+  department?: string;
+  departmentKey?: string;
   companyName?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -65,11 +68,13 @@ Client permissions:
 
 - The signed-in user may read only their own account document.
 - The signed-in active verified user may update only `displayName`, `lastNameChangedAt`, and `updatedAt` after the 30-day cooldown.
-- Clients cannot create accounts or edit role, email, verification state, student id, company name, created time, or entitlement fields.
+- Clients cannot create accounts or edit role, email, verification state, student id, department, company name, created time, or entitlement fields.
+- New student registrations must choose one supported department label; the backend stores canonical `department` plus normalized `departmentKey`. Supported labels are `Civil Engineering Department`, `Architecture Department`, `Electrical Engineering Department`, `Computer Engineering Department`, `Mechanical Engineering Department`, `Electronics Engineering Department`, and `Geodetic Engineering`. Legacy student accounts may omit department.
+- Public registration accepts only `student` and `sponsor`.
 
 ### `entitlements/{uid}`
 
-Server-owned annual access state keyed by Firebase Auth uid.
+Server-owned six-month access state keyed by Firebase Auth uid.
 
 Required fields:
 
@@ -105,6 +110,9 @@ Required fields:
   shortDescription?: string;
   description?: string;
   contactEmail?: string;
+  contactPhone?: string;
+  department?: string;
+  departmentKey?: string;
   logoPath?: string;
   recruitment?: {
     title?: string;
@@ -120,7 +128,7 @@ Required fields:
 
 Only a project administrator can create the initial organization record through the backend setup endpoint.
 Clients cannot change `ownerUid`.
-Owners and approved active officers can update public profile and recruitment fields only for their organization.
+Owners and approved active officers can update public profile, canonical department link, and recruitment fields only for their organization.
 
 ### `organizations/{orgId}/officerGrants/{uid}`
 
@@ -163,11 +171,15 @@ Routes accept both `/...` and `/api/...` prefixes so the frontend can either poi
   displayName: string;
   accountKind: 'student' | 'sponsor';
   studentId?: string;
+  department?: string;
   companyName?: string;
   emailVerified: boolean;
   access: {
     status: 'active' | 'expired' | 'missing';
-    annualFeePhp: 10;
+    annualFeePhp: 10; // legacy compatibility alias
+    feePhp: 10;
+    periodMonths: 6;
+    periodLabel: '6 months';
     expiresAt?: string;
     renewalAvailable: boolean;
   };
@@ -192,6 +204,7 @@ The backend and rules enforce the 30-day cooldown and update Firebase Auth displ
 
 `POST /account/email-change` requires a verified email, active access, the current password, and `SOAR_FIREBASE_WEB_API_KEY` on the backend.
 The request body is `{ "newEmail": "new@example.com", "currentPassword": "...", "continueUrl": "https://..." }`.
+The current password is used only as transient Firebase reauthentication material; it is not stored in Firestore, returned in responses, logged intentionally, or exposed through a reveal-current-password feature.
 The endpoint reauthenticates through Firebase Auth REST and sends Firebase's verify-before-change email.
 The account document email is not changed immediately.
 It is synchronized after Firebase Auth reports the new verified email in a later session reload.
@@ -221,11 +234,13 @@ This lane wires it into the shared Firebase Functions app without duplicating pa
 - `GET /payments/registration/status?intentId=...`
 - `POST /payments/registration/complete`
 - `POST /payments/registration/recover`
+- `POST /payments/registration/recover/accept`
 - `POST /payments/renewals/start`
+- `GET /payments/renewals/status?renewalId=...`
 - `GET /payments/access/status`
 - `POST /webhooks/paymongo`
 
-The payment module owns checkout intents, PayMongo webhook verification, exactly-once entitlement grants, renewal math, paid-unfinished registration recovery, and payment-specific docs/tests.
+The payment module owns checkout intents, PayMongo webhook verification, exactly-once entitlement grants, renewal math, paid-unfinished registration recovery by one-time code and secure browser binding, and payment-specific docs/tests.
 The identity helper boundary remains `createPaidAccountFromConfirmedRegistration(input): Promise<{ uid: string; alreadyProcessed: boolean }>`.
 Auth user creation is not treated as Firestore-transaction-atomic; idempotent provider-event locks and recoverable cross-service handling are used.
 
@@ -248,14 +263,15 @@ Rules block these direct SDK bypasses:
 - private application or meeting reads by unrelated users;
 - collection scans for private application and meeting collections.
 
-Storage rules allow active verified users to read organization images.
-Only an organization owner or active officer grant can write images under that organization's logo or announcement image paths.
-Allowed upload content types are JPEG, PNG, WebP, and GIF, with a 5 MiB size limit.
+Storage rules allow active verified users to read public organization logos and announcement images. Only an organization owner or active officer grant can write images under that organization's logo or announcement paths. Images are JPEG, PNG, WebP, or GIF with a 5 MiB per-image limit.
+
+Private formal meeting request PDFs live under Storage but direct SDK reads are denied. The requester can upload a PDF only with matching path/custom metadata, and later reads go through the authenticated backend streaming route so current requester/officer authorization, actual object metadata, and revoked grants are rechecked without issuing public bearer download URLs.
 
 Storage paths:
 
 - `organization-logos/{orgId}/{fileName}`
 - `announcement-images/{orgId}/{announcementId}/{fileName}`
+- `meeting-request-documents/{orgId}/{meetingRequestId}/{fileName}`
 
 ## Local setup
 

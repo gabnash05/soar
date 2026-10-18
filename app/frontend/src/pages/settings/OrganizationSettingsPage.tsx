@@ -3,6 +3,7 @@ import { useBeforeUnload, useBlocker, useSearchParams } from 'react-router-dom';
 import { ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { OrganizationProfile, WorkflowDataClient } from '../workflows/contracts';
+import { OrganizationApplicationIntakePanel } from '../workflows/ApplicationIntakeControl';
 import {
   AnnouncementSection,
   DateEntriesSection,
@@ -19,10 +20,11 @@ import {
   useWorkflowSession,
   WorkflowPageFrame,
 } from '../workflows/pageParts';
-import { getApprovedOfficerGrants } from '../workflows/workflowUtils';
+import { getApprovedOfficerGrants, isStudent } from '../workflows/workflowUtils';
 
 const managementTabs = [
   { id: 'details', label: 'Details' },
+  { id: 'intake', label: 'Application intake' },
   { id: 'announcements', label: 'Announcements' },
   { id: 'dates', label: 'Dates & availability' },
 ];
@@ -59,7 +61,7 @@ function DepartmentStudentCountPanel({ organization, session, client }: { organi
 }
 
 export function OrganizationSettingsView({ session, client, reauthenticate }: { session: UserSession; client: WorkflowDataClient; reauthenticate?: PasswordReauthenticator }) {
-  const grants = useMemo(() => getApprovedOfficerGrants(session), [session]);
+  const grants = useMemo(() => isStudent(session) ? getApprovedOfficerGrants(session) : [], [session]);
   const [searchParams, setSearchParams] = useSearchParams();
   const { activeId, getTabTo } = useQueryTab(managementTabs.map((item) => item.id), 'details');
   const requestedOrganizationId = searchParams.get('organizationId') ?? '';
@@ -69,6 +71,7 @@ export function OrganizationSettingsView({ session, client, reauthenticate }: { 
   );
   const [selectedOrganizationId, setSelectedOrganizationId] = useState(initialOrganizationId);
   const [profileDirty, setProfileDirty] = useState(false);
+  const [intakeSaving, setIntakeSaving] = useState(false);
   const [pendingOrganizationId, setPendingOrganizationId] = useState<string | null>(null);
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (!profileDirty) return false;
@@ -136,13 +139,13 @@ export function OrganizationSettingsView({ session, client, reauthenticate }: { 
     <WorkflowPageFrame
       eyebrow="Organization settings"
       title="Organization settings"
-      description={selectedGrant ? `Selected organization: ${selectedGrant.organizationName}. Edit details first, then switch tabs for announcements and dates.` : 'Edit organization details first, then switch tabs for announcements and dates.'}
+      description={selectedGrant ? `Selected organization: ${selectedGrant.organizationName}. Control application intake, then manage profile details, announcements, and dates.` : 'Control application intake, then manage profile details, announcements, and dates.'}
       session={session}
       actions={selectedGrant ? <ButtonLink to={`/app/organizations/${selectedGrant.organizationId}`} variant="secondary">View public profile</ButtonLink> : undefined}
     >
       <SourceNotice client={client} />
-      <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={changeOrganization} session={session} />
-      <OfficerDashboardBlock organizationId={selectedOrganizationId} session={session} client={client}>
+      <OfficerOrganizationPicker selectedOrganizationId={selectedOrganizationId} onChange={changeOrganization} session={session} disabled={intakeSaving} />
+      <OfficerDashboardBlock key={`${session.uid}:${selectedOrganizationId}`} organizationId={selectedOrganizationId} session={session} client={client}>
         {(dashboard, reload) => {
           const tabsWithCounts = managementTabs.map((tab) => {
             if (tab.id === 'announcements') return { ...tab, count: dashboard.announcements.length };
@@ -172,6 +175,9 @@ export function OrganizationSettingsView({ session, client, reauthenticate }: { 
                   <DepartmentStudentCountPanel organization={dashboard.organization} session={session} client={client} />
                   <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} formId={profileFormId} onDirtyChange={handleProfileDirtyChange} reauthenticate={reauthenticate} />
                 </div>
+              </SubtabPanel>
+              <SubtabPanel baseId="organization-management" tabId="intake" activeId={activeId}>
+                <OrganizationApplicationIntakePanel key={`${session.uid}:${selectedOrganizationId}`} organizationId={selectedOrganizationId} session={session} client={client} onSavingChange={setIntakeSaving} />
               </SubtabPanel>
               <SubtabPanel baseId="organization-management" tabId="announcements" activeId={activeId}>
                 <AnnouncementSection dashboard={dashboard} session={session} client={client} onChanged={reload} allowPosting />

@@ -2,7 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import type { UserRecord } from 'firebase-admin/auth';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { accountPath, entitlementPath, entitlementProviderEventPath } from '../contracts/paths';
-import { paidRegistrationCompletionSchema } from '../contracts/validation';
+import { normalizeDepartmentKey, paidRegistrationCompletionSchema } from '../contracts/validation';
 import type { PaidRegistrationCompletionInput, PaidRegistrationCompletionResult } from '../contracts/schema';
 import { AppError } from '../errors';
 import { adminAuth, db } from '../firebase';
@@ -117,7 +117,10 @@ export async function createPaidAccountFromConfirmedRegistration(rawInput: PaidR
       displayName: input.displayName,
       email: input.email,
       emailVerified: authUser.emailVerified,
-      ...(input.role === 'student' ? { studentId: input.studentId } : {}),
+      ...(input.role === 'student' ? {
+        studentId: input.studentId,
+        ...(input.department ? { department: input.department, departmentKey: input.departmentKey ?? normalizeDepartmentKey(input.department) } : {})
+      } : {}),
       ...(input.role === 'sponsor' && input.companyName ? { companyName: input.companyName } : {}),
       createdAt: accountSnap.exists ? accountSnap.data()?.createdAt ?? now : now,
       updatedAt: now
