@@ -43,7 +43,7 @@ VITE_SOAR_API_BASE_URL=https://<render-service>.onrender.com
 
 Do not set Firebase Auth/Storage emulator hosts for the hosted build. `VITE_SOAR_PAYMENTS_ENABLED=false` hides registration/checkout/renewal actions and makes those pages explicitly unavailable; the API must also have `SOAR_DISABLE_PAYMENTS=true`. Existing users can sign in through Firebase Auth and use bearer-authenticated core APIs. New account registration and paid access are intentionally unsupported in this cross-site preview. Do not change the secure HttpOnly `SameSite=Lax` registration cookie or move the Firebase Hosting origin to make checkout work.
 
-Supabase service-role credentials are backend-only. The frontend receives only short-lived signed upload/download URLs minted by the authenticated API; it must never receive `SUPABASE_SERVICE_ROLE_KEY` or Firebase Admin credentials. Existing media is not available in the new bucket until an authorized inventory/migration is completed.
+Supabase service-role credentials are backend-only. The frontend receives only short-lived signed upload/download URLs minted by the authenticated API; it must never receive `SUPABASE_SERVICE_ROLE_KEY` or Firebase Admin credentials. Remote legacy Firebase Storage objects were not inventoried; existing Firestore media paths remain unchanged, but previously stored images/PDFs may be unavailable in this preview. This is disclosed, not a blocker to the core preview, and no legacy object migration is claimed.
 
 ## Scripts
 
