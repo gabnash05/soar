@@ -5,7 +5,7 @@ import { connectStorageEmulator, getStorage, type FirebaseStorage } from '@fireb
 interface FirebaseRuntime {
   app: FirebaseApp;
   auth: Auth;
-  storage: FirebaseStorage;
+  storage?: FirebaseStorage;
 }
 
 let runtime: FirebaseRuntime | null = null;
@@ -72,8 +72,8 @@ export const getFirebaseRuntime = (): FirebaseRuntime => {
   if (!runtime) {
     const app = initializeApp(config);
     const auth = getAuth(app);
-    const storage = getStorage(app);
-    runtime = { app, auth, storage };
+    const storage = import.meta.env.VITE_SOAR_STORAGE_PROVIDER === 'supabase' ? undefined : getStorage(app);
+    runtime = { app, auth, ...(storage ? { storage } : {}) };
   }
 
   const authEmulatorHost = import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_HOST;
@@ -83,7 +83,7 @@ export const getFirebaseRuntime = (): FirebaseRuntime => {
   }
 
   const storageEmulatorHost = import.meta.env.VITE_FIREBASE_STORAGE_EMULATOR_HOST;
-  if (storageEmulatorHost && !storageEmulatorConnected) {
+  if (storageEmulatorHost && runtime.storage && !storageEmulatorConnected) {
     const { hostname, port } = parseEmulatorHost(storageEmulatorHost);
     connectStorageEmulator(runtime.storage, hostname, port);
     storageEmulatorConnected = true;

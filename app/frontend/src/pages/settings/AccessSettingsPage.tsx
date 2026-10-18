@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Button, ButtonLink, Card, CardHeader, StatusChip } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { hasActiveAccess } from '../../lib/contracts';
+import { isPaidFlowEnabled } from '../../lib/features';
 import { markFixtureRenewalConfirmedFromUrl } from '../../lib/fixtures';
 import { navigateToHostedCheckout } from '../../lib/redirects';
 
@@ -16,6 +17,7 @@ const formatDate = (value?: string) => {
 };
 
 export const AccessSettingsPage = () => {
+  const paidFlowEnabled = isPaidFlowEnabled();
   const { session, requestManualRenewal, reloadSession, error, clearError, gateway } = useAuth('access-settings');
   const [searchParams] = useSearchParams();
   const [message, setMessage] = useState<string | null>(null);
@@ -27,13 +29,14 @@ export const AccessSettingsPage = () => {
   }, [clearError]);
 
   useEffect(() => {
+    if (!paidFlowEnabled) return;
     const renewalId = searchParams.get('renewalId');
     const fixtureStatus = searchParams.get('fixtureStatus');
     if (gateway.mode === 'fixture' && renewalId && fixtureStatus === 'confirmed') {
       markFixtureRenewalConfirmedFromUrl(renewalId, fixtureStatus);
       void reloadSession().then(() => setMessage('Demo renewal applied locally.')).catch(() => {});
     }
-  }, [gateway.mode, reloadSession, searchParams]);
+  }, [gateway.mode, paidFlowEnabled, reloadSession, searchParams]);
 
   if (!session) return null;
 
@@ -43,6 +46,7 @@ export const AccessSettingsPage = () => {
   const periodLabel = session.access.periodLabel ?? '6 months';
 
   const handleRenew = async () => {
+    if (!paidFlowEnabled) return;
     clearError();
     setMessage(null);
     setWorking(true);
@@ -61,7 +65,7 @@ export const AccessSettingsPage = () => {
       <header className="relative min-w-0 overflow-hidden rounded-[18px] border border-white/15 bg-[var(--color-navy)] bg-[image:var(--gradient-brand)] p-[clamp(16px,3vw,24px)] text-white [&_.eyebrow]:text-[var(--color-gold)] [&_p:not(.eyebrow)]:m-0 [&_p:not(.eyebrow)]:max-w-[72ch] [&_p:not(.eyebrow)]:text-white/80">
         <p className="eyebrow mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-gold)]">Payment & access</p>
         <h1 className="mb-1.5 font-[var(--font-display)] text-[clamp(1.9rem,4vw,3rem)] font-bold leading-[1.05] tracking-[-0.035em] text-white max-sm:text-[2.15rem]">Six-month access status</h1>
-        <p>SOAR access costs PHP10 per account for six months. Users renew manually; there is no automatic recurring charge.</p>
+        <p>{paidFlowEnabled ? 'SOAR access costs PHP10 per account for six months. Users renew manually; there is no automatic recurring charge.' : 'This preview shows saved access status only. Renewal and payment actions are disabled.'}</p>
       </header>
 
       {message ? <div className="rounded-[var(--radius-md)] border border-[var(--color-blue-deep)] bg-[var(--color-navy-soft)] px-3.5 py-3 text-[var(--color-navy)]" role="status">{message}</div> : null}
@@ -74,13 +78,13 @@ export const AccessSettingsPage = () => {
           <p>
             {active
               ? 'You can use role-appropriate SOAR pages until your six-month access expires.'
-              : 'Your saved records are retained. Renew access to return to main workflow pages.'}
+              : paidFlowEnabled ? 'Your saved records are retained. Renew access to return to main workflow pages.' : 'Your saved records are retained; payment is unavailable in this non-production preview.'}
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-2.5 max-[820px]:justify-start">
-          <Button type="button" disabled={working || (!session.access.renewalAvailable && active)} onClick={handleRenew}>
+          {paidFlowEnabled ? <Button type="button" disabled={working || (!session.access.renewalAvailable && active)} onClick={handleRenew}>
             {working ? 'Opening checkout…' : active ? 'Renew when available' : 'Renew PHP10 access'}
-          </Button>
+          </Button> : <span role="status">Renewal is disabled in this preview.</span>}
           {active ? <ButtonLink to="/app" variant="secondary">Go to app</ButtonLink> : null}
         </div>
       </Card>
@@ -98,11 +102,11 @@ export const AccessSettingsPage = () => {
           </dl>
         </Card>
         <Card>
-          <CardHeader title="When access expires" eyebrow="Available actions">You can still sign in, recover your password, renew access, and manage settings.</CardHeader>
+          <CardHeader title="When access expires" eyebrow="Available actions">You can still sign in, recover your password, and manage personal settings.</CardHeader>
           <ul className="m-0 grid list-none gap-3 p-0 [&_li]:grid [&_li]:grid-cols-[auto_minmax(0,1fr)] [&_li]:items-start [&_li]:gap-2.5 [&_li]:border-t [&_li]:border-[var(--color-border)] [&_li]:py-3 [&_li]:before:mt-[7px] [&_li]:before:size-2.5 [&_li]:before:rounded-full [&_li]:before:bg-[var(--color-gold)] [&_li]:before:content-['']">
             <li>Entry and sign-in stay available.</li>
             <li>Password recovery stays available.</li>
-            <li>Payment renewal stays available.</li>
+            {paidFlowEnabled ? <li>Payment renewal stays available.</li> : <li>Payment renewal is disabled in this non-production preview.</li>}
             <li>Personal settings stay available for recovery and account management.</li>
             <li>Directory, applications, meetings, and organization management require active access.</li>
           </ul>

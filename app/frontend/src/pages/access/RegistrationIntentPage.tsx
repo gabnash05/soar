@@ -1,12 +1,13 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SoarLogo } from '../../components/SoarLogo';
-import { Button, ButtonLink, Card, Field, Select as NativeSelect, TextInput } from '../../components/ui';
+import { Button, ButtonLink, Card, Field, Select as NativeSelect, StateBlock, TextInput } from '../../components/ui';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useAuth } from '../../context/AuthContext';
 import type { RegistrationPaymentInput, RegistrationRoleIntent } from '../../lib/contracts';
 import { CANONICAL_DEPARTMENTS, isCanonicalDepartment } from '../../lib/departments';
 import { navigateToHostedCheckout } from '../../lib/redirects';
+import { isPaidFlowEnabled } from '../../lib/features';
 
 const DRAFT_KEY = 'soar:registration-draft';
 
@@ -49,6 +50,7 @@ function DepartmentSelect({ value, onChange, error }: { value: string; onChange:
 }
 
 export const RegistrationIntentPage = () => {
+  const paidFlowEnabled = isPaidFlowEnabled();
   const { startRegistrationPayment, error, clearError, gateway } = useAuth('registration');
   const [role, setRole] = useState<RegistrationRoleIntent>('student');
   const [displayName, setDisplayName] = useState('');
@@ -66,6 +68,7 @@ export const RegistrationIntentPage = () => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!paidFlowEnabled) return;
     clearError();
     setLocalError(null);
     if (role === 'student' && !studentId.trim()) {
@@ -94,6 +97,16 @@ export const RegistrationIntentPage = () => {
       setSubmitting(false);
     }
   };
+
+  if (!paidFlowEnabled) {
+    return (
+      <main className="grid min-h-screen place-items-center p-[clamp(18px,4vw,48px)] max-sm:px-3.5">
+        <StateBlock symbol="!" title="Registration and payment unavailable" actions={<ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>}>
+          New account registration and provider checkout are disabled in this non-production preview. No payment will be requested.
+        </StateBlock>
+      </main>
+    );
+  }
 
   return (
     <main className="grid min-h-screen place-items-center p-[clamp(18px,4vw,48px)] max-sm:px-3.5 items-center">

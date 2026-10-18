@@ -5,10 +5,12 @@ import { Button, ButtonLink, Card, Field, LoadingBlock, StateBlock, TextInput, S
 import { useAuth } from '../../context/AuthContext';
 import type { CheckoutStatus } from '../../lib/contracts';
 import { isCanonicalDepartment } from '../../lib/departments';
+import { isPaidFlowEnabled } from '../../lib/features';
 import { markFixturePaymentConfirmedFromUrl } from '../../lib/fixtures';
 import { readRegistrationDraft } from './RegistrationIntentPage';
 
 export const CheckoutStatusPage = () => {
+  const paidFlowEnabled = isPaidFlowEnabled();
   const { gateway, registerAccount, error, clearError } = useAuth('registration');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -29,7 +31,7 @@ export const CheckoutStatusPage = () => {
   }, [clearError]);
 
   useEffect(() => {
-    if (!intentId) return;
+    if (!paidFlowEnabled || !intentId) return;
     if (gateway.mode === 'fixture') markFixturePaymentConfirmedFromUrl(intentId, fixtureStatus);
     let active = true;
     setLoading(true);
@@ -47,10 +49,11 @@ export const CheckoutStatusPage = () => {
     return () => {
       active = false;
     };
-  }, [fixtureStatus, gateway, intentId]);
+  }, [fixtureStatus, gateway, intentId, paidFlowEnabled]);
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
+    if (!paidFlowEnabled) return;
     clearError();
     setLocalError(null);
     if (!draft?.email || !draft.displayName || !draft.role) {
@@ -88,6 +91,16 @@ export const CheckoutStatusPage = () => {
       setSubmitting(false);
     }
   };
+
+  if (!paidFlowEnabled) {
+    return (
+      <main className="grid min-h-screen place-items-center p-[clamp(18px,4vw,48px)] max-sm:px-3.5">
+        <StateBlock symbol="!" title="Checkout unavailable" actions={<ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>}>
+          Payment confirmation and account creation are disabled in this non-production preview. No payment or registration can be completed here.
+        </StateBlock>
+      </main>
+    );
+  }
 
   if (!intentId) {
     return (

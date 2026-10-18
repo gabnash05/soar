@@ -30,6 +30,21 @@ VITE_FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:19199
 
 Seeded emulator demo accounts are documented in `app/backend/README.md`. Their active access records are simulated local data, not production payment verification.
 
+## Unpaid Firebase-hosted core preview
+
+The non-production preview keeps the existing Firebase Hosting/Auth/Firestore project, uses the standalone API on Render Free, and moves private media to Supabase Storage. Build the frontend with the existing public Firebase app identifiers plus:
+
+```dotenv
+VITE_SOAR_USE_FIXTURES=false
+VITE_SOAR_PAYMENTS_ENABLED=false
+VITE_SOAR_STORAGE_PROVIDER=supabase
+VITE_SOAR_API_BASE_URL=https://<render-service>.onrender.com
+```
+
+Do not set Firebase Auth/Storage emulator hosts for the hosted build. `VITE_SOAR_PAYMENTS_ENABLED=false` hides registration/checkout/renewal actions and makes those pages explicitly unavailable; the API must also have `SOAR_DISABLE_PAYMENTS=true`. Existing users can sign in through Firebase Auth and use bearer-authenticated core APIs. New account registration and paid access are intentionally unsupported in this cross-site preview. Do not change the secure HttpOnly `SameSite=Lax` registration cookie or move the Firebase Hosting origin to make checkout work.
+
+Supabase service-role credentials are backend-only. The frontend receives only short-lived signed upload/download URLs minted by the authenticated API; it must never receive `SUPABASE_SERVICE_ROLE_KEY` or Firebase Admin credentials. Existing media is not available in the new bucket until an authorized inventory/migration is completed.
+
 ## Scripts
 
 - `npm run dev` — start Vite dev server.

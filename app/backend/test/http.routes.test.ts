@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   deleteAnnouncement: vi.fn(),
   deleteAnnouncementComment: vi.fn(),
   getAnnouncement: vi.fn(),
+  getMediaDownloadUrl: vi.fn(),
   getStudentDepartmentCounts: vi.fn(),
   setAnnouncementLike: vi.fn(),
   listAnnouncementComments: vi.fn(),
@@ -90,6 +91,7 @@ vi.mock('../src/content/service', () => ({
   deleteAnnouncementComment: mocks.deleteAnnouncementComment,
   deleteDateEntry: mocks.deleteDateEntry,
   getAnnouncement: mocks.getAnnouncement,
+  getMediaDownloadUrl: mocks.getMediaDownloadUrl,
   getOrganizationProfile: mocks.getOrganizationProfile,
   getStudentDepartmentCounts: mocks.getStudentDepartmentCounts,
   listAnnouncementComments: mocks.listAnnouncementComments,
@@ -180,6 +182,47 @@ describe('SOAR HTTP route contracts', () => {
     } finally {
       if (previousAppUrl === undefined) delete process.env.SOAR_APP_BASE_URL;
       else process.env.SOAR_APP_BASE_URL = previousAppUrl;
+    }
+  });
+
+  it('returns an authenticated signed-media URL without exposing storage credentials', async () => {
+    const user = { uid: 'user1', email_verified: true };
+    const path = 'announcement-images/org-1/post-1/photo.png';
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.getMediaDownloadUrl.mockResolvedValue({ url: 'https://project.supabase.co/storage/v1/object/sign/private/photo.png?token=short-lived' });
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/storage/download-url?path=${encodeURIComponent(path)}`, {
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ url: 'https://project.supabase.co/storage/v1/object/sign/private/photo.png?token=short-lived' });
+    });
+
+    expect(mocks.getMediaDownloadUrl).toHaveBeenCalledWith(user, path);
+  });
+
+  it('disables payment and registration routes in an unpaid preview without invoking provider handlers', async () => {
+    const previous = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'true';
+    try {
+      await withApiServer(async (baseUrl) => {
+        const registration = await fetch(`${baseUrl}/payments/registration/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(registration.status).toBe(503);
+        await expect(registration.json()).resolves.toMatchObject({ code: 'payments_unavailable' });
+
+        const webhook = await fetch(`${baseUrl}/webhooks/paymongo`, { method: 'POST', body: '{}' });
+        expect(webhook.status).toBe(503);
+        await expect(webhook.json()).resolves.toMatchObject({ code: 'payments_unavailable' });
+      });
+      expect(mocks.paymentHandlers).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previous;
     }
   });
 

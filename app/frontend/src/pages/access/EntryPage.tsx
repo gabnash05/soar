@@ -1,7 +1,10 @@
 import { SoarLogo } from '../../components/SoarLogo';
 import { ButtonLink, Card, RoleBadge } from '../../components/ui';
+import { isPaidFlowEnabled } from '../../lib/features';
 
-export const EntryPage = () => (
+export const EntryPage = () => {
+  const paidFlowEnabled = isPaidFlowEnabled();
+  return (
   <main className="relative isolate mx-auto w-[min(1200px,100%)] p-[clamp(18px,4vw,56px)] max-sm:px-3.5">
     {import.meta.env.VITE_SOAR_USE_FIXTURES === 'true' ? (
       <aside className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-y border-[var(--color-border)] py-2 text-sm text-[var(--muted-foreground)]" role="note" aria-label="Simulated preview">
@@ -28,11 +31,13 @@ export const EntryPage = () => (
             Discover campus organizations, follow announcements, manage application and meeting progress, and keep six-month access current from one role-aware workspace.
           </p>
           <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full">
-            <ButtonLink to="/register" variant="primary">Start with PHP10 access</ButtonLink>
-            <ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>
+            {paidFlowEnabled ? <ButtonLink to="/register" variant="primary">Start with PHP10 access</ButtonLink> : null}
+            <ButtonLink to="/login" variant={paidFlowEnabled ? 'secondary' : 'primary'}>Sign in</ButtonLink>
           </div>
-          <p className="hero-note text-sm text-white/80">
-            PHP10 six-month access is required before account creation. Expired accounts can still sign in to renew.
+          <p className="hero-note text-sm text-white/80" role={paidFlowEnabled ? undefined : 'status'}>
+            {paidFlowEnabled
+              ? 'PHP10 six-month access is required before account creation. Expired accounts can still sign in to renew.'
+              : 'Account creation and payment are disabled in this non-production preview. Existing users can sign in.'}
           </p>
         </div>
       </div>
@@ -60,4 +65,5 @@ export const EntryPage = () => (
       SOAR keeps organization discovery, applications, meetings, and access in one workspace.
     </footer>
   </main>
-);
+  );
+};

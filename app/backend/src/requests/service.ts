@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import { Timestamp } from 'firebase-admin/firestore';
-import { db, defaultStorageBucket } from '../firebase';
+import { db } from '../firebase';
+import { createSignedObjectUploadTarget, getStoredObjectMetadata } from '../storage/objectStorage';
 import { meetingRequestDocumentStoragePath } from '../contracts/paths';
 import { requireActiveAccess } from '../identity/access';
 import type { ApplicationStatus, MeetingStatus, OrganizationDocument } from '../contracts/schema';
@@ -48,13 +49,16 @@ export interface RequestServiceDeps {
 async function verifyUploadedMeetingDocument({ document, requesterUid, orgId, meetingRequestId }: MeetingDocumentUploadCheck): Promise<void> {
   let metadata;
   try {
-    [metadata] = await defaultStorageBucket().file(document.storagePath).getMetadata();
-  } catch {
-    throw new AppError('meeting_document_missing', 'Upload the formal request PDF before submitting the meeting request.', 400);
+    metadata = await getStoredObjectMetadata(document.storagePath);
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'storage_object_missing') {
+      throw new AppError('meeting_document_missing', 'Upload the formal request PDF before submitting the meeting request.', 400);
+    }
+    throw error;
   }
 
-  const custom = metadata.metadata ?? {};
-  const actualSize = Number(metadata.size ?? 0);
+  const custom = metadata.customMetadata;
+  const actualSize = Number(metadata.sizeBytes ?? 0);
   if (metadata.contentType !== document.contentType || document.contentType !== 'application/pdf') {
     throw new AppError('meeting_document_type_mismatch', 'The uploaded formal request document must be a PDF.', 400);
   }
@@ -292,6 +296,7 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       const availability = assertAvailabilityEntry(await deps.store.getCalendarEntry(input.dateEntryId), input.organizationId);
       const meetingRequestId = meetingRequestIdFor(input, user.uid);
       const storagePath = meetingRequestDocumentStoragePath(input.organizationId, meetingRequestId, sanitizeStorageFileName(input.fileName));
+      const uploadTarget = await createSignedObjectUploadTarget(storagePath);
       return {
         meetingRequestId,
         organizationId: input.organizationId,
@@ -300,6 +305,7 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
         requestedDate: input.requestedDate,
         requestedTime: input.requestedTime,
         storagePath,
+        ...(uploadTarget ?? {}),
         fileName: input.fileName,
         contentType: input.contentType,
         sizeBytes: input.sizeBytes,
