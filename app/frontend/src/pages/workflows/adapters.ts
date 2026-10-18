@@ -345,7 +345,7 @@ const initialAnnouncements: Announcement[] = [
     viewerHasLiked: false,
     commentCount: 1,
     comments: [
-      { id: 'comment-1', authorUid: 'student-1', authorName: 'Mara Santos', body: 'Is the consultation window open to first-year students?', createdAt: '2026-10-07T09:00:00.000Z' },
+      { id: 'comment-1', authorUid: 'student-1', authorAccountKind: 'student', authorName: 'Mara Santos', body: 'Is the consultation window open to first-year students?', createdAt: '2026-10-07T09:00:00.000Z' },
     ],
   },
   {
@@ -601,6 +601,8 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       const comment: AnnouncementComment = {
         id: `comment-${nextId++}`,
         authorUid: session.uid,
+        ...(session.accountKind === 'student' ? { authorAccountKind: 'student' as const } : {}),
+        ...(isApprovedOfficerFor(session, announcement.organizationId) ? { authorOrganizationRole: 'approved_officer' as const } : {}),
         authorName: session.displayName,
         body: trimmed,
         createdAt: new Date().toISOString(),

@@ -6,7 +6,7 @@ import { useAuth, useBackendGateway } from '../../context/AuthContext';
 import type { ApplicationStage, MeetingStatus, UserSession } from '../../lib/contracts';
 import { getWorkflowDataClientForGatewayMode, unavailableWorkflowDataClient } from './adapters';
 import type { Announcement, AnnouncementComment, DateEntry, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from './contracts';
-import { formatDateEntry, getMeetingTone, getStageTone, getUnavailableCopy } from './workflowUtils';
+import { formatDateEntry, getApprovedOfficerGrants, getMeetingTone, getStageTone, getUnavailableCopy } from './workflowUtils';
 import { cn } from '../../lib/utils';
 import { safeErrorMessage } from '../../lib/safeErrors';
 
@@ -256,12 +256,6 @@ export function MeetingStatusChip({ status }: { status: MeetingStatus }) {
   return <StatusChip tone={getMeetingTone(status)}>{status}</StatusChip>;
 }
 
-function CommentAuthorBadge({ comment }: { comment: AnnouncementComment }) {
-  if (comment.authorAccountKind !== 'student') return null;
-  const isOfficer = comment.authorOrganizationRole === 'approved_officer';
-  return <RoleBadge kind={isOfficer ? 'officer' : 'student'}>{isOfficer ? 'Officer' : 'Student'}</RoleBadge>;
-}
-
 function LikeIcon({ filled }: { filled: boolean }) {
   return (
     <svg className="like-icon size-[21px] shrink-0" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -302,6 +296,17 @@ export function AnnouncementCard({
   const commentLoadGeneration = useRef(0);
   const media = announcement.media?.length ? announcement.media : announcement.image ? [announcement.image] : [];
   const commentCount = announcement.commentCount ?? announcement.comments.length;
+
+  const commentRole = (item: AnnouncementComment) => {
+    const isAuthor = item.authorUid === session.uid;
+    const hasOrganizationGrant = isAuthor && getApprovedOfficerGrants(session).some((grant) => grant.organizationId === announcement.organizationId);
+    if (item.authorOrganizationRole === 'approved_officer' || hasOrganizationGrant) {
+      return { kind: 'officer' as const, label: 'Officer' };
+    }
+    const accountKind = item.authorAccountKind ?? (isAuthor ? session.accountKind : undefined);
+    if (accountKind === 'student') return { kind: 'student' as const, label: undefined };
+    return { kind: 'unknown' as const, label: undefined };
+  };
 
   useEffect(() => () => { commentLoadGeneration.current += 1; }, [announcement.id, client, session]);
 
@@ -476,10 +481,12 @@ export function AnnouncementCard({
               {comments.map((item) => {
                 const canEdit = item.viewerCanEdit || item.authorUid === session.uid;
                 const canDelete = item.viewerCanDelete || item.authorUid === session.uid;
+                const role = commentRole(item);
                 return (
                   <li key={item.id}>
                     {editingCommentId === item.id ? (
                       <form className="grid w-full gap-2" onSubmit={saveComment}>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><strong className="text-[var(--color-navy)]">{item.authorName}</strong><RoleBadge className="gap-3" kind={role.kind}>{role.label ?? undefined}</RoleBadge></div>
                         <label className="sr-only" htmlFor={`edit-comment-${item.id}`}>Edit comment by {item.authorName}</label>
                         <textarea id={`edit-comment-${item.id}`} className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] placeholder:text-[var(--muted-foreground)] disabled:bg-[var(--color-off-white)] disabled:text-[var(--muted-foreground)] hover:not-disabled:border-[var(--color-blue)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)] min-h-[120px] resize-y" value={editingBody} onChange={(event) => setEditingBody(event.target.value)} />
                         <div className="flex flex-wrap items-center gap-2">
@@ -489,13 +496,12 @@ export function AnnouncementCard({
                       </form>
                     ) : (
                       <>
-                        <div className="min-w-0 [&_p]:mt-0.5 [&_p]:mb-0 [&_p]:[overflow-wrap:anywhere] [&_p]:text-[var(--color-ink)]">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <strong className="block text-[var(--color-navy)]">{item.authorName}</strong>
-                            <CommentAuthorBadge comment={item} />
+                        <div className="min-w-0 [&_strong]:text-[var(--color-navy)] [&_p]:mt-0.5 [&_p]:mb-0 [&_p]:[overflow-wrap:anywhere] [&_p]:text-[var(--color-ink)] [&_span]:mt-1 [&_span]:inline-block [&_span]:text-xs [&_span]:text-[var(--muted-foreground)]">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <strong className="[overflow-wrap:anywhere]">{item.authorName}</strong>
+                            <RoleBadge className="gap-3" kind={role.kind}>{role.label ?? undefined}</RoleBadge>
                           </div>
-                          <p>{item.body}</p>
-                          {item.updatedAt ? <span className="mt-1 inline-block text-xs text-[var(--muted-foreground)]">Edited</span> : null}
+                          <p>{item.body}</p>{item.updatedAt ? <span>Edited</span> : null}
                         </div>
                         {(canEdit || canDelete) ? (
                           <div className="flex flex-wrap items-center gap-2 shrink-0">

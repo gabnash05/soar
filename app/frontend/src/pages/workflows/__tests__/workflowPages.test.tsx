@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
 import type { UserSession } from '../../../lib/contracts';
 import type { Announcement, AnnouncementPage, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, OrganizationSummary, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
@@ -58,7 +58,10 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => render(<MemoryRouter initialEntries={initialEntries}>{ui}</MemoryRouter>);
+const renderInRouter = (ui: ReactElement, initialEntries: string[] = ['/']) => {
+  const router = createMemoryRouter([{ path: '*', element: ui }], { initialEntries });
+  return render(<RouterProvider router={router} />);
+};
 
 function saveDateEntryResult(input: DateEntryInput, source: WorkflowDataClient['mode']): WorkflowMutationResult<DateEntry> {
   return {
@@ -1318,12 +1321,14 @@ describe('SOAR workflow pages', () => {
     }
   });
 
-  it('keeps one profile save action and confirms before persisting organization profile edits', async () => {
+  it('requires transient password approval before one organization profile save', async () => {
     const user = userEvent.setup();
     const client = createFixtureWorkflowDataClient();
     const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    let completeReauthentication: (() => void) | undefined;
+    const reauthenticate = vi.fn((_password: string, _expectedUid: string) => new Promise<void>((resolve) => { completeReauthentication = resolve; }));
     client.saveOrganizationProfile = saveProfile;
-    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} />, ['/settings/organization?organizationId=robotics']);
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
 
     const nameInput = await screen.findByLabelText(/^Organization name$/i);
     const saveButton = screen.getByRole('button', { name: /^Save profile$/i });
@@ -1338,12 +1343,71 @@ describe('SOAR workflow pages', () => {
     await user.type(nameInput, ' Updated');
     await user.click(saveButton);
 
-    const dialog = screen.getByRole('alertdialog', { name: /Save profile changes/i });
-    expect(dialog).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
+    expect(saveProfile).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/^Password$/i)).toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText(/^Password$/i)).toHaveAttribute('autocomplete', 'current-password');
+
+    await user.type(screen.getByLabelText(/^Password$/i), 'correct-demo-password');
+    await user.click(within(dialog).getByRole('button', { name: /^Approve and save changes$/i }));
+    expect(screen.getByLabelText(/^Password$/i)).toHaveValue('');
+    expect(saveProfile).not.toHaveBeenCalled();
+    completeReauthentication?.();
+    await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+    expect(reauthenticate).toHaveBeenCalledWith('correct-demo-password', officerSession.uid);
+    expect(reauthenticate.mock.invocationCallOrder[0]).toBeLessThan(saveProfile.mock.invocationCallOrder[0]);
+    expect(saveProfile.mock.calls[0]?.[0]).not.toHaveProperty('password');
+    expect(screen.queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps profile drafts after rejected password approval and clears the transient input', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    const reauthenticate = vi.fn().mockRejectedValueOnce(Object.assign(new Error('invalid credential details'), { code: 'auth/invalid-credential' }));
+    client.saveOrganizationProfile = saveProfile;
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
+
+    const nameInput = await screen.findByLabelText(/^Organization name$/i);
+    await user.type(nameInput, ' Draft');
+    await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+    await user.type(screen.getByLabelText(/^Password$/i), 'wrong-password');
+    await user.click(screen.getByRole('button', { name: /^Approve and save changes$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/password could not be verified/i);
+    expect(nameInput).toHaveValue('Computer Engineering Department Draft');
+    expect(screen.getByLabelText(/^Password$/i)).toHaveValue('');
     expect(saveProfile).not.toHaveBeenCalled();
 
-    await user.click(within(dialog).getByRole('button', { name: /^Save profile$/i }));
-    await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: /^Cancel$/i }));
+    expect(screen.queryByRole('dialog', { name: /Approve organization changes/i })).not.toBeInTheDocument();
+    expect(nameInput).toHaveValue('Computer Engineering Department Draft');
+  });
+
+  it('uses password-free synthetic approval only for the labelled fixture build', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveProfile = vi.fn(client.saveOrganizationProfile.bind(client));
+    const reauthenticate = vi.fn(async (_password: string, _expectedUid: string) => undefined);
+    client.saveOrganizationProfile = saveProfile;
+    vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'true');
+    try {
+      renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={reauthenticate} />, ['/settings/organization?organizationId=robotics']);
+      const nameInput = await screen.findByLabelText(/^Organization name$/i);
+      await user.type(nameInput, ' Preview');
+      await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
+
+      const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
+      expect(dialog).toHaveTextContent(/simulated preview uses local approval only/i);
+      expect(within(dialog).queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: /^Approve simulated changes$/i }));
+
+      await waitFor(() => expect(saveProfile).toHaveBeenCalledTimes(1));
+      expect(reauthenticate).not.toHaveBeenCalled();
+      expect(saveProfile.mock.calls[0]?.[0]).not.toHaveProperty('password');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('protects dirty profile edits before switching managed organizations', async () => {

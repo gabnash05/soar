@@ -1,4 +1,6 @@
 import {
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   reload,
   sendEmailVerification,
   sendPasswordResetEmail,
@@ -25,6 +27,25 @@ import { apiBaseUrl, apiFetch, authHeaders } from './apiClient';
 import { UserFacingError } from './safeErrors';
 import { getFirebaseConfigStatus, getFirebaseRuntime } from './firebase';
 import { createFixtureGateway } from './fixtures';
+
+export async function reauthenticateCurrentUser(password: string, expectedUid: string): Promise<void> {
+  const { auth } = getFirebaseRuntime();
+  const user = auth.currentUser;
+  if (!user?.email || user.uid !== expectedUid) {
+    throw new UserFacingError('Your sign-in session is unavailable. Sign in again before saving organization changes.');
+  }
+  if (!user.emailVerified) {
+    throw new UserFacingError('Verify your email before approving organization changes.');
+  }
+  if (!user.providerData.some((provider) => provider.providerId === 'password')) {
+    throw new UserFacingError('This account does not use email/password sign-in. Sign in with an email/password account to approve organization changes.');
+  }
+
+  const credential = EmailAuthProvider.credential(user.email, password);
+  await reauthenticateWithCredential(user, credential);
+  // Force the next authenticated API request to carry the refreshed recent-auth claim.
+  await user.getIdToken(true);
+}
 
 export interface BackendGateway {
   readonly mode: 'production' | 'fixture';
