@@ -120,13 +120,19 @@ export const storageDownloadUrl = async (storagePath: string): Promise<string> =
 async function uploadToSignedUrl(url: string, file: File, contentType: string, metadata?: Record<string, string>): Promise<void> {
   let response: Response;
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+      'x-upsert': 'false',
+    };
+    if (metadata) {
+      const bytes = new TextEncoder().encode(JSON.stringify(metadata));
+      let binary = '';
+      bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+      headers['x-metadata'] = btoa(binary);
+    }
     response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': contentType,
-        'x-upsert': 'false',
-        ...(metadata ? { 'x-metadata': JSON.stringify(metadata) } : {}),
-      },
+      method: 'PUT',
+      headers,
       body: file,
     });
   } catch {
