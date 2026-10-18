@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import { Timestamp } from 'firebase-admin/firestore';
-import { db, defaultStorageBucket } from '../firebase';
+import { db } from '../firebase';
+import { createSignedObjectUploadTarget, getStoredObjectMetadata } from '../storage/objectStorage';
 import { meetingRequestDocumentStoragePath } from '../contracts/paths';
 import { requireActiveAccess } from '../identity/access';
 import type { ApplicationStatus, MeetingStatus, OrganizationDocument } from '../contracts/schema';
@@ -48,13 +49,16 @@ export interface RequestServiceDeps {
 async function verifyUploadedMeetingDocument({ document, requesterUid, orgId, meetingRequestId }: MeetingDocumentUploadCheck): Promise<void> {
   let metadata;
   try {
-    [metadata] = await defaultStorageBucket().file(document.storagePath).getMetadata();
-  } catch {
-    throw new AppError('meeting_document_missing', 'Upload the formal request PDF before submitting the meeting request.', 400);
+    metadata = await getStoredObjectMetadata(document.storagePath);
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'storage_object_missing') {
+      throw new AppError('meeting_document_missing', 'Upload the formal request PDF before submitting the meeting request.', 400);
+    }
+    throw error;
   }
 
-  const custom = metadata.metadata ?? {};
-  const actualSize = Number(metadata.size ?? 0);
+  const custom = metadata.customMetadata;
+  const actualSize = Number(metadata.sizeBytes ?? 0);
   if (metadata.contentType !== document.contentType || document.contentType !== 'application/pdf') {
     throw new AppError('meeting_document_type_mismatch', 'The uploaded formal request document must be a PDF.', 400);
   }
@@ -215,13 +219,17 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
         throw new AppError('student_required', 'Only student accounts can confirm external application submissions.', 403);
       }
 
+      if (organization.applicationsOpen === false) {
+        throw new AppError('applications_closed', 'Applications are closed for this organization.', 409);
+      }
+
       const opportunity = resolveRecruitmentOpportunity(organization);
       if (input.opportunityId !== opportunity.opportunityId) {
         throw new AppError('opportunity_mismatch', 'The selected recruitment opportunity is not currently posted by that organization.', 409);
       }
 
       const now = deps.now();
-      const applicationId = stableDocumentId('app', [user.uid, input.organizationId, input.opportunityId]);
+      const applicationId = stableDocumentId('app', [user.uid, input.organizationId]);
       const application: ApplicationDocument = {
         applicationId,
         studentUid: user.uid,
@@ -238,8 +246,14 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       };
 
       const result = await deps.store.createApplicationIfAbsent(applicationId, application);
+      if (result === 'organization_missing') {
+        throw new AppError('organization_missing', 'The organization was not found.', 404);
+      }
+      if (result === 'closed') {
+        throw new AppError('applications_closed', 'Applications are closed for this organization.', 409);
+      }
       if (result === 'exists') {
-        throw new AppError('duplicate_application', 'You already confirmed this external application in SOAR.', 409);
+        throw new AppError('duplicate_application', 'You already have an application for this organization.', 409);
       }
 
       return applicationResponse(application);
@@ -282,6 +296,7 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       const availability = assertAvailabilityEntry(await deps.store.getCalendarEntry(input.dateEntryId), input.organizationId);
       const meetingRequestId = meetingRequestIdFor(input, user.uid);
       const storagePath = meetingRequestDocumentStoragePath(input.organizationId, meetingRequestId, sanitizeStorageFileName(input.fileName));
+      const uploadTarget = await createSignedObjectUploadTarget(storagePath);
       return {
         meetingRequestId,
         organizationId: input.organizationId,
@@ -290,6 +305,7 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
         requestedDate: input.requestedDate,
         requestedTime: input.requestedTime,
         storagePath,
+        ...(uploadTarget ?? {}),
         fileName: input.fileName,
         contentType: input.contentType,
         sizeBytes: input.sizeBytes,
@@ -333,8 +349,8 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
         requestedDate: input.requestedDate,
         requestedTime: input.requestedTime,
         status: 'Pending',
-        note: input.note,
-        document: input.document,
+        ...(input.note !== undefined ? { note: input.note } : {}),
+        ...(input.document !== undefined ? { document: input.document } : {}),
         createdAt: now,
         updatedAt: now
       };

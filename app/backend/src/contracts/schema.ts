@@ -95,6 +95,7 @@ export interface OrganizationDocument {
   department?: string;
   departmentKey?: string;
   logoPath?: string;
+  applicationsOpen?: boolean;
   recruitment?: OrganizationRecruitment;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -103,12 +104,11 @@ export interface OrganizationDocument {
 
 export type DateEntryKind = 'event' | 'availability';
 
-export type AnnouncementMediaContentType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' | 'video/mp4' | 'video/webm';
-export type AnnouncementImageContentType = Extract<AnnouncementMediaContentType, `image/${string}`>;
+export type AnnouncementImageContentType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
 
 export interface AnnouncementMedia {
   storagePath: string;
-  contentType: AnnouncementMediaContentType;
+  contentType: AnnouncementImageContentType;
   sizeBytes: number;
   alt?: string;
 }

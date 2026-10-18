@@ -6,6 +6,16 @@
   "storage": {
     "rules": "storage.rules"
   },
+  "hosting": {
+    "site": "soar-a711e",
+    "public": "app/frontend/dist",
+    "rewrites": [
+      {
+        "glob": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
   "functions": [
     {
       "source": "app/backend",

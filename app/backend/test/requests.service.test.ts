@@ -18,6 +18,7 @@ class FakeRequestStore implements RequestStore {
   calendarEntries = new Map<string, CalendarEntryDocument>();
   applications = new Map<string, ApplicationDocument>();
   meetings = new Map<string, MeetingRequestDocument>();
+  closeIntakeBeforeNextApplicationCreate = false;
 
   async getAccount(uid: string) {
     return this.accounts.get(uid);
@@ -36,7 +37,17 @@ class FakeRequestStore implements RequestStore {
   }
 
   async createApplicationIfAbsent(applicationId: string, application: ApplicationDocument) {
-    if (this.applications.has(applicationId)) return 'exists' as const;
+    if (this.closeIntakeBeforeNextApplicationCreate) {
+      this.closeIntakeBeforeNextApplicationCreate = false;
+      const organization = this.organizations.get(application.orgId);
+      if (organization) organization.applicationsOpen = false;
+    }
+    const organization = this.organizations.get(application.orgId);
+    if (!organization) return 'organization_missing' as const;
+    if (organization.applicationsOpen === false) return 'closed' as const;
+    if (this.applications.has(applicationId) || [...this.applications.values()].some(
+      (existing) => existing.studentUid === application.studentUid && existing.orgId === application.orgId,
+    )) return 'exists' as const;
     this.applications.set(applicationId, application);
     return 'created' as const;
   }
@@ -91,6 +102,7 @@ class FakeRequestStore implements RequestStore {
 function seedStore() {
   const store = new FakeRequestStore();
   store.accounts.set('student', { uid: 'student', role: 'student', displayName: 'Student User' });
+  store.accounts.set('student2', { uid: 'student2', role: 'student', displayName: 'Second Student' });
   store.accounts.set('sponsor', { uid: 'sponsor', role: 'sponsor', displayName: 'Sponsor User' });
   store.accounts.set('owner', { uid: 'owner', role: 'student', displayName: 'Owner User' });
   store.accounts.set('officer', { uid: 'officer', role: 'student', displayName: 'Officer User' });
@@ -178,7 +190,7 @@ describe('request service application workflow', () => {
     expect(store.applications.size).toBe(1);
   });
 
-  it('prevents duplicate applications per student and opportunity', async () => {
+  it('prevents a second application by the same student when the organization posts a different opportunity', async () => {
     const service = serviceFor(store);
     const input = {
       organizationId: 'org1',
@@ -188,7 +200,102 @@ describe('request service application workflow', () => {
     };
 
     await service.confirmExternalApplication(user('student'), input);
+    const organization = store.organizations.get('org1')!;
+    organization.recruitment = { ...(organization.recruitment ?? {}), opportunityId: 'org1-member-2027', title: 'Member 2027' };
+    await expectCode(service.confirmExternalApplication(user('student'), { ...input, opportunityId: 'org1-member-2027' }), 'duplicate_application');
+    expect(store.applications.size).toBe(1);
+  });
+
+  it('serializes concurrent same-account organization submissions to one application', async () => {
+    const service = serviceFor(store);
+    const input = {
+      organizationId: 'org1',
+      opportunityId: 'org1-member-2026',
+      externalFormOpened: true,
+      confirmedExternalSubmission: true
+    };
+
+    const results = await Promise.allSettled(Array.from({ length: 8 }, () => service.confirmExternalApplication(user('student'), input)));
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(7);
+    expect(store.applications.size).toBe(1);
+    expect(await service.listMyApplications(user('student'))).toHaveLength(1);
+  });
+
+  it('keeps application uniqueness independent across accounts and organizations', async () => {
+    const service = serviceFor(store);
+    const organization = store.organizations.get('org1')!;
+    store.organizations.set('org2', {
+      ...organization,
+      orgId: 'org2',
+      name: 'Architecture Club',
+      slug: 'architecture-club',
+      recruitment: { ...(organization.recruitment ?? {}), opportunityId: 'org2-member-2026' }
+    });
+    const confirmation = (studentUid: string, organizationId: string, opportunityId: string) => service.confirmExternalApplication(user(studentUid), {
+      organizationId,
+      opportunityId,
+      externalFormOpened: true,
+      confirmedExternalSubmission: true
+    });
+
+    await Promise.all([
+      confirmation('student', 'org1', 'org1-member-2026'),
+      confirmation('student', 'org2', 'org2-member-2026'),
+      confirmation('student2', 'org1', 'org1-member-2026')
+    ]);
+    expect(store.applications.size).toBe(3);
+  });
+
+  it('rejects closed intake, including a close racing an already-open confirmation', async () => {
+    const service = serviceFor(store);
+    const input = {
+      organizationId: 'org1',
+      opportunityId: 'org1-member-2026',
+      externalFormOpened: true,
+      confirmedExternalSubmission: true
+    };
+    store.organizations.get('org1')!.applicationsOpen = false;
+    await expectCode(service.confirmExternalApplication(user('student'), input), 'applications_closed');
+    expect(store.applications.size).toBe(0);
+
+    store.organizations.get('org1')!.applicationsOpen = true;
+    store.closeIntakeBeforeNextApplicationCreate = true;
+    await expectCode(service.confirmExternalApplication(user('student'), input), 'applications_closed');
+    expect(store.organizations.get('org1')?.applicationsOpen).toBe(false);
+    expect(store.applications.size).toBe(0);
+  });
+
+  it('preserves an existing legacy application and its status across close and reopen', async () => {
+    const service = serviceFor(store);
+    store.applications.set('legacy-application-record', {
+      applicationId: 'legacy-application-record',
+      studentUid: 'student',
+      studentName: 'Student User',
+      orgId: 'org1',
+      organizationName: 'Robotics Club',
+      opportunityId: 'org1-member-2025',
+      opportunityTitle: 'Member 2025',
+      status: 'Declined',
+      externalFormOpenedAt: fixedNow,
+      externalSubmissionConfirmedAt: fixedNow,
+      createdAt: fixedNow,
+      updatedAt: fixedNow
+    });
+    const input = {
+      organizationId: 'org1',
+      opportunityId: 'org1-member-2026',
+      externalFormOpened: true,
+      confirmedExternalSubmission: true
+    };
+
+    store.organizations.get('org1')!.applicationsOpen = false;
+    await expect(service.listMyApplications(user('student'))).resolves.toMatchObject([{ id: 'legacy-application-record', stage: 'Declined' }]);
+    store.organizations.get('org1')!.applicationsOpen = true;
     await expectCode(service.confirmExternalApplication(user('student'), input), 'duplicate_application');
+    expect(store.applications.size).toBe(1);
+    expect(store.applications.get('legacy-application-record')?.status).toBe('Declined');
+    await expect(service.listMyApplications(user('student'))).resolves.toMatchObject([{ id: 'legacy-application-record', stage: 'Declined' }]);
   });
 
   it('blocks sponsor applications and non-manager applicant queues', async () => {
@@ -244,6 +351,9 @@ describe('request service meeting workflow', () => {
     expect(studentMeeting.status).toBe('Pending');
     expect(sponsorMeeting.status).toBe('Pending');
     expect(store.meetings.size).toBe(2);
+    expect(store.meetings.get(studentMeeting.id)).not.toHaveProperty('document');
+    expect(store.meetings.get(sponsorMeeting.id)).not.toHaveProperty('note');
+    expect(store.meetings.get(sponsorMeeting.id)).not.toHaveProperty('document');
   });
 
   it('creates validated private PDF document targets and stores matching request metadata', async () => {

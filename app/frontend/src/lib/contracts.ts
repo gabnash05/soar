@@ -1,4 +1,4 @@
-export type AccountKind = 'student' | 'sponsor';
+export type AccountKind = 'student' | 'sponsor' | 'admin';
 
 export type AccessStatus = 'active' | 'pending' | 'failed' | 'cancelled' | 'expired' | 'revoked' | 'missing';
 
@@ -18,7 +18,11 @@ export interface OrganizationGrant {
 
 export interface AccessEntitlement {
   status: AccessStatus;
+  /** @deprecated Kept for backend compatibility while UI copy uses feePhp/periodLabel. */
   annualFeePhp: 10;
+  feePhp?: 10;
+  periodMonths?: 6;
+  periodLabel?: string;
   startsAt?: string;
   expiresAt?: string;
   lastPaymentReference?: string;
@@ -31,19 +35,22 @@ export interface UserSession {
   displayName: string;
   accountKind: AccountKind;
   studentId?: string;
+  department?: string;
   companyName?: string;
+  departmentKey?: string;
   emailVerified: boolean;
   access: AccessEntitlement;
   officerGrants: OrganizationGrant[];
 }
 
-export type RegistrationRoleIntent = AccountKind;
+export type RegistrationRoleIntent = Exclude<AccountKind, 'admin'>;
 
 export interface RegistrationPaymentInput {
   role: RegistrationRoleIntent;
   email: string;
   displayName: string;
   studentId?: string;
+  department?: string;
   companyName?: string;
   returnUrl: string;
 }
@@ -58,6 +65,8 @@ export interface RegistrationPaymentIntent {
   fixture?: boolean;
 }
 
+export type RegistrationProfile = Pick<RegistrationPaymentInput, 'role' | 'email' | 'displayName' | 'studentId' | 'department' | 'companyName'>;
+
 export interface CheckoutStatus {
   intentId: string;
   status: AccessStatus;
@@ -65,7 +74,14 @@ export interface CheckoutStatus {
   providerReference?: string;
   message: string;
   canCreateAccount: boolean;
+  completed?: boolean;
+  registrationProfile?: RegistrationProfile | null;
   fixture?: boolean;
+}
+
+export interface RegistrationRecoveryResult {
+  accepted: true;
+  delivery: 'sent' | 'not_configured';
 }
 
 export interface RegisterAccountInput {
@@ -75,6 +91,7 @@ export interface RegisterAccountInput {
   displayName: string;
   role: RegistrationRoleIntent;
   studentId?: string;
+  department?: string;
   companyName?: string;
 }
 
@@ -85,6 +102,11 @@ export interface SignInInput {
 
 export interface NameChangeInput {
   displayName: string;
+}
+
+export interface NameChangeResult {
+  displayName: string;
+  nextChangeAllowedAt: string;
 }
 
 export interface EmailChangeInput {
@@ -105,10 +127,19 @@ export interface RenewalRequest {
   fixture?: boolean;
 }
 
+export interface RenewalCheckoutStatus {
+  renewalId: string;
+  status: 'pending' | 'confirmed' | 'failed';
+  accessExpiresAt?: string | null;
+  message: string;
+  fixture?: boolean;
+}
+
 export interface ApiProblem {
   code: string;
   message: string;
   action?: string;
+  nextChangeAllowedAt?: string;
 }
 
 export class ServiceUnavailableError extends Error {

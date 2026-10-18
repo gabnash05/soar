@@ -234,11 +234,13 @@ This lane wires it into the shared Firebase Functions app without duplicating pa
 - `GET /payments/registration/status?intentId=...`
 - `POST /payments/registration/complete`
 - `POST /payments/registration/recover`
+- `POST /payments/registration/recover/accept`
 - `POST /payments/renewals/start`
+- `GET /payments/renewals/status?renewalId=...`
 - `GET /payments/access/status`
 - `POST /webhooks/paymongo`
 
-The payment module owns checkout intents, PayMongo webhook verification, exactly-once entitlement grants, renewal math, paid-unfinished registration recovery, and payment-specific docs/tests.
+The payment module owns checkout intents, PayMongo webhook verification, exactly-once entitlement grants, renewal math, paid-unfinished registration recovery by one-time code and secure browser binding, and payment-specific docs/tests.
 The identity helper boundary remains `createPaidAccountFromConfirmedRegistration(input): Promise<{ uid: string; alreadyProcessed: boolean }>`.
 Auth user creation is not treated as Firestore-transaction-atomic; idempotent provider-event locks and recoverable cross-service handling are used.
 
@@ -261,7 +263,7 @@ Rules block these direct SDK bypasses:
 - private application or meeting reads by unrelated users;
 - collection scans for private application and meeting collections.
 
-Storage rules allow active verified users to read public organization logos and announcement media. Only an organization owner or active officer grant can write media under that organization's logo or announcement media paths. Logo/image uploads are JPEG, PNG, WebP, or GIF with a 5 MiB limit; announcement media also allows one MP4/WebM video up to 25 MiB through the backend media-target contract.
+Storage rules allow active verified users to read public organization logos and announcement images. Only an organization owner or active officer grant can write images under that organization's logo or announcement paths. Images are JPEG, PNG, WebP, or GIF with a 5 MiB per-image limit.
 
 Private formal meeting request PDFs live under Storage but direct SDK reads are denied. The requester can upload a PDF only with matching path/custom metadata, and later reads go through the authenticated backend streaming route so current requester/officer authorization, actual object metadata, and revoked grants are rechecked without issuing public bearer download URLs.
 

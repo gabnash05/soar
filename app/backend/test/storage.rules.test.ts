@@ -37,7 +37,7 @@ function pdfBlob(size = 16, type = 'application/pdf') {
   return new Blob([new Uint8Array(size).fill(2)], { type });
 }
 
-function videoBlob(size = 16, type = 'video/mp4') {
+function unsupportedVideoBlob(size = 16, type = 'video/mp4') {
   return new Blob([new Uint8Array(size).fill(3)], { type });
 }
 
@@ -128,10 +128,10 @@ afterAll(async () => {
 });
 
 describe('storage organization image boundaries', () => {
-  it('allows organization owners and active officers to upload organization images and bounded announcement videos', async () => {
+  it('allows organization-owned image uploads and rejects announcement videos' , async () => {
     await assertSucceeds(storageFor('owner').ref('organization-logos/org1/logo.png').put(imageBlob(), { contentType: 'image/png' }));
     await assertSucceeds(storageFor('officer').ref('announcement-images/org1/post1/image.webp').put(imageBlob(16, 'image/webp'), { contentType: 'image/webp' }));
-    await assertSucceeds(storageFor('officer').ref('announcement-images/org1/post1/clip.mp4').put(videoBlob(), { contentType: 'video/mp4' }));
+    await assertFails(storageFor('officer').ref('announcement-images/org1/post1/clip.mp4').put(unsupportedVideoBlob(), { contentType: 'video/mp4' }));
   });
 
   it('blocks foreign, unverified, expired, and anonymous uploads', async () => {
@@ -144,7 +144,7 @@ describe('storage organization image boundaries', () => {
   it('blocks invalid image types and oversized files', async () => {
     await assertFails(storageFor('owner').ref('organization-logos/org1/readme.txt').put(imageBlob(16, 'text/plain'), { contentType: 'text/plain' }));
     await assertFails(storageFor('owner').ref('organization-logos/org1/huge.png').put(imageBlob(5 * 1024 * 1024 + 1), { contentType: 'image/png' }));
-    await assertFails(storageFor('officer').ref('announcement-images/org1/post1/huge.mp4').put(videoBlob(25 * 1024 * 1024 + 1), { contentType: 'video/mp4' }));
+    await assertFails(storageFor('officer').ref('announcement-images/org1/post1/clip.webm').put(unsupportedVideoBlob(16, 'video/webm'), { contentType: 'video/webm' }));
   });
 
   it('allows active users to read images while blocking expired users', async () => {

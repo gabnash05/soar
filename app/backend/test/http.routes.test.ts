@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
   updateDisplayName: vi.fn(),
   requestVerifiedEmailChange: vi.fn(),
   approveOfficerGrant: vi.fn(),
+  assignAdminOfficerGrant: vi.fn(),
   assignInitialOrganizationOwner: vi.fn(),
+  listAdminOrganizations: vi.fn(),
+  searchAdminStudents: vi.fn(),
   revokeOfficerGrant: vi.fn(),
   attachAuthToPaymentRequest: vi.fn((req: unknown) => req),
   sendPaymentResult: vi.fn(async (res: any, resultPromise: Promise<any>) => {
@@ -24,9 +27,11 @@ const mocks = vi.hoisted(() => ({
   createAnnouncementImageTarget: vi.fn(),
   createAnnouncementMediaTargets: vi.fn(),
   createAnnouncement: vi.fn(),
+  updateAnnouncement: vi.fn(),
   deleteAnnouncement: vi.fn(),
   deleteAnnouncementComment: vi.fn(),
   getAnnouncement: vi.fn(),
+  getMediaDownloadUrl: vi.fn(),
   getStudentDepartmentCounts: vi.fn(),
   setAnnouncementLike: vi.fn(),
   listAnnouncementComments: vi.fn(),
@@ -64,8 +69,11 @@ vi.mock('../src/identity/accountSettings', () => ({
 }));
 vi.mock('../src/organizations/service', () => ({
   approveOfficerGrant: mocks.approveOfficerGrant,
+  assignAdminOfficerGrant: mocks.assignAdminOfficerGrant,
   assignInitialOrganizationOwner: mocks.assignInitialOrganizationOwner,
+  listAdminOrganizations: mocks.listAdminOrganizations,
   revokeOfficerGrant: mocks.revokeOfficerGrant,
+  searchAdminStudents: mocks.searchAdminStudents,
 }));
 vi.mock('../src/paymentsAdapter', () => ({
   attachAuthToPaymentRequest: mocks.attachAuthToPaymentRequest,
@@ -83,6 +91,7 @@ vi.mock('../src/content/service', () => ({
   deleteAnnouncementComment: mocks.deleteAnnouncementComment,
   deleteDateEntry: mocks.deleteDateEntry,
   getAnnouncement: mocks.getAnnouncement,
+  getMediaDownloadUrl: mocks.getMediaDownloadUrl,
   getOrganizationProfile: mocks.getOrganizationProfile,
   getStudentDepartmentCounts: mocks.getStudentDepartmentCounts,
   listAnnouncementComments: mocks.listAnnouncementComments,
@@ -91,6 +100,7 @@ vi.mock('../src/content/service', () => ({
   listOrganizations: mocks.listOrganizations,
   scopedDateEntryQuery: mocks.scopedDateEntryQuery,
   setAnnouncementLike: mocks.setAnnouncementLike,
+  updateAnnouncement: mocks.updateAnnouncement,
   updateAnnouncementComment: mocks.updateAnnouncementComment,
   updateDateEntry: mocks.updateDateEntry,
   updateOrganizationProfile: mocks.updateOrganizationProfile,
@@ -120,7 +130,9 @@ describe('SOAR HTTP route contracts', () => {
       getCheckoutStatus: vi.fn(async () => ({ status: 200, body: { intentId: 'intent1', status: 'pending' } })),
       registerAccount: vi.fn(async () => ({ status: 201, body: { uid: 'user1' } })),
       recoverPaidRegistration: vi.fn(async () => ({ status: 200, body: { recovered: true } })),
+      acceptPaidRegistrationRecovery: vi.fn(async () => ({ status: 200, body: { accepted: true } })),
       requestManualRenewal: vi.fn(async () => ({ status: 200, body: { renewalId: 'renewal1' } })),
+      getRenewalStatus: vi.fn(async () => ({ status: 200, body: { renewalId: 'renewal1', status: 'pending' } })),
       getAccessStatus: vi.fn(async () => ({ status: 200, body: { status: 'active' } })),
     });
     mocks.scopedDateEntryQuery.mockImplementation((orgId: string, query: unknown) => ({ ...(query as object), organizationId: orgId }));
@@ -140,6 +152,82 @@ describe('SOAR HTTP route contracts', () => {
     });
   });
 
+  it('allows credentialed browser requests only from the configured app origin', async () => {
+    const previousAppUrl = process.env.SOAR_APP_BASE_URL;
+    process.env.SOAR_APP_BASE_URL = 'http://127.0.0.1:45656';
+    try {
+      await withApiServer(async (baseUrl) => {
+        const allowed = await fetch(`${baseUrl}/session`, {
+          method: 'OPTIONS',
+          headers: {
+            origin: 'http://127.0.0.1:45656',
+            'access-control-request-method': 'GET',
+            'access-control-request-headers': 'authorization',
+          },
+        });
+        expect(allowed.status).toBe(204);
+        expect(allowed.headers.get('access-control-allow-origin')).toBe('http://127.0.0.1:45656');
+        expect(allowed.headers.get('access-control-allow-credentials')).toBe('true');
+
+        const untrusted = await fetch(`${baseUrl}/session`, {
+          method: 'OPTIONS',
+          headers: {
+            origin: 'https://untrusted.example',
+            'access-control-request-method': 'GET',
+            'access-control-request-headers': 'authorization',
+          },
+        });
+        expect(untrusted.status).toBe(404);
+        expect(untrusted.headers.get('access-control-allow-origin')).toBeNull();
+        expect(untrusted.headers.get('access-control-allow-credentials')).toBeNull();
+      });
+    } finally {
+      if (previousAppUrl === undefined) delete process.env.SOAR_APP_BASE_URL;
+      else process.env.SOAR_APP_BASE_URL = previousAppUrl;
+    }
+  });
+
+  it('returns an authenticated signed-media URL without exposing storage credentials', async () => {
+    const user = { uid: 'user1', email_verified: true };
+    const path = 'announcement-images/org-1/post-1/photo.png';
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.getMediaDownloadUrl.mockResolvedValue({ url: 'https://project.supabase.co/storage/v1/object/sign/private/photo.png?token=short-lived' });
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/storage/download-url?path=${encodeURIComponent(path)}`, {
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ url: 'https://project.supabase.co/storage/v1/object/sign/private/photo.png?token=short-lived' });
+    });
+
+    expect(mocks.getMediaDownloadUrl).toHaveBeenCalledWith(user, path);
+  });
+
+  it('disables payment and registration routes in an unpaid preview without invoking provider handlers', async () => {
+    const previous = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'true';
+    try {
+      await withApiServer(async (baseUrl) => {
+        const registration = await fetch(`${baseUrl}/payments/registration/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(registration.status).toBe(503);
+        await expect(registration.json()).resolves.toMatchObject({ code: 'payments_unavailable' });
+
+        const webhook = await fetch(`${baseUrl}/webhooks/paymongo`, { method: 'POST', body: '{}' });
+        expect(webhook.status).toBe(503);
+        await expect(webhook.json()).resolves.toMatchObject({ code: 'payments_unavailable' });
+      });
+      expect(mocks.paymentHandlers).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previous;
+    }
+  });
+
   it('returns authenticated session payloads through the /api prefix', async () => {
     mocks.getUserSession.mockResolvedValue({ uid: 'user1', email: 'user@example.test', access: { status: 'active' } });
 
@@ -151,6 +239,51 @@ describe('SOAR HTTP route contracts', () => {
 
     expect(mocks.requireBearerToken).toHaveBeenCalled();
     expect(mocks.getUserSession).toHaveBeenCalledWith({ uid: 'user1', email_verified: true });
+  });
+
+  it('preserves the name-save response DTO without claiming it is a complete session', async () => {
+    const user = { uid: 'user1', email_verified: true };
+    const result = { displayName: 'New Name', nextChangeAllowedAt: '2030-01-01T00:00:00.000Z' };
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.updateDisplayName.mockResolvedValue(result);
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/account/display-name`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ displayName: 'New Name' }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual(result);
+    });
+
+    expect(mocks.updateDisplayName).toHaveBeenCalledWith(user, { displayName: 'New Name' });
+    expect(mocks.getUserSession).not.toHaveBeenCalled();
+  });
+
+  it('returns cooldown retry timing as structured data with a safe plain-language message', async () => {
+    const nextChangeAllowedAt = '2030-01-02T03:04:05.000Z';
+    mocks.updateDisplayName.mockRejectedValue(new AppError(
+      'name_change_cooldown',
+      'Name changes are limited to once every 30 days. Please try again later.',
+      409,
+      undefined,
+      nextChangeAllowedAt,
+    ));
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/account/display-name`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ displayName: 'New Name' }),
+      });
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        code: 'name_change_cooldown',
+        message: 'Name changes are limited to once every 30 days. Please try again later.',
+        nextChangeAllowedAt,
+      });
+    });
   });
 
   it('keeps content mutations behind the established organization route contract', async () => {
@@ -173,9 +306,29 @@ describe('SOAR HTTP route contracts', () => {
     );
   });
 
+  it('uses the existing organization profile patch contract for intake changes', async () => {
+    const user = { uid: 'approved-officer', email_verified: true };
+    const updatedProfile = { id: 'robotics', applicationsOpen: false };
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.updateOrganizationProfile.mockResolvedValue(updatedProfile);
+
+    await withApiServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/organizations/robotics`, {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ applicationsOpen: false }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual(updatedProfile);
+    });
+
+    expect(mocks.updateOrganizationProfile).toHaveBeenCalledWith(user, 'robotics', { applicationsOpen: false });
+  });
+
   it('mounts department counts and revised announcement routes without exposing student lists', async () => {
     mocks.getStudentDepartmentCounts.mockResolvedValue({ organizationId: 'computer-engineering', department: 'Computer Engineering Department', departmentKey: 'computer engineering department', registeredStudentCount: 2 });
     mocks.createAnnouncementMediaTargets.mockResolvedValue({ announcementId: 'post1', items: [] });
+    mocks.updateAnnouncement.mockResolvedValue({ id: 'post1', body: 'Revised post' });
     mocks.updateAnnouncementComment.mockResolvedValue({ id: 'comment1', body: 'Updated', viewerCanEdit: true });
     mocks.deleteAnnouncementComment.mockResolvedValue({ announcementId: 'post1', commentId: 'comment1', deleted: true });
     mocks.getAnnouncement.mockResolvedValue({ id: 'post1', deepLinkPath: '/app?announcementId=post1' });
@@ -189,6 +342,11 @@ describe('SOAR HTTP route contracts', () => {
       expect(removedAdminStats.status).toBe(404);
 
       await expect((await fetch(`${baseUrl}/api/announcements/post1`, { headers: { authorization: 'Bearer test-token' } })).json()).resolves.toMatchObject({ deepLinkPath: '/app?announcementId=post1' });
+      expect((await fetch(`${baseUrl}/api/organizations/robotics/announcements/post1`, {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ body: 'Revised post' }),
+      })).status).toBe(200);
       expect((await fetch(`${baseUrl}/api/organizations/robotics/announcements/media-targets`, {
         method: 'POST',
         headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
@@ -207,8 +365,81 @@ describe('SOAR HTTP route contracts', () => {
 
     expect(mocks.getStudentDepartmentCounts).toHaveBeenCalledWith({ uid: 'user1', email_verified: true }, 'computer-engineering');
     expect(mocks.createAnnouncementMediaTargets).toHaveBeenCalled();
+    expect(mocks.updateAnnouncement).toHaveBeenCalledWith({ uid: 'user1', email_verified: true }, 'robotics', 'post1', { body: 'Revised post' });
     expect(mocks.updateAnnouncementComment).toHaveBeenCalled();
     expect(mocks.deleteAnnouncementComment).toHaveBeenCalled();
+  });
+
+  it('keeps admin provisioning routes behind the trusted soarAdmin claim', async () => {
+    mocks.requireBearerToken.mockRejectedValueOnce(new AppError('unauthenticated', 'Sign in is required.', 401));
+
+    await withApiServer(async (baseUrl) => {
+      const publicSearch = await fetch(`${baseUrl}/api/admin/students?q=Mara`);
+      expect(publicSearch.status).toBe(401);
+
+      const ordinarySearch = await fetch(`${baseUrl}/api/admin/students?q=Mara`, { headers: { authorization: 'Bearer test-token' } });
+      expect(ordinarySearch.status).toBe(403);
+      const ordinaryOrganizations = await fetch(`${baseUrl}/api/admin/organizations`, { headers: { authorization: 'Bearer test-token' } });
+      expect(ordinaryOrganizations.status).toBe(403);
+      const ordinaryAssignment = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ uid: 'student-1' }),
+      });
+      expect(ordinaryAssignment.status).toBe(403);
+      const ordinaryCreate = await fetch(`${baseUrl}/api/admin/organizations`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      expect(ordinaryCreate.status).toBe(403);
+    });
+
+    expect(mocks.searchAdminStudents).not.toHaveBeenCalled();
+    expect(mocks.listAdminOrganizations).not.toHaveBeenCalled();
+    expect(mocks.assignAdminOfficerGrant).not.toHaveBeenCalled();
+    expect(mocks.assignInitialOrganizationOwner).not.toHaveBeenCalled();
+  });
+
+  it('serves bounded admin student and organization results and idempotent scoped grants', async () => {
+    mocks.requireBearerToken.mockResolvedValue({ uid: 'trusted-admin', email_verified: true, soarAdmin: true });
+    mocks.searchAdminStudents.mockResolvedValue({ items: [{ uid: 'student-1', displayName: 'Mara Santos' }] });
+    mocks.listAdminOrganizations.mockResolvedValue({ items: [{ id: 'robotics', name: 'Robotics Club' }] });
+    mocks.assignInitialOrganizationOwner.mockResolvedValue({ orgId: 'robotics' });
+    mocks.assignAdminOfficerGrant.mockResolvedValue({ orgId: 'robotics', uid: 'student-1', status: 'approved', alreadyAssigned: true });
+
+    await withApiServer(async (baseUrl) => {
+      const students = await fetch(`${baseUrl}/api/admin/students?q=Mara`, { headers: { authorization: 'Bearer test-token' } });
+      expect(students.status).toBe(200);
+      await expect(students.json()).resolves.toEqual({ items: [{ uid: 'student-1', displayName: 'Mara Santos' }] });
+
+      const organizations = await fetch(`${baseUrl}/api/admin/organizations`, { headers: { authorization: 'Bearer test-token' } });
+      expect(organizations.status).toBe(200);
+      await expect(organizations.json()).resolves.toEqual({ items: [{ id: 'robotics', name: 'Robotics Club' }] });
+
+      const created = await fetch(`${baseUrl}/api/admin/organizations`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ orgId: 'robotics', name: 'Robotics Club', slug: 'robotics', ownerUid: 'student-1' }),
+      });
+      expect(created.status).toBe(201);
+
+      const assignment = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ uid: 'student-1' }),
+      });
+      expect(assignment.status).toBe(200);
+      await expect(assignment.json()).resolves.toMatchObject({ alreadyAssigned: true });
+    });
+
+    expect(mocks.searchAdminStudents).toHaveBeenCalledWith({ q: 'Mara' });
+    expect(mocks.listAdminOrganizations).toHaveBeenCalledWith({});
+    expect(mocks.assignInitialOrganizationOwner).toHaveBeenCalledWith(
+      { orgId: 'robotics', name: 'Robotics Club', slug: 'robotics', ownerUid: 'student-1' },
+      'trusted-admin',
+    );
+    expect(mocks.assignAdminOfficerGrant).toHaveBeenCalledWith('robotics', { uid: 'student-1' }, 'trusted-admin');
   });
 
   it('mounts request workflow routes with explicit application confirmation', async () => {
@@ -248,6 +479,71 @@ describe('SOAR HTTP route contracts', () => {
       },
     );
     expect(mocks.requestService.createMeetingDocumentTarget).toHaveBeenCalled();
+  });
+
+  it('disables payment actions while preserving authenticated access-status reads in preview mode', async () => {
+    const previous = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'true';
+    try {
+      const handlers = mocks.paymentHandlers();
+      await withApiServer(async (baseUrl) => {
+        const start = await fetch(`${baseUrl}/api/payments/registration/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(start.status).toBe(503);
+
+        const recovery = await fetch(`${baseUrl}/api/payments/registration/recover/accept`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ intentId: 'intent1', recoveryCode: 'code' }),
+        });
+        expect(recovery.status).toBe(503);
+
+        const renewal = await fetch(`${baseUrl}/api/payments/renewals/status?renewalId=renewal1`, {
+          headers: { authorization: 'Bearer test-token' },
+        });
+        expect(renewal.status).toBe(503);
+
+        const access = await fetch(`${baseUrl}/api/payments/access/status`, {
+          headers: { authorization: 'Bearer test-token' },
+        });
+        expect(access.status).toBe(200);
+        await expect(access.json()).resolves.toMatchObject({ status: 'active' });
+      });
+      expect(handlers.startRegistrationPayment).not.toHaveBeenCalled();
+      expect(handlers.acceptPaidRegistrationRecovery).not.toHaveBeenCalled();
+      expect(handlers.getRenewalStatus).not.toHaveBeenCalled();
+      expect(handlers.getAccessStatus).toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previous;
+    }
+  });
+
+  it('mounts paid-registration recovery and same-user renewal status routes under /api', async () => {
+    const handlers = mocks.paymentHandlers();
+
+    await withApiServer(async (baseUrl) => {
+      const accepted = await fetch(`${baseUrl}/api/payments/registration/recover/accept`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ intentId: 'intent1', recoveryCode: 'one-time-code' }),
+      });
+      expect(accepted.status).toBe(200);
+      await expect(accepted.json()).resolves.toEqual({ accepted: true });
+
+      const renewal = await fetch(`${baseUrl}/api/payments/renewals/status?renewalId=renewal1`, {
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(renewal.status).toBe(200);
+      await expect(renewal.json()).resolves.toMatchObject({ renewalId: 'renewal1', status: 'pending' });
+    });
+
+    expect(handlers.acceptPaidRegistrationRecovery).toHaveBeenCalled();
+    expect(mocks.requireBearerToken).toHaveBeenCalled();
+    expect(handlers.getRenewalStatus).toHaveBeenCalled();
   });
 
   it('returns plain JSON problem responses for app errors and unknown routes', async () => {

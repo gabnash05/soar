@@ -5,7 +5,7 @@ import { makeSession } from '../test/createMockGateway';
 describe('trusted session helpers', () => {
   it('treats backend active grants as approved officer access', () => {
     const session = makeSession({
-      officerGrants: [{ organizationId: 'coding', organizationName: 'Coding Society', status: 'active' }],
+      officerGrants: [{ organizationId: 'robotics', organizationName: 'Computer Engineering Department', status: 'active' }],
     });
 
     expect(hasApprovedOfficerGrant(session)).toBe(true);

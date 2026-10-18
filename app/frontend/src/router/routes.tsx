@@ -18,6 +18,7 @@ import { RegistrationIntentPage } from '../pages/access/RegistrationIntentPage';
 import { AccessSettingsPage } from '../pages/settings/AccessSettingsPage';
 import { AccountSettingsPage } from '../pages/settings/AccountSettingsPage';
 import { OrganizationSettingsPage } from '../pages/settings/OrganizationSettingsPage';
+import { AdminProvisioningPage } from '../pages/admin/AdminProvisioningPage';
 import {
   ApplicationsPage,
   DirectoryPage,
@@ -32,6 +33,7 @@ const GuardLayout = ({
   requireActiveAccess = false,
   requireStudent = false,
   requireOfficerGrant = false,
+  requireAdmin = false,
   allowExpired = false,
 }: {
   requireSession?: boolean;
@@ -39,15 +41,30 @@ const GuardLayout = ({
   requireActiveAccess?: boolean;
   requireStudent?: boolean;
   requireOfficerGrant?: boolean;
+  requireAdmin?: boolean;
   allowExpired?: boolean;
 }) => {
   const { session, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) return <main className="route-loading"><LoadingBlock label="Loading session" /></main>;
+  if (loading) return <main className="grid min-h-screen place-items-center p-6"><LoadingBlock label="Loading session" /></main>;
 
   if (requireSession && !session) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  if (session?.accountKind === 'admin' && !requireAdmin) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  if (session && requireAdmin && session.accountKind !== 'admin') {
+    return (
+      <main className="mx-auto grid min-h-screen w-[min(760px,100%)] place-items-center p-6">
+        <StateBlock title="Admin access required" symbol="!">
+          This provisioning page is available only to a trusted SOAR administrator.
+        </StateBlock>
+      </main>
+    );
   }
 
   if (session && requireVerified && !session.emailVerified) {
@@ -64,7 +81,7 @@ const GuardLayout = ({
 
   if (session && requireStudent && !isStudentAccount(session)) {
     return (
-      <main className="page-narrow">
+      <main className="mx-auto grid min-h-screen w-[min(760px,100%)] place-items-center p-6">
         <StateBlock symbol="0" title="Student-only area">
           Sponsors can browse organizations and manage meeting requests, but application tools are for student accounts.
         </StateBlock>
@@ -74,7 +91,7 @@ const GuardLayout = ({
 
   if (session && requireOfficerGrant && !hasApprovedOfficerGrant(session)) {
     return (
-      <main className="page-narrow">
+      <main className="mx-auto grid min-h-screen w-[min(760px,100%)] place-items-center p-6">
         <StateBlock symbol="!" title="Officer access not active">
 Organization management controls appear only where your account has access.
         </StateBlock>
@@ -87,7 +104,8 @@ Organization management controls appear only where your account has access.
 
 const PublicOnly = ({ children }: { children: ReactNode }) => {
   const { session, loading } = useAuth();
-  if (loading) return <main className="route-loading"><LoadingBlock label="Loading session" /></main>;
+  if (loading) return <main className="grid min-h-screen place-items-center p-6"><LoadingBlock label="Loading session" /></main>;
+  if (session?.accountKind === 'admin') return <Navigate to="/admin" replace />;
   if (session?.emailVerified && hasActiveAccess(session)) return <Navigate to="/app" replace />;
   if (session && !session.emailVerified) return <Navigate to="/access/verify-email" replace />;
   if (session && !hasActiveAccess(session)) return <Navigate to="/settings/access" replace />;
@@ -95,7 +113,7 @@ const PublicOnly = ({ children }: { children: ReactNode }) => {
 };
 
 const NotFoundPage = () => (
-  <main className="page-narrow">
+  <main className="mx-auto grid min-h-screen w-[min(760px,100%)] place-items-center p-6">
     <StateBlock
       symbol="?"
       title="Page not found"
@@ -142,6 +160,16 @@ export const router = createBrowserRouter([
         <CheckoutStatusPage />
       </PublicOnly>
     ),
+  },
+  {
+    element: <GuardLayout requireSession requireAdmin />,
+    children: [
+      {
+        path: '/admin',
+        element: <AppShell />,
+        children: [{ index: true, element: <AdminProvisioningPage /> }],
+      },
+    ],
   },
   {
     element: <GuardLayout requireSession />,

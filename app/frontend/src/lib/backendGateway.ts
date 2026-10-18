@@ -4,22 +4,25 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
-  updateProfile,
 } from '@firebase/auth';
 import {
   type AccessEntitlement,
   type CheckoutStatus,
   type EmailChangeInput,
   type NameChangeInput,
+  type NameChangeResult,
   type RegisterAccountInput,
   type RegistrationPaymentInput,
   type RegistrationPaymentIntent,
+  type RegistrationRecoveryResult,
+  type RenewalCheckoutStatus,
   type RenewalRequest,
   type RenewalRequestInput,
   type SignInInput,
   type UserSession,
 } from './contracts';
 import { apiBaseUrl, apiFetch, authHeaders } from './apiClient';
+import { UserFacingError } from './safeErrors';
 import { getFirebaseConfigStatus, getFirebaseRuntime } from './firebase';
 import { createFixtureGateway } from './fixtures';
 
@@ -32,11 +35,14 @@ export interface BackendGateway {
   sendPasswordRecovery(email: string): Promise<void>;
   startRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
   getCheckoutStatus(intentId: string): Promise<CheckoutStatus>;
+  requestPaidRegistrationRecovery(email: string): Promise<RegistrationRecoveryResult>;
+  acceptPaidRegistrationRecovery(intentId: string, recoveryCode: string): Promise<void>;
   registerAccount(input: RegisterAccountInput): Promise<UserSession>;
   resendEmailVerification(): Promise<void>;
   requestManualRenewal(input: RenewalRequestInput): Promise<RenewalRequest>;
+  getRenewalStatus(renewalId: string): Promise<RenewalCheckoutStatus>;
   getAccessStatus(): Promise<UserSession['access']>;
-  updateDisplayName(input: NameChangeInput): Promise<UserSession>;
+  updateDisplayName(input: NameChangeInput): Promise<NameChangeResult>;
   requestEmailChange(input: EmailChangeInput): Promise<void>;
 }
 
@@ -55,6 +61,9 @@ const normalizeAccess = (access: RawAccess): AccessEntitlement => {
   return {
     status: normalizedStatus,
     annualFeePhp: 10,
+    feePhp: access.feePhp ?? 10,
+    periodMonths: access.periodMonths ?? 6,
+    periodLabel: access.periodLabel ?? '6 months',
     startsAt: access.startsAt,
     expiresAt: access.expiresAt ?? access.accessExpiresAt,
     lastPaymentReference: access.lastPaymentReference ?? access.latestPaymentId ?? undefined,
@@ -62,8 +71,14 @@ const normalizeAccess = (access: RawAccess): AccessEntitlement => {
   };
 };
 
-const mapSession = (session: UserSession): UserSession => ({
+type RawUserSession = Omit<UserSession, 'accountKind'> & { accountKind?: string };
+
+const normalizeAccountKind = (accountKind: string | undefined): UserSession['accountKind'] =>
+  accountKind === 'admin' ? 'admin' : accountKind === 'sponsor' ? 'sponsor' : 'student';
+
+const mapSession = (session: RawUserSession): UserSession => ({
   ...session,
+  accountKind: normalizeAccountKind(session.accountKind),
   access: normalizeAccess(session.access),
   officerGrants: session.officerGrants ?? [],
 });
@@ -81,14 +96,14 @@ const createProductionGateway = (): BackendGateway => ({
     const { auth } = getFirebaseRuntime();
     if (!auth.currentUser) return null;
     await reload(auth.currentUser);
-    const session = await apiFetch<UserSession>('/session', { headers: await authHeaders() });
+    const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
     return mapSession({ ...session, emailVerified: auth.currentUser.emailVerified });
   },
 
   async signIn(input) {
     const { auth } = getFirebaseRuntime();
     const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
-    const session = await apiFetch<UserSession>('/session', { headers: await authHeaders() });
+    const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
     return mapSession({ ...session, emailVerified: credential.user.emailVerified });
   },
 
@@ -115,10 +130,24 @@ const createProductionGateway = (): BackendGateway => ({
     return apiFetch<CheckoutStatus>(`/payments/registration/status?intentId=${encodeURIComponent(intentId)}`);
   },
 
+  async requestPaidRegistrationRecovery(email) {
+    return apiFetch<RegistrationRecoveryResult>('/payments/registration/recover', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async acceptPaidRegistrationRecovery(intentId, recoveryCode) {
+    await apiFetch('/payments/registration/recover/accept', {
+      method: 'POST',
+      body: JSON.stringify({ intentId, recoveryCode }),
+    });
+  },
+
   async registerAccount(input) {
     const checkout = await this.getCheckoutStatus(input.intentId);
-    if (!checkout.canCreateAccount || checkout.status !== 'active') {
-      throw new Error('Payment is not confirmed yet. Account creation remains locked.');
+    if (!checkout.canCreateAccount) {
+      throw new UserFacingError('Payment is not confirmed yet. Account creation remains locked.');
     }
 
     await apiFetch<{ uid: string; completed: boolean; accessExpiresAt?: string }>('/payments/registration/complete', {
@@ -129,14 +158,14 @@ const createProductionGateway = (): BackendGateway => ({
     const { auth } = getFirebaseRuntime();
     const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
     await sendEmailVerification(credential.user);
-    const session = await apiFetch<UserSession>('/session', { headers: await authHeaders() });
+    const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
 
     return mapSession({ ...session, emailVerified: credential.user.emailVerified });
   },
 
   async resendEmailVerification() {
     const { auth } = getFirebaseRuntime();
-    if (!auth.currentUser) throw new Error('Sign in before requesting a verification email.');
+    if (!auth.currentUser) throw new UserFacingError('Sign in before requesting a verification email.');
     await sendEmailVerification(auth.currentUser);
   },
 
@@ -148,27 +177,28 @@ const createProductionGateway = (): BackendGateway => ({
     });
   },
 
+  async getRenewalStatus(renewalId) {
+    return apiFetch<RenewalCheckoutStatus>(`/payments/renewals/status?renewalId=${encodeURIComponent(renewalId)}`, {
+      headers: await authHeaders(),
+    });
+  },
+
   async getAccessStatus() {
     const access = await apiFetch<RawAccess>('/payments/access/status', { headers: await authHeaders() });
     return normalizeAccess(access);
   },
 
   async updateDisplayName(input) {
-    const { auth } = getFirebaseRuntime();
-    if (auth.currentUser) {
-      await updateProfile(auth.currentUser, { displayName: input.displayName });
-    }
-    const session = await apiFetch<UserSession>('/account/display-name', {
+    return apiFetch<NameChangeResult>('/account/display-name', {
       method: 'POST',
       headers: await authHeaders(),
       body: JSON.stringify(input),
     });
-    return mapSession(session);
   },
 
   async requestEmailChange(input) {
     const { auth } = getFirebaseRuntime();
-    if (!auth.currentUser || !auth.currentUser.email) throw new Error('Sign in before changing email.');
+    if (!auth.currentUser || !auth.currentUser.email) throw new UserFacingError('Sign in before changing email.');
     await apiFetch('/account/email-change', {
       method: 'POST',
       headers: await authHeaders(),

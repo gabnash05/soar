@@ -1,20 +1,31 @@
 import { apiFetch, authHeaders } from '../../lib/apiClient';
 import type { ApplicationStage, MeetingStatus, UserSession } from '../../lib/contracts';
-import { storageDownloadUrl, uploadToStorageTarget, type ImageUploadTarget } from '../../lib/storageUploads';
+import {
+  storageDownloadUrl,
+  uploadMeetingDocumentToTarget,
+  uploadToStorageTarget,
+  validateAnnouncementMediaFiles,
+  type ImageUploadTarget,
+  type MeetingDocumentUploadTarget,
+} from '../../lib/storageUploads';
 import type {
   Announcement,
   AnnouncementComment,
+  AnnouncementPage,
   AnnouncementInput,
   ApplicationConfirmationInput,
   ApplicationRecord,
   DateEntry,
   DateEntryInput,
   MeetingRequest,
+  MeetingRequestDocument,
   MeetingRequestInput,
   OfficerDashboard,
+  OrganizationPage,
   OrganizationProfile,
   OrganizationProfileInput,
   OrganizationSummary,
+  OrganizationDepartmentStudentCount,
   WorkflowDataClient,
   WorkflowMutationResult,
   WorkflowQueryResult,
@@ -56,13 +67,15 @@ function recruitmentOpportunityId(organizationId: string, title: string, explici
   return explicitId || `${organizationId}-${slugPart(title || 'Recruitment')}`;
 }
 
-function imageMetadata(file: File) {
+function fileMetadata(file: File) {
   return {
     fileName: file.name,
     contentType: file.type,
     sizeBytes: file.size,
   };
 }
+
+const imageMetadata = fileMetadata;
 
 function listItems<T>(value: T[] | ListEnvelope<T>): T[] {
   if (Array.isArray(value)) return value;
@@ -92,11 +105,29 @@ function toBackendMeetingStatus(status: Exclude<MeetingStatus, 'Pending'>): Excl
   return status;
 }
 
+async function mapWorkflowImage(raw: unknown, fallbackAlt = 'Announcement image'): Promise<NonNullable<Announcement['media']>[number] | undefined> {
+  const item = asRecord(raw);
+  const storagePath = pickString(item.storagePath || item.imageStoragePath);
+  const url = pickString(item.url || item.imageUrl) || await safeStorageUrl(storagePath);
+  if (!url && !storagePath) return undefined;
+  return {
+    url,
+    alt: pickString(item.alt || item.imageAlt, fallbackAlt),
+    storagePath: storagePath || undefined,
+    contentType: pickString(item.contentType) || undefined,
+    sizeBytes: pickNumber(item.sizeBytes, 0) || undefined,
+  };
+}
+
 async function mapAnnouncement(raw: unknown): Promise<Announcement> {
   const item = asRecord(raw);
-  const image = asRecord(item.image);
-  const imageStoragePath = pickString(image.storagePath || item.imageStoragePath);
-  const imageUrl = pickString(item.imageUrl || image.url) || await safeStorageUrl(imageStoragePath);
+  const legacyImage = asRecord(item.image);
+  const mediaItems = await Promise.all(pickArray<unknown>(item.media).map((mediaItem) => mapWorkflowImage(mediaItem)));
+  const legacyImageItem = await mapWorkflowImage(
+    Object.keys(legacyImage).length ? legacyImage : { storagePath: item.imageStoragePath, url: item.imageUrl, alt: item.imageAlt },
+  );
+  const media = mediaItems.filter(Boolean) as NonNullable<Announcement['media']>;
+  const normalizedMedia = media.length ? media : legacyImageItem ? [legacyImageItem] : [];
   const logoStoragePath = pickString(item.organizationLogoPath || item.logoPath);
   const organizationLogoUrl = pickString(item.organizationLogoUrl || item.logoUrl) || await safeStorageUrl(logoStoragePath);
   const comments = pickArray<unknown>(item.comments).map(mapComment);
@@ -107,26 +138,33 @@ async function mapAnnouncement(raw: unknown): Promise<Announcement> {
     organizationLogoUrl: organizationLogoUrl || undefined,
     createdAt: pickString(item.createdAt || item.publishedAt || item.updatedAt, new Date().toISOString()),
     body: pickString(item.body || item.text),
-    image: imageUrl ? {
-      url: imageUrl,
-      alt: pickString(item.imageAlt || image.alt, 'Announcement image'),
-      storagePath: imageStoragePath || undefined,
-      contentType: pickString(image.contentType) || undefined,
-      sizeBytes: pickNumber(image.sizeBytes, 0) || undefined,
-    } : undefined,
+    image: normalizedMedia[0],
+    media: normalizedMedia.length ? normalizedMedia : undefined,
+    deepLinkPath: pickString(item.deepLinkPath) || undefined,
     likeCount: pickNumber(item.likeCount, 0),
     viewerHasLiked: pickBoolean(item.viewerHasLiked, false),
+    commentCount: pickNumber(item.commentCount, comments.length),
     comments,
   };
 }
 
 function mapComment(raw: unknown): AnnouncementComment {
   const item = asRecord(raw);
+  const authorAccountKind = item.authorAccountKind === 'student' ? 'student' : undefined;
+  const authorOrganizationRole = authorAccountKind === 'student' && item.authorOrganizationRole === 'approved_officer'
+    ? 'approved_officer'
+    : undefined;
   return {
     id: pickString(item.id || item.commentId),
+    authorUid: pickString(item.authorUid || item.uid) || undefined,
     authorName: pickString(item.authorName || item.displayName, 'SOAR user'),
+    ...(authorAccountKind ? { authorAccountKind } : {}),
+    ...(authorOrganizationRole ? { authorOrganizationRole } : {}),
     body: pickString(item.body || item.text),
     createdAt: pickString(item.createdAt, new Date().toISOString()),
+    updatedAt: pickString(item.updatedAt) || undefined,
+    viewerCanEdit: pickBoolean(item.viewerCanEdit, false),
+    viewerCanDelete: pickBoolean(item.viewerCanDelete, false),
   };
 }
 
@@ -159,7 +197,10 @@ async function mapOrganizationSummary(raw: unknown): Promise<OrganizationSummary
     logoPath: logoPath || undefined,
     shortDescription: pickString(item.shortDescription),
     contactEmail: pickString(item.contactEmail),
+    contactPhone: pickString(item.contactPhone) || undefined,
     recruitmentTitle: pickString(item.recruitmentTitle || recruitment.title),
+    department: pickString(item.department) || undefined,
+    departmentKey: pickString(item.departmentKey) || undefined,
   };
 }
 
@@ -171,6 +212,7 @@ async function mapOrganizationProfile(raw: unknown): Promise<OrganizationProfile
   return {
     ...summary,
     description: pickString(item.description),
+    applicationsOpen: item.applicationsOpen !== false,
     recruitment: {
       id: recruitmentOpportunityId(summary.id, title, pickString(recruitment.id || recruitment.opportunityId)),
       organizationId: summary.id,
@@ -201,6 +243,19 @@ function mapApplication(raw: unknown): ApplicationRecord {
   };
 }
 
+function mapMeetingDocument(raw: unknown): MeetingRequestDocument | undefined {
+  const item = asRecord(raw);
+  const storagePath = pickString(item.storagePath);
+  const contentType = pickString(item.contentType);
+  if (!storagePath || contentType !== 'application/pdf') return undefined;
+  return {
+    storagePath,
+    fileName: pickString(item.fileName, 'formal-request.pdf'),
+    contentType,
+    sizeBytes: pickNumber(item.sizeBytes, 0),
+  };
+}
+
 function mapMeetingRequest(raw: unknown): MeetingRequest {
   const item = asRecord(raw);
   return {
@@ -215,7 +270,28 @@ function mapMeetingRequest(raw: unknown): MeetingRequest {
     requestedTime: pickString(item.requestedTime || item.time),
     status: mapMeetingStatus(item.status),
     note: pickString(item.note) || undefined,
+    document: mapMeetingDocument(item.document),
     updatedAt: pickString(item.updatedAt || item.createdAt, new Date().toISOString()),
+  };
+}
+
+function unwrapDepartmentCount(raw: unknown): unknown {
+  const item = asRecord(raw);
+  return item.item ?? item.data ?? raw;
+}
+
+function mapOrganizationDepartmentStudentCount(raw: unknown, organizationId: string): OrganizationDepartmentStudentCount {
+  const item = asRecord(unwrapDepartmentCount(raw));
+  const department = pickString(item.department);
+  const departmentKey = pickString(item.departmentKey || item.department).toLowerCase();
+  return {
+    organizationId: pickString(item.organizationId, organizationId),
+    department,
+    departmentKey,
+    registeredStudentCount: pickNumber(item.registeredStudentCount, pickNumber(item.count, 0)),
+    scope: 'registered_students_in_organization_department',
+    description: pickString(item.description, 'Registered student accounts whose saved department matches this organization department; not organization members or applicants.'),
+    generatedAt: pickString(item.generatedAt, new Date().toISOString()),
   };
 }
 
@@ -234,32 +310,57 @@ async function createLogoUpload(input: OrganizationProfileInput): Promise<string
   return uploaded.storagePath;
 }
 
-async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ announcementId?: string; image?: { storagePath: string; contentType: string; sizeBytes: number; alt?: string } }> {
-  if (!input.image?.file) {
-    if (input.image?.storagePath && input.image.contentType && input.image.sizeBytes) {
-      return {
-        image: {
-          storagePath: input.image.storagePath,
-          contentType: input.image.contentType,
-          sizeBytes: input.image.sizeBytes,
-          alt: input.image.alt,
-        },
-      };
-    }
-    return {};
+interface AnnouncementMediaTargetResponse {
+  announcementId: string;
+  items: ImageUploadTarget[];
+  allowedContentTypes?: readonly string[];
+  maxItems?: number;
+  maxSizeBytes?: number;
+  maxAggregateSizeBytes?: number;
+}
+
+async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ announcementId?: string; media?: { storagePath: string; contentType: string; sizeBytes: number; alt?: string }[] }> {
+  const media = input.media?.length ? input.media : input.image ? [input.image] : [];
+  if (!media.length) return {};
+
+  const files = media.filter((item) => item.file).map((item) => item.file as File);
+  if (!files.length) {
+    const existing = media
+      .filter((item) => item.storagePath && item.contentType && item.sizeBytes)
+      .map((item) => ({ storagePath: item.storagePath as string, contentType: item.contentType as string, sizeBytes: item.sizeBytes as number, alt: item.alt }));
+    return existing.length ? { media: existing } : {};
   }
 
-  const target = await apiFetch<ImageUploadTarget>(`/organizations/${encodeURIComponent(input.organizationId)}/announcements/image-targets`, await bodyInit(imageMetadata(input.image.file)));
-  const uploaded = await uploadToStorageTarget(target, input.image.file, input.image.alt || input.image.file.name);
+  validateAnnouncementMediaFiles(files);
+  const response = await apiFetch<AnnouncementMediaTargetResponse>(`/organizations/${encodeURIComponent(input.organizationId)}/announcements/media-targets`, await bodyInit({ files: files.map(imageMetadata) }));
+  const uploaded = await Promise.all(response.items.map((target, index) => uploadToStorageTarget(target, files[index], media[index]?.alt || files[index].name)));
+  const uploadedMedia = uploaded.map((item) => ({
+    storagePath: item.storagePath,
+    contentType: item.contentType,
+    sizeBytes: item.sizeBytes,
+    alt: item.alt,
+  }));
+
   return {
-    announcementId: target.announcementId,
-    image: {
-      storagePath: uploaded.storagePath,
-      contentType: uploaded.contentType,
-      sizeBytes: uploaded.sizeBytes,
-      alt: uploaded.alt,
-    },
+    announcementId: response.announcementId,
+    media: uploadedMedia,
   };
+}
+
+async function createMeetingDocumentUpload(input: MeetingRequestInput, session: UserSession): Promise<MeetingRequestDocument | undefined> {
+  if (!input.document?.file) return undefined;
+  const target = await apiFetch<MeetingDocumentUploadTarget>('/requests/meetings/document-targets', await bodyInit({
+    organizationId: input.organizationId,
+    dateEntryId: input.dateEntryId,
+    requestedDate: input.requestedDate,
+    requestedTime: input.requestedTime,
+    ...fileMetadata(input.document.file),
+  }));
+  return uploadMeetingDocumentToTarget(target, input.document.file, {
+    orgId: input.organizationId,
+    meetingRequestId: target.meetingRequestId,
+    requesterUid: session.uid,
+  });
 }
 
 async function profileInputToBackend(input: OrganizationProfileInput) {
@@ -269,6 +370,7 @@ async function profileInputToBackend(input: OrganizationProfileInput) {
     shortDescription: input.shortDescription,
     description: input.description,
     contactEmail: input.contactEmail,
+    contactPhone: input.contactPhone ?? '',
     ...(logoPath !== undefined ? { logoPath } : {}),
     recruitment: {
       title: input.recruitmentTitle,
@@ -281,6 +383,7 @@ async function profileInputToBackend(input: OrganizationProfileInput) {
 
 function dateInputToBackend(input: DateEntryInput) {
   return {
+    ...(input.id || !input.idempotencyKey ? {} : { entryId: input.idempotencyKey }),
     kind: input.kind,
     title: input.title,
     date: input.date,
@@ -295,9 +398,29 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
     mode: 'production',
     label: 'Configured workflow services',
 
-    async listAnnouncements() {
-      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/announcements', await activeHeaders());
-      return queryResult(await Promise.all(listItems(response).map(mapAnnouncement)));
+    async listAnnouncements(_session, page = { limit: 15 }) {
+      const params = new URLSearchParams({ limit: String(page.limit) });
+      if (page.pageToken) params.set('pageToken', page.pageToken);
+      if (page.organizationId) params.set('orgId', page.organizationId);
+      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>(`/announcements?${params.toString()}`, await activeHeaders());
+      const envelope = Array.isArray(response) ? undefined : response;
+      const items = await Promise.all(listItems(response).map(mapAnnouncement));
+      return queryResult<AnnouncementPage>({ items, nextPageToken: envelope?.nextPageToken });
+    },
+
+    async getAnnouncement(announcementId) {
+      try {
+        const response = await apiFetch<unknown>(`/announcements/${encodeURIComponent(announcementId)}`, await activeHeaders());
+        return queryResult(await mapAnnouncement(response));
+      } catch (error) {
+        if (error && typeof error === 'object' && (error as { status?: unknown }).status === 404) return queryResult<Announcement | undefined>(undefined);
+        throw error;
+      }
+    },
+
+    async listAnnouncementComments(announcementId) {
+      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>(`/announcements/${encodeURIComponent(announcementId)}/comments?limit=50`, await activeHeaders());
+      return queryResult(listItems(response).map(mapComment));
     },
 
     async toggleAnnouncementLike(announcementId, liked) {
@@ -310,9 +433,24 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return mutationResult('Comment added.', mapComment(response));
     },
 
-    async listOrganizations() {
-      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>('/organizations', await activeHeaders());
-      return queryResult(await Promise.all(listItems(response).map(mapOrganizationSummary)));
+    async updateAnnouncementComment(announcementId, commentId, body) {
+      const response = await apiFetch<unknown>(`/announcements/${encodeURIComponent(announcementId)}/comments/${encodeURIComponent(commentId)}`, await bodyInit({ body }, 'PATCH'));
+      return mutationResult('Comment updated.', mapComment(response));
+    },
+
+    async deleteAnnouncementComment(announcementId, commentId) {
+      await apiFetch<unknown>(`/announcements/${encodeURIComponent(announcementId)}/comments/${encodeURIComponent(commentId)}`, await bodyInit(undefined, 'DELETE'));
+      return { ok: true, persisted: true, source: 'production', message: 'Comment deleted.' };
+    },
+
+    async listOrganizations(_session, page = {}) {
+      const params = new URLSearchParams({ limit: String(page.limit ?? 20) });
+      if (page.pageToken) params.set('pageToken', page.pageToken);
+      if (page.query?.trim()) params.set('q', page.query.trim());
+      const response = await apiFetch<ListEnvelope<unknown> | unknown[]>(`/organizations?${params.toString()}`, await activeHeaders());
+      const envelope = Array.isArray(response) ? undefined : response;
+      const items = await Promise.all(listItems(response).map(mapOrganizationSummary));
+      return queryResult<OrganizationPage>({ items, nextPageToken: envelope?.nextPageToken });
     },
 
     async getOrganization(organizationId) {
@@ -345,8 +483,16 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return queryResult(listItems(response).map(mapMeetingRequest));
     },
 
-    async requestMeeting(input: MeetingRequestInput) {
-      const response = await apiFetch<unknown>('/requests/meetings', await bodyInit(input));
+    async requestMeeting(input: MeetingRequestInput, session: UserSession) {
+      const document = await createMeetingDocumentUpload(input, session);
+      const response = await apiFetch<unknown>('/requests/meetings', await bodyInit({
+        organizationId: input.organizationId,
+        dateEntryId: input.dateEntryId,
+        requestedDate: input.requestedDate,
+        requestedTime: input.requestedTime,
+        note: input.note,
+        ...(document ? { document } : {}),
+      }));
       return mutationResult('Meeting request created as Pending.', mapMeetingRequest(response));
     },
 
@@ -373,10 +519,21 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return mutationResult('Organization profile saved.', await mapOrganizationProfile(response));
     },
 
+    async setApplicationsOpen(organizationId, applicationsOpen, _session) {
+      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}`, await bodyInit({ applicationsOpen }, 'PATCH'));
+      const savedValue = pickBoolean(asRecord(response).applicationsOpen, applicationsOpen);
+      return mutationResult(savedValue ? 'Applications are open.' : 'Applications are closed.', { applicationsOpen: savedValue });
+    },
+
     async publishAnnouncement(input: AnnouncementInput) {
       const upload = await createAnnouncementUpload(input);
       const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(input.organizationId)}/announcements`, await bodyInit({ body: input.body, ...upload }));
       return mutationResult('Announcement published.', await mapAnnouncement(response));
+    },
+
+    async updateAnnouncement(announcementId, organizationId, body) {
+      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}/announcements/${encodeURIComponent(announcementId)}`, await bodyInit({ body }, 'PATCH'));
+      return mutationResult('Announcement updated.', await mapAnnouncement(response));
     },
 
     async deleteAnnouncement(announcementId, organizationId) {
@@ -384,16 +541,30 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       return { ok: true, persisted: true, source: 'production', message: 'Announcement deleted.' };
     },
 
+    async getOrganizationDepartmentStudentCount(organizationId) {
+      try {
+        const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}/student-department-counts`, await activeHeaders());
+        return queryResult<OrganizationDepartmentStudentCount | undefined>(mapOrganizationDepartmentStudentCount(response, organizationId));
+      } catch (error) {
+        const problem = error as Error & { code?: string; status?: number };
+        if (problem.code === 'organization_department_missing' || problem.status === 409) {
+          return queryResult<OrganizationDepartmentStudentCount | undefined>(undefined, problem.message || 'This organization has no assigned department link yet.');
+        }
+        throw error;
+      }
+    },
+
     async updateApplicationStage(applicationId, stage: ApplicationStage, organizationId) {
       const response = await apiFetch<unknown>(`/requests/organizations/${encodeURIComponent(organizationId)}/applications/${encodeURIComponent(applicationId)}/stage`, await bodyInit({ status: toBackendStage(stage) }, 'PATCH'));
       return mutationResult(`Application moved to ${stage}.`, mapApplication(response));
     },
 
-    async saveDateEntry(input: DateEntryInput) {
+    async saveDateEntry(input: DateEntryInput, _session: UserSession, signal?: AbortSignal) {
       const path = input.id
         ? `/organizations/${encodeURIComponent(input.organizationId)}/date-entries/${encodeURIComponent(input.id)}`
         : `/organizations/${encodeURIComponent(input.organizationId)}/date-entries`;
-      const response = await apiFetch<unknown>(path, await bodyInit(dateInputToBackend(input), input.id ? 'PATCH' : 'POST'));
+      const request = await bodyInit(dateInputToBackend(input), input.id ? 'PATCH' : 'POST');
+      const response = await apiFetch<unknown>(path, signal ? { ...request, signal } : request);
       return mutationResult(`${input.kind === 'event' ? 'Event' : 'Meeting availability'} saved.`, mapDateEntry(response));
     },
 
