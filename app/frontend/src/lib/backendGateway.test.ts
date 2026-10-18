@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   reload: vi.fn(),
   updateProfile: vi.fn(),
   signIn: vi.fn(),
+  createUser: vi.fn(),
   sendEmailVerification: vi.fn(),
 }));
 
@@ -20,6 +21,7 @@ vi.mock('@firebase/auth', () => ({
   sendEmailVerification: mocks.sendEmailVerification,
   sendPasswordResetEmail: vi.fn(),
   signInWithEmailAndPassword: mocks.signIn,
+  createUserWithEmailAndPassword: mocks.createUser,
   signOut: vi.fn(),
   updateProfile: mocks.updateProfile,
 }));
@@ -89,7 +91,7 @@ describe('backend session normalization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getFirebaseConfigStatus.mockReturnValue({ configured: true });
-    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: { emailVerified: true } } });
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: { emailVerified: true, getIdToken: vi.fn(async () => 'fresh-token') } } });
     mocks.authHeaders.mockResolvedValue({ Authorization: 'Bearer trusted-token' });
     mocks.signIn.mockResolvedValue({ user: { emailVerified: false } });
     mocks.apiFetch.mockResolvedValue({
@@ -114,6 +116,18 @@ describe('backend session normalization', () => {
       officerGrants: [],
     });
     expect(mocks.apiFetch).toHaveBeenCalledWith('/session', { headers: { Authorization: 'Bearer trusted-token' } });
+  });
+
+  it('refreshes Firebase ID-token claims after reload before requesting the session', async () => {
+    const user = { emailVerified: true, getIdToken: vi.fn(async () => 'fresh-token') };
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: user } });
+
+    await createBackendGateway().reloadSession();
+
+    expect(mocks.reload).toHaveBeenCalledWith(user);
+    expect(user.getIdToken).toHaveBeenCalledWith(true);
+    expect(mocks.reload.mock.invocationCallOrder[0]).toBeLessThan(user.getIdToken.mock.invocationCallOrder[0]);
+    expect(user.getIdToken.mock.invocationCallOrder[0]).toBeLessThan(mocks.apiFetch.mock.invocationCallOrder[0]);
   });
 
   it('preserves the name-save DTO and waits for the server before changing local session state', async () => {
@@ -162,6 +176,77 @@ describe('backend session normalization', () => {
     }));
     expect(mocks.signIn).toHaveBeenCalledWith(expect.anything(), input.email, input.password);
     expect(mocks.sendEmailVerification).toHaveBeenCalled();
+  });
+
+  it('creates an unpaid preview profile through Firebase Auth and never sends the password to the API', async () => {
+    const input = {
+      role: 'student' as const,
+      email: 'mara@example.edu',
+      password: 'StrongPass123',
+      displayName: 'Mara Santos',
+      studentId: '2026-0001',
+      department: 'Computer Engineering Department',
+    };
+    const firebaseUser = { emailVerified: false };
+    const session = {
+      uid: 'uid_preview',
+      email: input.email,
+      displayName: input.displayName,
+      accountKind: 'student',
+      emailVerified: false,
+      access: { status: 'active', provenance: 'unpaid-preview', feePhp: 0, annualFeePhp: 10, periodLabel: 'Unpaid preview', renewalAvailable: false },
+      officerGrants: [],
+    };
+    mocks.createUser.mockResolvedValueOnce({ user: firebaseUser });
+    mocks.apiFetch.mockResolvedValueOnce({ created: true }).mockResolvedValueOnce(session);
+
+    await expect(createBackendGateway().registerPreviewAccount(input)).resolves.toMatchObject({
+      uid: 'uid_preview',
+      access: { status: 'active', provenance: 'unpaid-preview' },
+    });
+
+    expect(mocks.createUser).toHaveBeenCalledWith(expect.anything(), input.email, input.password);
+    expect(mocks.apiFetch).toHaveBeenNthCalledWith(1, '/accounts/preview-registration', expect.objectContaining({
+      method: 'POST',
+      headers: { Authorization: 'Bearer trusted-token' },
+      body: JSON.stringify({ role: 'student', displayName: 'Mara Santos', studentId: '2026-0001', department: 'Computer Engineering Department', companyName: undefined }),
+    }));
+    expect(JSON.stringify(mocks.apiFetch.mock.calls)).not.toContain(input.password);
+    expect(mocks.sendEmailVerification).toHaveBeenCalledWith(firebaseUser);
+    expect(mocks.apiFetch).toHaveBeenNthCalledWith(2, '/session', { headers: { Authorization: 'Bearer trusted-token' } });
+    expect(mocks.signIn).not.toHaveBeenCalled();
+  });
+
+  it('resends verification through the supported Firebase Auth action for the signed-in preview user', async () => {
+    const firebaseUser = { emailVerified: false };
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: firebaseUser } });
+
+    await createBackendGateway().resendEmailVerification();
+
+    expect(mocks.sendEmailVerification).toHaveBeenCalledWith(firebaseUser);
+  });
+
+  it('recovers a prior Firebase Auth account when its profile write was interrupted', async () => {
+    const input = {
+      role: 'student' as const,
+      email: 'mara@example.edu',
+      password: 'StrongPass123',
+      displayName: 'Mara Santos',
+      studentId: '2026-0001',
+      department: 'Computer Engineering Department',
+    };
+    const firebaseUser = { emailVerified: false };
+    mocks.createUser.mockRejectedValueOnce(Object.assign(new Error('already exists'), { code: 'auth/email-already-in-use' }));
+    mocks.signIn.mockResolvedValueOnce({ user: firebaseUser });
+    mocks.apiFetch.mockResolvedValueOnce({ created: false }).mockResolvedValueOnce({
+      uid: 'uid_preview', email: input.email, displayName: input.displayName, accountKind: 'student', emailVerified: false,
+      access: { status: 'active', provenance: 'unpaid-preview', annualFeePhp: 10, feePhp: 0, periodLabel: 'Unpaid preview', renewalAvailable: false },
+      officerGrants: [],
+    });
+
+    await expect(createBackendGateway().registerPreviewAccount(input)).resolves.toMatchObject({ uid: 'uid_preview' });
+    expect(mocks.signIn).toHaveBeenCalledWith(expect.anything(), input.email, input.password);
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/accounts/preview-registration', expect.anything());
   });
 
   it('connects recovery codes and renewal status to the server routes without placing codes in URLs', async () => {

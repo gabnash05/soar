@@ -1,5 +1,5 @@
 import type { BackendGateway } from '../lib/backendGateway';
-import type { CheckoutStatus, RegistrationPaymentIntent, RegistrationRecoveryResult, RenewalCheckoutStatus, RenewalRequest, UserSession } from '../lib/contracts';
+import type { CheckoutStatus, PreviewRegistrationInput, RegistrationPaymentIntent, RegistrationRecoveryResult, RenewalCheckoutStatus, RenewalRequest, UserSession } from '../lib/contracts';
 
 export const makeSession = (overrides: Partial<UserSession> = {}): UserSession => ({
   uid: 'test-uid',
@@ -39,6 +39,22 @@ export const createMockGateway = (session: UserSession | null = makeSession()): 
     expiresAt: '2026-01-02T00:00:00.000Z',
     providerLabel: 'Test checkout',
     fixture: true,
+  })),
+  registerPreviewAccount: vi.fn(async (input: PreviewRegistrationInput): Promise<UserSession> => makeSession({
+    email: input.email,
+    displayName: input.displayName,
+    accountKind: input.role,
+    studentId: input.studentId,
+    department: input.department,
+    emailVerified: false,
+    access: {
+      status: 'active',
+      provenance: 'unpaid-preview',
+      annualFeePhp: 10,
+      feePhp: 0,
+      periodLabel: 'Unpaid preview',
+      renewalAvailable: false,
+    },
   })),
   getCheckoutStatus: vi.fn(async (): Promise<CheckoutStatus> => ({
     intentId: 'test-intent',

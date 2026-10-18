@@ -5,6 +5,7 @@ import { AppError } from '../src/errors';
 const mocks = vi.hoisted(() => ({
   requireBearerToken: vi.fn(),
   getUserSession: vi.fn(),
+  createUnpaidPreviewAccount: vi.fn(),
   updateDisplayName: vi.fn(),
   requestVerifiedEmailChange: vi.fn(),
   approveOfficerGrant: vi.fn(),
@@ -63,6 +64,7 @@ vi.mock('../src/http/auth', () => ({
 }));
 
 vi.mock('../src/identity/session', () => ({ getUserSession: mocks.getUserSession }));
+vi.mock('../src/identity/previewRegistration', () => ({ createUnpaidPreviewAccount: mocks.createUnpaidPreviewAccount }));
 vi.mock('../src/identity/accountSettings', () => ({
   updateDisplayName: mocks.updateDisplayName,
   requestVerifiedEmailChange: mocks.requestVerifiedEmailChange,
@@ -124,6 +126,7 @@ describe('SOAR HTTP route contracts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireBearerToken.mockResolvedValue({ uid: 'user1', email_verified: true });
+    mocks.createUnpaidPreviewAccount.mockResolvedValue({ uid: 'user1', created: true, access: { status: 'active', provenance: 'unpaid-preview' } });
     mocks.paymentHandlers.mockReturnValue({
       paymongoWebhook: vi.fn(async () => ({ status: 200, body: { received: true } })),
       startRegistrationPayment: vi.fn(async () => ({ status: 200, body: { intentId: 'intent1' } })),
@@ -239,6 +242,41 @@ describe('SOAR HTTP route contracts', () => {
 
     expect(mocks.requireBearerToken).toHaveBeenCalled();
     expect(mocks.getUserSession).toHaveBeenCalledWith({ uid: 'user1', email_verified: true });
+  });
+
+  it('saves a self-authenticated unpaid preview account without passing a password to the backend', async () => {
+    const profile = {
+      role: 'student',
+      displayName: 'Mara Santos',
+      studentId: '2026-0001',
+      department: 'Computer Engineering Department',
+    };
+    mocks.requireBearerToken.mockResolvedValueOnce({ uid: 'user1', email: 'user@example.edu', email_verified: true });
+    const previousPaymentsSetting = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'true';
+
+    try {
+      await withApiServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/accounts/preview-registration`, {
+          method: 'POST',
+          headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
+          body: JSON.stringify(profile),
+        });
+        expect(response.status).toBe(201);
+        await expect(response.json()).resolves.toMatchObject({
+          uid: 'user1',
+          created: true,
+          access: { status: 'active', provenance: 'unpaid-preview' },
+        });
+      });
+    } finally {
+      if (previousPaymentsSetting === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previousPaymentsSetting;
+    }
+
+    expect(mocks.requireBearerToken).toHaveBeenCalled();
+    expect(mocks.createUnpaidPreviewAccount).toHaveBeenCalledWith({ uid: 'user1', email: 'user@example.edu', email_verified: true }, profile);
+    expect(JSON.stringify(mocks.createUnpaidPreviewAccount.mock.calls)).not.toContain('password');
   });
 
   it('preserves the name-save response DTO without claiming it is a complete session', async () => {

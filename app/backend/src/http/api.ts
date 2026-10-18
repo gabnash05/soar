@@ -5,6 +5,7 @@ import { AppError, assertAppError } from '../errors';
 import { requireBearerToken } from './auth';
 import { getUserSession } from '../identity/session';
 import { requestVerifiedEmailChange, updateDisplayName } from '../identity/accountSettings';
+import { createUnpaidPreviewAccount } from '../identity/previewRegistration';
 import {
   approveOfficerGrant,
   assignAdminOfficerGrant,
@@ -78,7 +79,7 @@ function asyncRoute(handler: (req: Request, res: Response) => Promise<void>) {
 
 function assertPaymentsEnabled(): void {
   if (process.env.SOAR_DISABLE_PAYMENTS?.trim().toLowerCase() === 'true') {
-    throw new AppError('payments_unavailable', 'Registration and payment features are unavailable in this non-production preview.', 503);
+    throw new AppError('payments_unavailable', 'Paid registration and payment features are unavailable in this non-production preview.', 503);
   }
 }
 
@@ -119,6 +120,12 @@ export function createApiApp() {
   app.get(['/session', '/api/session'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.json(await getUserSession(user));
+  }));
+
+  app.post(['/accounts/preview-registration', '/api/accounts/preview-registration'], asyncRoute(async (req, res) => {
+    const user = await requireBearerToken(req);
+    const result = await createUnpaidPreviewAccount(user, req.body);
+    res.status(result.created ? 201 : 200).json(result);
   }));
 
   app.post(['/account/display-name', '/api/account/display-name'], asyncRoute(async (req, res) => {

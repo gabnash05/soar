@@ -5,6 +5,7 @@ import type {
   EmailChangeInput,
   NameChangeInput,
   RegisterAccountInput,
+  PreviewRegistrationInput,
   RegistrationPaymentInput,
   RegistrationPaymentIntent,
   RegistrationRecoveryResult,
@@ -36,6 +37,7 @@ interface AuthContextValue {
   signOut(): Promise<void>;
   sendPasswordRecovery(email: string): Promise<void>;
   startRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
+  registerPreviewAccount(input: PreviewRegistrationInput): Promise<UserSession>;
   requestPaidRegistrationRecovery(email: string): Promise<RegistrationRecoveryResult>;
   acceptPaidRegistrationRecovery(intentId: string, recoveryCode: string): Promise<void>;
   registerAccount(input: RegisterAccountInput): Promise<UserSession>;
@@ -144,6 +146,12 @@ export const AuthProvider = ({ children, gateway: providedGateway }: { children:
       }),
     sendPasswordRecovery: (email) => run('password-recovery', () => gateway.sendPasswordRecovery(email)),
     startRegistrationPayment: (input) => run('registration', () => gateway.startRegistrationPayment(input)),
+    registerPreviewAccount: (input) =>
+      run('registration', async () => {
+        const next = await gateway.registerPreviewAccount(input);
+        setSession(next);
+        return next;
+      }),
     requestPaidRegistrationRecovery: (email) => run('registration', () => gateway.requestPaidRegistrationRecovery(email)),
     acceptPaidRegistrationRecovery: (intentId, recoveryCode) => run('registration', () => gateway.acceptPaidRegistrationRecovery(intentId, recoveryCode)),
     registerAccount: (input) =>
