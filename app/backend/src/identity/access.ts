@@ -5,28 +5,54 @@ import { adminAuth, db } from '../firebase';
 import { AppError } from '../errors';
 import { accountPath, COLLECTIONS, entitlementPath } from '../contracts/paths';
 import type { AccountDocument, EntitlementDocument } from '../contracts/schema';
+import { isUnpaidPreviewEnabled } from './previewPolicy';
 
 export interface AccessState {
   status: 'active' | 'expired' | 'missing' | 'revoked';
   accessExpiresAt?: Timestamp;
+  accessStartsAt?: Timestamp;
+  provenance?: 'provider-confirmed-payment' | 'unpaid-preview';
+}
+
+async function getUnpaidPreviewAccess(uid: string): Promise<AccessState | undefined> {
+  if (!isUnpaidPreviewEnabled()) return undefined;
+  const accountSnapshot = await db.doc(accountPath(uid)).get();
+  if (!accountSnapshot.exists) return undefined;
+
+  const account = accountSnapshot.data() as AccountDocument;
+  if (account.accessProvenance !== 'unpaid-preview') return undefined;
+
+  return {
+    status: 'active',
+    accessStartsAt: account.previewAccessGrantedAt,
+    provenance: 'unpaid-preview',
+  };
 }
 
 export async function getAccessState(uid: string): Promise<AccessState> {
   const snap = await db.doc(entitlementPath(uid)).get();
   if (!snap.exists) {
-    return { status: 'missing' };
+    return (await getUnpaidPreviewAccess(uid)) ?? { status: 'missing' };
   }
 
   const entitlement = snap.data() as EntitlementDocument;
-  if (entitlement.status !== 'active') {
-    return { status: entitlement.status };
+  if (entitlement.status === 'revoked') {
+    return { status: 'revoked', provenance: 'provider-confirmed-payment' };
   }
 
-  if (entitlement.accessExpiresAt.toMillis() <= Date.now()) {
-    return { status: 'expired', accessExpiresAt: entitlement.accessExpiresAt };
+  if (entitlement.status === 'expired' || entitlement.accessExpiresAt.toMillis() <= Date.now()) {
+    return (await getUnpaidPreviewAccess(uid)) ?? {
+      status: 'expired',
+      accessExpiresAt: entitlement.accessExpiresAt,
+      provenance: 'provider-confirmed-payment',
+    };
   }
 
-  return { status: 'active', accessExpiresAt: entitlement.accessExpiresAt };
+  return {
+    status: 'active',
+    accessExpiresAt: entitlement.accessExpiresAt,
+    provenance: 'provider-confirmed-payment',
+  };
 }
 
 export async function requireActiveAccess(user: DecodedIdToken): Promise<void> {

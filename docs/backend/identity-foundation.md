@@ -234,11 +234,13 @@ This lane wires it into the shared Firebase Functions app without duplicating pa
 - `GET /payments/registration/status?intentId=...`
 - `POST /payments/registration/complete`
 - `POST /payments/registration/recover`
+- `POST /payments/registration/recover/accept`
 - `POST /payments/renewals/start`
+- `GET /payments/renewals/status?renewalId=...`
 - `GET /payments/access/status`
 - `POST /webhooks/paymongo`
 
-The payment module owns checkout intents, PayMongo webhook verification, exactly-once entitlement grants, renewal math, paid-unfinished registration recovery, and payment-specific docs/tests.
+The payment module owns checkout intents, PayMongo webhook verification, exactly-once entitlement grants, renewal math, paid-unfinished registration recovery by one-time code and secure browser binding, and payment-specific docs/tests.
 The identity helper boundary remains `createPaidAccountFromConfirmedRegistration(input): Promise<{ uid: string; alreadyProcessed: boolean }>`.
 Auth user creation is not treated as Firestore-transaction-atomic; idempotent provider-event locks and recoverable cross-service handling are used.
 

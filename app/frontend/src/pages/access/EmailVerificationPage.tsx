@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SoarLogo } from '../../components/SoarLogo';
 import { Button, Card, StatusChip } from '../../components/ui';
@@ -6,10 +6,15 @@ import { useAuth } from '../../context/AuthContext';
 import { hasActiveAccess } from '../../lib/contracts';
 
 export const EmailVerificationPage = () => {
-  const { session, reloadSession, resendEmailVerification, signOut, error, clearError } = useAuth();
+  const { session, reloadSession, resendEmailVerification, signOut, error, clearError } = useAuth('email-verification');
   const [message, setMessage] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    clearError();
+    return clearError;
+  }, [clearError]);
 
   const handleReload = async () => {
     clearError();
@@ -43,7 +48,7 @@ export const EmailVerificationPage = () => {
         <div className="mb-5 inline-flex items-center gap-2 font-[var(--font-display)] text-xl font-extrabold leading-none text-[var(--color-navy)]"><SoarLogo /><span>SOAR</span></div>
         <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">Email verification</p>
         <h1>Verify your email</h1>
-        <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">Your PHP10 access is tied to this account, but the main app unlocks only after email verification.</p>
+        <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">{session?.access.provenance === 'unpaid-preview' ? 'This account has unpaid preview access. Verify your email before using core workflows; no payment is recorded.' : 'Your PHP10 access is tied to this account, but the main app unlocks only after email verification.'}</p>
         <div className="my-[18px] grid gap-2.5 rounded-[var(--radius-md)] bg-[var(--color-off-white)] p-4 gap-1.5">
           <StatusChip tone={session?.emailVerified ? 'approved' : 'attention'}>{session?.emailVerified ? 'Verified' : 'Waiting for verification'}</StatusChip>
           <p>{session?.email}</p>

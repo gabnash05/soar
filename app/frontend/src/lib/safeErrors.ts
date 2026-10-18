@@ -18,6 +18,10 @@ const firebaseMessages: Record<string, string> = {
 
 const applicationMessages: Record<string, string> = {
   account_missing: 'We could not find your account profile. Sign out and sign in again. If this continues, contact support.',
+  account_already_exists: 'This account already has a profile. Sign in to continue.',
+  preview_registration_unavailable: 'Free account creation is not available in this environment.',
+  public_registration_forbidden: 'This account cannot use public registration.',
+  registration_identity_mismatch: 'Sign in again with the email address for this account.',
   access_inactive: 'Renew your SOAR access before changing account settings.',
   email_not_verified: 'Verify your email address before changing account settings.',
   invalid_token: 'Your session could not be verified. Sign in again.',

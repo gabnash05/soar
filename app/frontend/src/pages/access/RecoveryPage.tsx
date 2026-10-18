@@ -1,14 +1,19 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SoarLogo } from '../../components/SoarLogo';
 import { Button, Card, Field, TextInput } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 
 export const RecoveryPage = () => {
-  const { sendPasswordRecovery, error, clearError } = useAuth();
+  const { sendPasswordRecovery, error, clearError } = useAuth('password-recovery');
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    clearError();
+    return clearError;
+  }, [clearError]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../../context/AuthContext';
 import { createMockGateway } from '../../test/createMockGateway';
 import { navigateToHostedCheckout } from '../../lib/redirects';
@@ -24,7 +24,50 @@ const renderPage = () => {
 };
 
 describe('RegistrationIntentPage', () => {
-  it('requires student ID before starting payment for student accounts', async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'true');
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('shows a free account form and a clearly disconnected payment pitch panel in preview mode', () => {
+    vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'false');
+    const gateway = renderPage();
+
+    expect(screen.getByRole('heading', { name: 'Create a free preview account' })).toBeInTheDocument();
+    expect(screen.getByRole('note', { name: 'Pitch payment presentation' })).toHaveTextContent(/UI only/i);
+    expect(screen.getByText(/no payment is requested or recorded/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create free preview account' })).toBeEnabled();
+    expect(gateway.startRegistrationPayment).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Already have an account?' })).toHaveAttribute('href', '/login');
+  });
+
+  it('creates a real-preview registration through its own path without checkout or paid access', async () => {
+    vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'false');
+    const gateway = renderPage();
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText(/full name/i), 'Mara Santos');
+    await user.type(screen.getByLabelText(/email address/i), 'mara@example.edu');
+    await user.type(screen.getByLabelText(/student id/i), '2026-0001');
+    await user.type(screen.getByLabelText(/create password/i), 'StrongPass123');
+    await user.click(screen.getByRole('combobox', { name: /department/i }));
+    await user.click(await screen.findByRole('option', { name: 'Computer Engineering Department' }));
+    await user.click(screen.getByRole('button', { name: 'Create free preview account' }));
+
+    expect(gateway.registerPreviewAccount).toHaveBeenCalledWith({
+      role: 'student',
+      displayName: 'Mara Santos',
+      email: 'mara@example.edu',
+      password: 'StrongPass123',
+      studentId: '2026-0001',
+      department: 'Computer Engineering Department',
+      companyName: undefined,
+    });
+    expect(gateway.startRegistrationPayment).not.toHaveBeenCalled();
+    expect(navigateToHostedCheckout).not.toHaveBeenCalled();
+  });
+  it('requires a valid student ID before starting payment for student accounts', async () => {
     const gateway = renderPage();
     const user = userEvent.setup();
 
@@ -32,7 +75,7 @@ describe('RegistrationIntentPage', () => {
     await user.type(screen.getByLabelText(/email address/i), 'mara@example.edu');
     await user.click(screen.getByRole('button', { name: /continue to php10 checkout/i }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/student id is required/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/student id between 2 and 64 characters/i);
     expect(gateway.startRegistrationPayment).not.toHaveBeenCalled();
   });
 

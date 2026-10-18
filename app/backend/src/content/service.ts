@@ -1,11 +1,13 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { DocumentData, Query } from 'firebase-admin/firestore';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { COLLECTIONS, organizationLogoStoragePath, announcementImageStoragePath, organizationPath, officerGrantPath } from '../contracts/paths';
 import type { OrganizationDocument } from '../contracts/schema';
 import { canonicalDepartment, normalizeDepartmentKey } from '../contracts/validation';
 import { AppError } from '../errors';
 import { db } from '../firebase';
+import { createSignedObjectDownloadUrl, createSignedObjectUploadTarget, getStoredObjectMetadata, isSupabaseStorageEnabled } from '../storage/objectStorage';
+import { decodeCursor, encodeCursor } from '../pagination';
 import { loadAccount, requireActiveAccess } from '../identity/access';
 import {
   ALLOWED_IMAGE_CONTENT_TYPES,
@@ -14,6 +16,7 @@ import {
   MAX_IMAGE_SIZE_BYTES,
   announcementCreateSchema,
   announcementImagePathMatch,
+  announcementUpdateSchema,
   announcementQuerySchema,
   assertLogoPathForOrganization,
   commentCreateSchema,
@@ -45,16 +48,18 @@ function iso(value: unknown): string | undefined {
   return typeof (value as Timestamp | undefined)?.toDate === 'function' ? (value as Timestamp).toDate().toISOString() : undefined;
 }
 
-function pageToken(offset: number, returned: number, limit: number): string | undefined {
-  return returned > limit ? String(offset + limit) : undefined;
+function cursorMillis(value: string): Timestamp {
+  if (!/^\d{1,16}$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new AppError('invalid_page_token', 'The page token has an invalid timestamp boundary.', 400);
+  }
+  return Timestamp.fromMillis(Number(value));
 }
 
-function pageItems<T>(items: T[], limit: number): T[] {
-  return items.slice(0, limit);
-}
-
-function offsetQuery(query: Query<DocumentData>, offset: number, limit: number): Query<DocumentData> {
-  return query.offset(offset).limit(limit + 1);
+function timestampBoundary(value: unknown): string {
+  if (!value || typeof (value as Timestamp).toMillis !== 'function') {
+    throw new AppError('invalid_page_boundary', 'The list item is missing its ordered timestamp.', 500);
+  }
+  return String((value as Timestamp).toMillis());
 }
 
 function routeOrgId(orgId: string): string {
@@ -175,14 +180,19 @@ async function commentFromDoc(data: DocumentData, viewerUid?: string, organizati
   const ownsComment = Boolean(viewerUid && data.authorUid === viewerUid);
   const authorUid = typeof data.authorUid === 'string' ? data.authorUid : '';
   const authorAccount = authorUid ? await db.doc(`accounts/${authorUid}`).get() : undefined;
-  const savedRole = authorAccount?.data()?.role;
-  const authorAccountKind: 'student' | 'sponsor' | undefined = savedRole === 'student' || savedRole === 'sponsor' ? savedRole : undefined;
+  const authorProfile = authorAccount?.data();
+  const authorAccountKind: 'student' | undefined = authorProfile?.role === 'student' && authorProfile?.emailVerified === true
+    ? 'student'
+    : undefined;
   const officerGrant = authorAccountKind === 'student' && organizationId
     ? await db.doc(officerGrantPath(organizationId, authorUid)).get()
     : undefined;
   const authorOrganizationRole: 'approved_officer' | undefined = officerGrant?.exists && officerGrant.data()?.status === 'active'
     ? 'approved_officer'
     : undefined;
+  const createdAt = iso(data.createdAt);
+  const updatedAt = iso(data.updatedAt);
+  const hasActualEdit = Boolean(iso(data.editedAt) || (createdAt && updatedAt && updatedAt !== createdAt));
   return {
     id: data.commentId,
     commentId: data.commentId,
@@ -193,8 +203,8 @@ async function commentFromDoc(data: DocumentData, viewerUid?: string, organizati
     body: data.body,
     viewerCanEdit: ownsComment,
     viewerCanDelete: ownsComment,
-    createdAt: iso(data.createdAt),
-    updatedAt: iso(data.updatedAt) ?? iso(data.createdAt)
+    createdAt,
+    ...(hasActualEdit && updatedAt ? { updatedAt } : {})
   };
 }
 
@@ -223,6 +233,17 @@ function validateAnnouncementMedia(orgId: string, announcementId: string, media:
   }
 }
 
+async function verifySupabaseImage(path: string, contentType?: string, sizeBytes?: number): Promise<void> {
+  if (!isSupabaseStorageEnabled()) return;
+  const metadata = await getStoredObjectMetadata(path);
+  if (!ALLOWED_IMAGE_CONTENT_TYPES.includes(metadata.contentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number]) ||
+      metadata.sizeBytes <= 0 || metadata.sizeBytes > MAX_IMAGE_SIZE_BYTES ||
+      (contentType !== undefined && metadata.contentType !== contentType) ||
+      (sizeBytes !== undefined && metadata.sizeBytes !== sizeBytes)) {
+    throw new AppError('uploaded_image_mismatch', 'The uploaded image does not match its approved type or size.', 400);
+  }
+}
+
 function sanitizeTargetFileName(fileName: string): string {
   return `${Date.now()}-${fileName}`;
 }
@@ -231,16 +252,35 @@ export async function listOrganizations(user: DecodedIdToken, rawQuery: unknown)
   await requireReadableUser(user);
   const query = organizationListQuerySchema.parse(rawQuery);
   const search = normalizedName(query.q ?? '');
-  const fetchLimit = search ? 100 : query.limit + 1;
-  const snap = await db.collection(COLLECTIONS.organizations).orderBy('name').offset(query.pageToken).limit(fetchLimit).get();
-  const filtered = snap.docs
-    .map((doc) => doc.data())
-    .filter((data) => !search || normalizedName(data.name ?? '').includes(search))
-    .map(summaryFromOrganization);
+  const context = search;
+  const boundary = decodeCursor(query.pageToken, 'organizations', context, 2);
+  let ref: Query<DocumentData> = db.collection(COLLECTIONS.organizations).orderBy('name').orderBy(FieldPath.documentId());
+  if (boundary) ref = ref.startAfter(boundary[0], boundary[1]);
+  if (!search) {
+    const snap = await ref.limit(query.limit + 1).get();
+    const docs = snap.docs.slice(0, query.limit);
+    const items = docs.map((doc) => summaryFromOrganization(doc.data()));
+    const last = docs.at(-1);
+    return {
+      items,
+      ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('organizations', context, [String(last.get('name') ?? ''), last.id]) } : {})
+    };
+  }
 
+  // Name substring search cannot be expressed by Firestore's ordered query, so scan a bounded batch and continue from its stable boundary.
+  const snap = await ref.limit(101).get();
+  const scanned = snap.docs.slice(0, 100);
+  const matches = scanned.filter((doc) => normalizedName(doc.data().name ?? '').includes(search));
+  const docs = matches.slice(0, query.limit);
+  const items = docs.map((doc) => summaryFromOrganization(doc.data()));
+  const nextBoundary = matches.length > query.limit
+    ? docs.at(-1)
+    : snap.docs.length > scanned.length
+      ? scanned.at(-1)
+      : undefined;
   return {
-    items: pageItems(filtered, query.limit),
-    nextPageToken: search ? undefined : pageToken(query.pageToken, filtered.length, query.limit)
+    items,
+    ...(nextBoundary ? { nextPageToken: encodeCursor('organizations', context, [String(nextBoundary.get('name') ?? ''), nextBoundary.id]) } : {})
   };
 }
 
@@ -289,7 +329,10 @@ export async function updateOrganizationProfile(user: DecodedIdToken, orgIdParam
   }
   const logoPath = input.logo?.storagePath ?? input.logoPath;
   if (logoPath !== undefined) {
-    if (logoPath) validateLogoPath(orgId, logoPath);
+    if (logoPath) {
+      validateLogoPath(orgId, logoPath);
+      await verifySupabaseImage(logoPath);
+    }
     update.logoPath = logoPath;
   }
   if (input.recruitment !== undefined) {
@@ -341,10 +384,13 @@ export async function createLogoImageTarget(user: DecodedIdToken, orgIdParam: st
   const orgId = routeOrgId(orgIdParam);
   await assertCanManageOrganization(user, orgId);
   const input = imageTargetRequestSchema.omit({ announcementId: true }).parse(rawBody);
+  const storagePath = organizationLogoStoragePath(orgId, sanitizeTargetFileName(input.fileName));
+  const uploadTarget = await createSignedObjectUploadTarget(storagePath);
   return {
-    storagePath: organizationLogoStoragePath(orgId, sanitizeTargetFileName(input.fileName)),
+    storagePath,
     contentType: input.contentType,
     sizeBytes: input.sizeBytes,
+    ...(uploadTarget ?? {}),
     allowedContentTypes: ALLOWED_IMAGE_CONTENT_TYPES,
     maxSizeBytes: MAX_IMAGE_SIZE_BYTES
   };
@@ -355,11 +401,14 @@ export async function createAnnouncementImageTarget(user: DecodedIdToken, orgIdP
   await assertCanManageOrganization(user, orgId);
   const input = imageTargetRequestSchema.parse(rawBody);
   const announcementId = input.announcementId ?? db.collection(COLLECTIONS.announcements).doc().id;
+  const storagePath = announcementImageStoragePath(orgId, announcementId, sanitizeTargetFileName(input.fileName));
+  const uploadTarget = await createSignedObjectUploadTarget(storagePath);
   return {
     announcementId,
-    storagePath: announcementImageStoragePath(orgId, announcementId, sanitizeTargetFileName(input.fileName)),
+    storagePath,
     contentType: input.contentType,
     sizeBytes: input.sizeBytes,
+    ...(uploadTarget ?? {}),
     allowedContentTypes: ALLOWED_IMAGE_CONTENT_TYPES,
     maxSizeBytes: MAX_IMAGE_SIZE_BYTES
   };
@@ -370,14 +419,14 @@ export async function createAnnouncementMediaTargets(user: DecodedIdToken, orgId
   await assertCanManageOrganization(user, orgId);
   const input = mediaTargetRequestSchema.parse(rawBody);
   const announcementId = input.announcementId ?? db.collection(COLLECTIONS.announcements).doc().id;
+  const items = await Promise.all(input.files.map(async (file) => {
+    const storagePath = announcementImageStoragePath(orgId, announcementId, sanitizeTargetFileName(file.fileName));
+    const uploadTarget = await createSignedObjectUploadTarget(storagePath);
+    return { announcementId, storagePath, contentType: file.contentType, sizeBytes: file.sizeBytes, ...(uploadTarget ?? {}) };
+  }));
   return {
     announcementId,
-    items: input.files.map((file) => ({
-      announcementId,
-      storagePath: announcementImageStoragePath(orgId, announcementId, sanitizeTargetFileName(file.fileName)),
-      contentType: file.contentType,
-      sizeBytes: file.sizeBytes
-    })),
+    items,
     allowedContentTypes: ALLOWED_IMAGE_CONTENT_TYPES,
     maxItems: MAX_ANNOUNCEMENT_MEDIA_ITEMS,
     maxSizeBytes: MAX_IMAGE_SIZE_BYTES,
@@ -392,11 +441,19 @@ export async function listAnnouncements(user: DecodedIdToken, rawQuery: unknown)
   if (query.orgId) {
     ref = ref.where('orgId', '==', query.orgId);
   }
-  ref = ref.orderBy('createdAt', 'desc');
-  const snap = await offsetQuery(ref, query.pageToken, query.limit).get();
-  const likeMap = await viewerLikeMap(snap.docs.map((doc) => doc.id), user.uid);
-  const items = snap.docs.map((doc) => announcementFromDoc(doc.data(), likeMap[doc.id] ?? false));
-  return { items: pageItems(items, query.limit), nextPageToken: pageToken(query.pageToken, items.length, query.limit) };
+  const context = query.orgId ?? '';
+  const boundary = decodeCursor(query.pageToken, 'announcements', context, 2);
+  ref = ref.orderBy('createdAt', 'desc').orderBy(FieldPath.documentId(), 'desc');
+  if (boundary) ref = ref.startAfter(cursorMillis(boundary[0]), boundary[1]);
+  const snap = await ref.limit(query.limit + 1).get();
+  const docs = snap.docs.slice(0, query.limit);
+  const likeMap = await viewerLikeMap(docs.map((doc) => doc.id), user.uid);
+  const items = docs.map((doc) => announcementFromDoc(doc.data(), likeMap[doc.id] ?? false));
+  const last = docs.at(-1);
+  return {
+    items,
+    ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('announcements', context, [timestampBoundary(last.get('createdAt')), last.id]) } : {})
+  };
 }
 
 export async function getAnnouncement(user: DecodedIdToken, announcementIdParam: string) {
@@ -410,6 +467,48 @@ export async function getAnnouncement(user: DecodedIdToken, announcementIdParam:
   return announcementFromDoc(snap.data() ?? {}, likeSnap.exists);
 }
 
+export async function getMediaDownloadUrl(user: DecodedIdToken, rawPath: unknown): Promise<{ url: string }> {
+  await requireReadableUser(user);
+  if (!isSupabaseStorageEnabled() || typeof rawPath !== 'string' || rawPath.length > 512) {
+    throw new AppError('media_missing', 'The requested media was not found.', 404);
+  }
+  const path = rawPath.trim();
+  const logoMatch = /^organization-logos\/([A-Za-z0-9_-]+)\/[A-Za-z0-9][A-Za-z0-9._-]*$/.exec(path);
+  const announcementMatch = announcementImagePathMatch(path);
+  let referenced = false;
+  if (logoMatch) {
+    const organization = await db.doc(organizationPath(logoMatch[1])).get();
+    referenced = organization.exists && organization.data()?.logoPath === path;
+    if (!referenced) {
+      const oldLogo = await db.collection(COLLECTIONS.announcements).where('organizationLogoPath', '==', path).limit(1).get();
+      referenced = oldLogo.docs.some((doc) => !doc.data().deletedAt && doc.data().orgId === logoMatch[1]);
+    }
+  } else if (announcementMatch) {
+    const announcement = await db.collection(COLLECTIONS.announcements).doc(announcementMatch.announcementId).get();
+    const data = announcement.data();
+    referenced = Boolean(announcement.exists && !data?.deletedAt && data?.orgId === announcementMatch.orgId && mediaFromAnnouncement(data ?? {}).some((media) => media.storagePath === path));
+  } else {
+    throw new AppError('media_missing', 'The requested media was not found.', 404);
+  }
+  if (!referenced) {
+    try {
+      await assertCanManageOrganization(user, logoMatch?.[1] ?? announcementMatch?.orgId ?? '');
+    } catch (error) {
+      if (error instanceof AppError && (error.code === 'organization_management_required' || error.code === 'organization_missing')) {
+        throw new AppError('media_missing', 'The requested media was not found.', 404);
+      }
+      throw error;
+    }
+  }
+  const metadata = await getStoredObjectMetadata(path);
+  if (!ALLOWED_IMAGE_CONTENT_TYPES.includes(metadata.contentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number]) || metadata.sizeBytes <= 0 || metadata.sizeBytes > MAX_IMAGE_SIZE_BYTES) {
+    throw new AppError('media_missing', 'The requested media was not found.', 404);
+  }
+  const url = await createSignedObjectDownloadUrl(path);
+  if (!url) throw new AppError('storage_not_configured', 'Private file storage is not configured.', 503);
+  return { url };
+}
+
 export async function createAnnouncement(user: DecodedIdToken, orgIdParam: string, rawBody: unknown) {
   const orgId = routeOrgId(orgIdParam);
   const organization = await assertCanManageOrganization(user, orgId);
@@ -418,6 +517,7 @@ export async function createAnnouncement(user: DecodedIdToken, orgIdParam: strin
   const mediaAnnouncementId = media.map((item) => announcementImagePathMatch(item.storagePath)?.announcementId).find(Boolean);
   const announcementId = routeDocumentId(input.announcementId ?? mediaAnnouncementId ?? db.collection(COLLECTIONS.announcements).doc().id, 'announcement');
   validateAnnouncementMedia(orgId, announcementId, media);
+  await Promise.all(media.map((image) => verifySupabaseImage(image.storagePath, image.contentType, image.sizeBytes)));
 
   const now = Timestamp.now();
   const docRef = db.collection(COLLECTIONS.announcements).doc(announcementId);
@@ -445,6 +545,25 @@ export async function createAnnouncement(user: DecodedIdToken, orgIdParam: strin
 
   const snap = await docRef.get();
   return announcementFromDoc(snap.data() ?? {}, false);
+}
+
+export async function updateAnnouncement(user: DecodedIdToken, orgIdParam: string, announcementIdParam: string, rawBody: unknown) {
+  const orgId = routeOrgId(orgIdParam);
+  await assertCanManageOrganization(user, orgId);
+  const announcementId = routeDocumentId(announcementIdParam, 'announcement');
+  const input = announcementUpdateSchema.parse(rawBody);
+  const ref = db.collection(COLLECTIONS.announcements).doc(announcementId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists || snap.data()?.deletedAt) {
+      throw new AppError('announcement_missing', 'The announcement was not found.', 404);
+    }
+    if (snap.data()?.orgId !== orgId) {
+      throw new AppError('announcement_organization_mismatch', 'The announcement does not belong to this organization.', 400);
+    }
+    tx.update(ref, { body: input.body, updatedAt: FieldValue.serverTimestamp() });
+  });
+  return getAnnouncement(user, announcementId);
 }
 
 export async function deleteAnnouncement(user: DecodedIdToken, orgIdParam: string, announcementIdParam: string) {
@@ -500,10 +619,18 @@ export async function listAnnouncementComments(user: DecodedIdToken, announcemen
   if (!announcement.exists || announcement.data()?.deletedAt) {
     throw new AppError('announcement_missing', 'The announcement was not found.', 404);
   }
-  const snap = await offsetQuery(announcement.ref.collection('comments').orderBy('createdAt', 'asc'), query.pageToken, query.limit).get();
+  const boundary = decodeCursor(query.pageToken, 'announcement-comments', announcementId, 2);
+  let ref = announcement.ref.collection('comments').orderBy('createdAt', 'asc').orderBy(FieldPath.documentId());
+  if (boundary) ref = ref.startAfter(cursorMillis(boundary[0]), boundary[1]);
+  const snap = await ref.limit(query.limit + 1).get();
+  const docs = snap.docs.slice(0, query.limit);
   const organizationId = typeof announcement.data()?.orgId === 'string' ? announcement.data()?.orgId as string : undefined;
-  const items = await Promise.all(snap.docs.map((doc) => commentFromDoc(doc.data(), user.uid, organizationId)));
-  return { items: pageItems(items, query.limit), nextPageToken: pageToken(query.pageToken, items.length, query.limit) };
+  const items = await Promise.all(docs.map((doc) => commentFromDoc(doc.data(), user.uid, organizationId)));
+  const last = docs.at(-1);
+  return {
+    items,
+    ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('announcement-comments', announcementId, [timestampBoundary(last.get('createdAt')), last.id]) } : {})
+  };
 }
 
 export async function addAnnouncementComment(user: DecodedIdToken, announcementIdParam: string, rawBody: unknown) {
@@ -554,7 +681,7 @@ export async function updateAnnouncementComment(user: DecodedIdToken, announceme
     if (comment.data()?.authorUid !== user.uid) {
       throw new AppError('comment_owner_required', 'You can edit only your own comments.', 403);
     }
-    tx.update(commentRef, { body: input.body, updatedAt: now });
+    tx.update(commentRef, { body: input.body, updatedAt: now, editedAt: now });
     tx.update(announcementRef, { updatedAt: FieldValue.serverTimestamp() });
   });
 
@@ -601,10 +728,18 @@ export async function listDateEntries(user: DecodedIdToken, rawQuery: unknown): 
   let ref: Query<DocumentData> = db.collection(COLLECTIONS.calendarEntries);
   if (query.organizationId) ref = ref.where('orgId', '==', query.organizationId);
   if (query.kind) ref = ref.where('kind', '==', query.kind);
-  ref = ref.orderBy('date', 'asc').orderBy('startTime', 'asc');
-  const snap = await offsetQuery(ref, query.pageToken, query.limit).get();
-  const items = snap.docs.map((doc) => dateEntryFromDoc(doc.data()));
-  return { items: pageItems(items, query.limit), nextPageToken: pageToken(query.pageToken, items.length, query.limit) };
+  const context = JSON.stringify([query.organizationId ?? '', query.kind ?? '']);
+  const boundary = decodeCursor(query.pageToken, 'date-entries', context, 3);
+  ref = ref.orderBy('date', 'asc').orderBy('startTime', 'asc').orderBy(FieldPath.documentId());
+  if (boundary) ref = ref.startAfter(boundary[0], boundary[1], boundary[2]);
+  const snap = await ref.limit(query.limit + 1).get();
+  const docs = snap.docs.slice(0, query.limit);
+  const items = docs.map((doc) => dateEntryFromDoc(doc.data()));
+  const last = docs.at(-1);
+  return {
+    items,
+    ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('date-entries', context, [String(last.get('date') ?? ''), String(last.get('startTime') ?? ''), last.id]) } : {})
+  };
 }
 
 export async function createDateEntry(user: DecodedIdToken, orgIdParam: string, rawBody: unknown) {

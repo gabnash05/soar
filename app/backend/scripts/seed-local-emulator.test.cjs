@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { getLocalSeedEndpoints, seedAccounts } = require('./seed-local-emulator.cjs');
+const { getLocalSeedEndpoints, createFixtureIfAbsent, seedAccounts, seedOrganizations, seedContent, seedRequests } = require('./seed-local-emulator.cjs');
 
 function createFakeServices({ authUsers = [], documents = {}, failCreatePathOnce } = {}) {
   const users = new Map(authUsers.map((user) => [user.uid, structuredClone(user)]));
@@ -29,7 +29,28 @@ function createFakeServices({ authUsers = [], documents = {}, failCreatePathOnce
   const read = (path) => ({ exists: stored.has(path), data: () => structuredClone(stored.get(path)) });
   const db = {
     doc(path) {
-      return { path, async get() { return read(path); } };
+      return {
+        path,
+        async get() { return read(path); },
+        async set(value, options) {
+          if (options?.merge) {
+            stored.set(path, { ...(stored.get(path) ?? {}), ...structuredClone(value) });
+          } else {
+            assert.equal(stored.has(path), false, `refusing to overwrite existing ${path}`);
+            stored.set(path, structuredClone(value));
+          }
+          writes.push(path);
+        },
+        async create(value) {
+          if (stored.has(path)) {
+            const error = new Error(`already exists: ${path}`);
+            error.code = 6;
+            throw error;
+          }
+          stored.set(path, structuredClone(value));
+          writes.push(path);
+        }
+      };
     },
     async runTransaction(operation) {
       const pending = new Map();
@@ -209,6 +230,61 @@ test('seeds defaults for a new fixture once and preserves existing Auth claims a
   assert.deepEqual(services.stored.get(accountPath), savedAccount);
   assert.deepEqual(services.stored.get(entitlementPath), savedEntitlement);
   assert.deepEqual(services.writes, writesBeforeRerun);
+});
+
+test('creates missing fixtures once, then preserves fixture edits, statuses, counters, and subcollections on rerun', async () => {
+  const services = createFakeServices();
+  await seedOrganizations(services.db);
+  await seedContent(services.db);
+  await seedRequests(services.db);
+
+  const fixturePaths = [...services.stored.keys()];
+  assert.ok(fixturePaths.some((path) => path === 'organizations/computer-engineering'));
+  assert.ok(fixturePaths.some((path) => path === 'announcements/post-robotics-tryouts'));
+  assert.ok(fixturePaths.some((path) => path === 'calendarEntries/date-computer-engineering-build-night'));
+  assert.ok(fixturePaths.some((path) => path.startsWith('applications/')));
+  assert.ok(fixturePaths.some((path) => path.startsWith('meetingRequests/')));
+  assert.equal(services.stored.get('announcements/post-robotics-tryouts').likeCount, 0);
+
+  for (const path of fixturePaths) {
+    const current = services.stored.get(path);
+    const edited = { ...current, testerEdit: `preserve:${path}` };
+    if (path.startsWith('organizations/') && !path.includes('/officerGrants/')) edited.name = `Tester-edited ${current.name}`;
+    if (path.startsWith('announcements/')) {
+      edited.likeCount = 9;
+      edited.commentCount = 6;
+      edited.body = 'Tester-edited announcement';
+    }
+    if (path.startsWith('calendarEntries/')) edited.date = '2099-12-31';
+    if (path.startsWith('applications/')) edited.status = 'Reviewed';
+    if (path.startsWith('meetingRequests/')) edited.status = 'Cancelled';
+    if (path.includes('/officerGrants/')) {
+      edited.status = 'revoked';
+      edited.revokedByUid = 'tester-admin';
+      edited.revokedAt = { seconds: 1_800_000_000, nanoseconds: 0 };
+    }
+    services.stored.set(path, edited);
+  }
+  services.stored.set('announcements/post-robotics-tryouts/likes/tester', { uid: 'tester', announcementId: 'post-robotics-tryouts' });
+  services.stored.set('announcements/post-robotics-tryouts/comments/tester', { commentId: 'tester', body: 'Keep this child.' });
+  const beforeRerun = new Map(services.stored);
+
+  await seedOrganizations(services.db);
+  await seedContent(services.db);
+  await seedRequests(services.db);
+
+  assert.deepEqual(services.stored, beforeRerun);
+});
+
+test('treats only already-exists as a no-op when creating a fixture', async () => {
+  const services = createFakeServices();
+  assert.equal(await createFixtureIfAbsent(services.db, 'fixtures/item', { value: 'initial' }), true);
+  assert.equal(await createFixtureIfAbsent(services.db, 'fixtures/item', { value: 'replacement' }), false);
+  assert.deepEqual(services.stored.get('fixtures/item'), { value: 'initial' });
+
+  const failure = Object.assign(new Error('permission denied'), { code: 7 });
+  const failingDb = { doc: () => ({ create: async () => { throw failure; } }) };
+  await assert.rejects(createFixtureIfAbsent(failingDb, 'fixtures/blocked', {}), (error) => error === failure);
 });
 
 test('does not create an Auth fixture for an existing Firestore profile', async () => {

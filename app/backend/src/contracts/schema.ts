@@ -34,6 +34,8 @@ export interface AccountDocument {
   displayName: string;
   email: string;
   emailVerified: boolean;
+  accessProvenance?: 'unpaid-preview';
+  previewAccessGrantedAt?: Timestamp;
   studentId?: string;
   department?: string;
   departmentKey?: string;

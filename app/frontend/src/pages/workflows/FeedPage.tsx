@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, ButtonLink, LoadingBlock, ModalDialog, StateBlock } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
@@ -21,6 +21,11 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
   const generation = useRef(0);
   const busy = useRef(false);
   const sentinel = useRef<HTMLDivElement>(null);
+  const renderedGeneration = generation.current;
+  const currentContext = useRef({ session, client, generation: renderedGeneration });
+  useLayoutEffect(() => {
+    currentContext.current = { session, client, generation: renderedGeneration };
+  }, [client, renderedGeneration, session]);
   const [searchParams] = useSearchParams();
   const directAnnouncementId = searchParams.get('announcementId') ?? '';
   const directLookupKey = `${session.uid}:${directAnnouncementId}`;
@@ -32,6 +37,7 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
 
   const loadFirstPage = useCallback(async () => {
     const requestGeneration = ++generation.current;
+    currentContext.current = { session, client, generation: requestGeneration };
     busy.current = true;
     setLoading(true);
     setLoadingMore(false);
@@ -116,6 +122,15 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
     return [directLookup.announcement, ...data];
   }, [data, directLookup, pageContainsDirectAnnouncement]);
 
+  const reconcileAnnouncement = useCallback((updated: Announcement) => {
+    const context = currentContext.current;
+    if (context.session !== session || context.client !== client || context.generation !== renderedGeneration) return;
+    setData((current) => current.map((item) => item.id === updated.id ? updated : item));
+    setDirectLookup((current) => current?.announcement?.id === updated.id
+      ? { ...current, status: 'found', announcement: updated }
+      : current);
+  }, [client, renderedGeneration, session.uid]);
+
   useEffect(() => {
     if (!directAnnouncementId || loading || error || pageContainsDirectAnnouncement || directLookup?.key === directLookupKey) return;
     const requestGeneration = generation.current;
@@ -157,7 +172,7 @@ export function FeedView({ session, client }: { session: UserSession; client: Wo
       {directLookup?.key === directLookupKey && directLookup.status === 'error' ? <div role="alert" className="text-center text-sm">Could not check this announcement link. <Button type="button" variant="secondary" onClick={() => setDirectLookup(null)}>Retry</Button></div> : null}
       {!loading && !error && data.length === 0 ? <EmptyState title="No announcements yet">When officers publish announcements, the newest posts will appear here.</EmptyState> : null}
       <section className="mx-auto grid w-[min(720px,100%)] min-w-0 gap-4" aria-label="Announcement feed">
-        {visibleAnnouncements.map((announcement) => <AnnouncementCard key={announcement.id} announcement={announcement} session={session} client={client} onChanged={loadFirstPage} />)}
+        {visibleAnnouncements.map((announcement) => <AnnouncementCard key={`${session.uid}:${announcement.id}`} announcement={announcement} session={session} client={client} onChanged={reconcileAnnouncement} />)}
       </section>
       {pageError ? <div role="alert" className="mx-auto w-[min(720px,100%)] py-4 text-center text-sm text-[var(--color-ink)]">Could not load more announcements: {pageError} <Button type="button" variant="secondary" onClick={loadNextPage}>Retry loading announcements</Button></div> : null}
       {!loading && !error && data.length > 0 && !nextPageToken ? <p className="py-5 text-center text-sm text-[var(--muted-foreground)]" role="status">You’re all caught up.</p> : null}

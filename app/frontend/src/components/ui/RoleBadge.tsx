@@ -1,13 +1,14 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
-export type RoleBadgeKind = 'student' | 'sponsor' | 'officer' | 'admin';
+export type RoleBadgeKind = 'student' | 'sponsor' | 'officer' | 'admin' | 'unknown';
 
 const labels: Record<RoleBadgeKind, string> = {
   student: 'Student',
   sponsor: 'Sponsor',
   officer: 'Approved officer',
   admin: 'Admin',
+  unknown: 'Role unavailable',
 };
 
 const roleClasses: Record<RoleBadgeKind, { text: string; mark: string }> = {
@@ -15,10 +16,11 @@ const roleClasses: Record<RoleBadgeKind, { text: string; mark: string }> = {
   sponsor: { text: 'text-[var(--color-orange-deep)]', mark: 'bg-[var(--color-gold)]' },
   officer: { text: 'text-[var(--color-navy)]', mark: 'bg-[var(--color-gold)]' },
   admin: { text: 'text-[var(--color-navy)]', mark: 'bg-[var(--color-blue)]' },
+  unknown: { text: 'text-[var(--muted-foreground)]', mark: 'bg-[var(--color-border)]' },
 };
 
-export const RoleBadge = ({ kind, children }: { kind: RoleBadgeKind; children?: ReactNode }) => (
-  <span className={cn('inline-flex min-h-7 items-center gap-2 text-xs font-extrabold tracking-[0.01em]', roleClasses[kind].text)}>
+export const RoleBadge = ({ kind, children, className }: { kind: RoleBadgeKind; children?: ReactNode; className?: string }) => (
+  <span className={cn('inline-flex min-h-7 items-center gap-2 text-xs font-extrabold tracking-[0.01em]', roleClasses[kind].text, className)}>
     <span className={cn('size-2.5 shrink-0 rounded-full border-2 border-current shadow-[0_0_0_3px_color-mix(in_oklch,currentColor_12%,transparent)]', roleClasses[kind].mark)} aria-hidden="true" />
     <span>{children ?? labels[kind]}</span>
   </span>

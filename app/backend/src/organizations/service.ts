@@ -7,6 +7,7 @@ import { normalizedName, organizationListQuerySchema } from '../content/validati
 import { AppError } from '../errors';
 import { adminAuth, db } from '../firebase';
 import { requireActiveAccess } from '../identity/access';
+import { decodeCursor, encodeCursor } from '../pagination';
 
 async function assertOrganizationOwner(orgId: string, uid: string): Promise<void> {
   const orgSnap = await db.doc(organizationPath(orgId)).get();
@@ -124,18 +125,18 @@ export async function listAdminOrganizations(rawQuery: unknown): Promise<{
   nextPageToken?: string;
 }> {
   const query = organizationListQuerySchema.parse(rawQuery);
-  const snap = await db.collection(COLLECTIONS.organizations)
-    .orderBy('name')
-    .offset(query.pageToken)
-    .limit(query.limit + 1)
-    .get();
+  const boundary = decodeCursor(query.pageToken, 'admin-organizations', '', 2);
+  let ref = db.collection(COLLECTIONS.organizations).orderBy('name').orderBy(FieldPath.documentId());
+  if (boundary) ref = ref.startAfter(boundary[0], boundary[1]);
+  const snap = await ref.limit(query.limit + 1).get();
   const docs = snap.docs.slice(0, query.limit);
+  const last = docs.at(-1);
   return {
     items: docs.map((doc) => ({
       id: typeof doc.data().orgId === 'string' ? doc.data().orgId : doc.id,
       name: typeof doc.data().name === 'string' ? doc.data().name : 'Organization'
     })),
-    ...(snap.docs.length > query.limit ? { nextPageToken: String(query.pageToken + query.limit) } : {})
+    ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('admin-organizations', '', [String(last.data().name ?? ''), last.id]) } : {})
   };
 }
 
@@ -223,9 +224,9 @@ export async function assignAdminOfficerGrant(orgId: string, rawBody: unknown, a
       uid: input.uid,
       status: 'active',
       grantedByUid: actorUid,
-      createdAt: now,
+      ...(!grant.exists ? { createdAt: now } : {}),
       updatedAt: now
-    });
+    }, { merge: true });
   });
 
   return { orgId, uid: input.uid, status: 'approved', alreadyAssigned };

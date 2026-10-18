@@ -1,5 +1,5 @@
 import type { BackendGateway } from '../lib/backendGateway';
-import type { CheckoutStatus, RegistrationPaymentIntent, RenewalRequest, UserSession } from '../lib/contracts';
+import type { CheckoutStatus, PreviewRegistrationInput, RegistrationPaymentIntent, RegistrationRecoveryResult, RenewalCheckoutStatus, RenewalRequest, UserSession } from '../lib/contracts';
 
 export const makeSession = (overrides: Partial<UserSession> = {}): UserSession => ({
   uid: 'test-uid',
@@ -40,15 +40,34 @@ export const createMockGateway = (session: UserSession | null = makeSession()): 
     providerLabel: 'Test checkout',
     fixture: true,
   })),
+  registerPreviewAccount: vi.fn(async (input: PreviewRegistrationInput): Promise<UserSession> => makeSession({
+    email: input.email,
+    displayName: input.displayName,
+    accountKind: input.role,
+    studentId: input.studentId,
+    department: input.department,
+    emailVerified: false,
+    access: {
+      status: 'active',
+      provenance: 'unpaid-preview',
+      annualFeePhp: 10,
+      feePhp: 0,
+      periodLabel: 'Unpaid preview',
+      renewalAvailable: false,
+    },
+  })),
   getCheckoutStatus: vi.fn(async (): Promise<CheckoutStatus> => ({
     intentId: 'test-intent',
-    status: 'active',
+    status: 'pending',
     amountPhp: 10,
     message: 'Confirmed',
     canCreateAccount: true,
     fixture: true,
   })),
+  requestPaidRegistrationRecovery: vi.fn(async (): Promise<RegistrationRecoveryResult> => ({ accepted: true, delivery: 'sent' })),
+  acceptPaidRegistrationRecovery: vi.fn(async () => undefined),
   registerAccount: vi.fn(async () => session ?? makeSession({ emailVerified: false })),
+
   resendEmailVerification: vi.fn(async () => undefined),
   requestManualRenewal: vi.fn(async (): Promise<RenewalRequest> => ({
     renewalId: 'test-renewal',
@@ -56,6 +75,12 @@ export const createMockGateway = (session: UserSession | null = makeSession()): 
     status: 'pending',
     amountPhp: 10,
     providerLabel: 'Test renewal',
+    fixture: true,
+  })),
+  getRenewalStatus: vi.fn(async (): Promise<RenewalCheckoutStatus> => ({
+    renewalId: 'test-renewal',
+    status: 'confirmed',
+    message: 'Payment confirmed. Your access has been updated.',
     fixture: true,
   })),
   getAccessStatus: vi.fn(async () => (session ?? makeSession()).access),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useBeforeUnload, useBlocker, useSearchParams } from 'react-router-dom';
 import { ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { OrganizationProfile, WorkflowDataClient } from '../workflows/contracts';
@@ -10,6 +10,7 @@ import {
   OfficerDashboardBlock,
   OfficerOrganizationPicker,
   ProfileRecruitmentSection,
+  type PasswordReauthenticator,
 } from '../workflows/OfficerPage';
 import {
   OrganizationAvatar,
@@ -59,7 +60,7 @@ function DepartmentStudentCountPanel({ organization, session, client }: { organi
   );
 }
 
-export function OrganizationSettingsView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
+export function OrganizationSettingsView({ session, client, reauthenticate }: { session: UserSession; client: WorkflowDataClient; reauthenticate?: PasswordReauthenticator }) {
   const grants = useMemo(() => isStudent(session) ? getApprovedOfficerGrants(session) : [], [session]);
   const [searchParams, setSearchParams] = useSearchParams();
   const { activeId, getTabTo } = useQueryTab(managementTabs.map((item) => item.id), 'details');
@@ -72,6 +73,18 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
   const [profileDirty, setProfileDirty] = useState(false);
   const [intakeSaving, setIntakeSaving] = useState(false);
   const [pendingOrganizationId, setPendingOrganizationId] = useState<string | null>(null);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => {
+    if (!profileDirty) return false;
+    if (currentLocation.pathname !== nextLocation.pathname) return true;
+    const currentTab = new URLSearchParams(currentLocation.search).get('tab') ?? 'details';
+    const nextTab = new URLSearchParams(nextLocation.search).get('tab') ?? 'details';
+    return currentTab !== nextTab;
+  });
+  useBeforeUnload(useCallback((event) => {
+    if (!profileDirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+  }, [profileDirty]));
 
   useEffect(() => {
     if (requestedOrganizationId && grants.some((grant) => grant.organizationId === requestedOrganizationId)) {
@@ -160,7 +173,7 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
               <SubtabPanel baseId="organization-management" tabId="details" activeId={activeId}>
                 <div className="grid min-w-0 gap-4">
                   <DepartmentStudentCountPanel organization={dashboard.organization} session={session} client={client} />
-                  <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} formId={profileFormId} onDirtyChange={handleProfileDirtyChange} />
+                  <ProfileRecruitmentSection dashboard={dashboard} session={session} client={client} onChanged={reload} formId={profileFormId} onDirtyChange={handleProfileDirtyChange} reauthenticate={reauthenticate} />
                 </div>
               </SubtabPanel>
               <SubtabPanel baseId="organization-management" tabId="intake" activeId={activeId}>
@@ -176,6 +189,21 @@ export function OrganizationSettingsView({ session, client }: { session: UserSes
           );
         }}
       </OfficerDashboardBlock>
+      <ConfirmDialog
+        open={blocker.state === 'blocked'}
+        title="Leave with unsaved profile edits?"
+        description="Your organization profile draft has not been saved. Leave this page and discard the draft?"
+        confirmLabel="Discard and leave"
+        cancelLabel="Stay here"
+        destructive
+        onOpenChange={(open) => { if (!open && blocker.state === 'blocked') blocker.reset(); }}
+        onConfirm={() => {
+          if (blocker.state === 'blocked') {
+            setProfileDirty(false);
+            blocker.proceed();
+          }
+        }}
+      />
       <ConfirmDialog
         open={Boolean(pendingOrganizationId)}
         title="Switch organizations?"

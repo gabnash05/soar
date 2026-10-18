@@ -14,6 +14,7 @@ import type {
   MeetingRequest,
   MeetingRequestInput,
   OfficerDashboard,
+  OrganizationPage,
   OrganizationProfile,
   OrganizationProfileInput,
   OrganizationSummary,
@@ -65,7 +66,7 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   addAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
   updateAnnouncementComment: () => unavailableMutation<AnnouncementComment>(),
   deleteAnnouncementComment: () => unavailableMutation(),
-  listOrganizations: () => unavailableQuery<OrganizationSummary[]>([]),
+  listOrganizations: () => unavailableQuery<OrganizationPage>({ items: [] }),
   getOrganization: () => unavailableQuery<OrganizationProfile | undefined>(undefined),
   confirmExternalApplication: () => unavailableMutation<ApplicationRecord>(),
   listMyApplications: () => unavailableQuery<ApplicationRecord[]>([]),
@@ -76,6 +77,7 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   saveOrganizationProfile: () => unavailableMutation<OrganizationProfile>(),
   setApplicationsOpen: () => unavailableMutation<{ applicationsOpen: boolean }>(),
   publishAnnouncement: () => unavailableMutation<Announcement>(),
+  updateAnnouncement: () => unavailableMutation<Announcement>(),
   deleteAnnouncement: () => unavailableMutation(),
   getOrganizationDepartmentStudentCount: () => unavailableQuery<OrganizationDepartmentStudentCount | undefined>(undefined),
   updateApplicationStage: () => unavailableMutation<ApplicationRecord>(),
@@ -343,7 +345,7 @@ const initialAnnouncements: Announcement[] = [
     viewerHasLiked: false,
     commentCount: 1,
     comments: [
-      { id: 'comment-1', authorUid: 'student-1', authorName: 'Mara Santos', body: 'Is the consultation window open to first-year students?', createdAt: '2026-10-07T09:00:00.000Z' },
+      { id: 'comment-1', authorUid: 'student-1', authorAccountKind: 'student', authorName: 'Mara Santos', body: 'Is the consultation window open to first-year students?', createdAt: '2026-10-07T09:00:00.000Z' },
     ],
   },
   {
@@ -550,7 +552,7 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
     label: 'Workflow fixture data',
 
     async listAnnouncements(session, page = { limit: 15 }) {
-      const sorted = announcements.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const sorted = announcements.filter((item) => !page.organizationId || item.organizationId === page.organizationId).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const offset = Number(page.pageToken ?? 0);
       const selected = sorted.slice(offset, offset + page.limit);
       return {
@@ -599,6 +601,8 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       const comment: AnnouncementComment = {
         id: `comment-${nextId++}`,
         authorUid: session.uid,
+        ...(session.accountKind === 'student' ? { authorAccountKind: 'student' as const } : {}),
+        ...(isApprovedOfficerFor(session, announcement.organizationId) ? { authorOrganizationRole: 'approved_officer' as const } : {}),
         authorName: session.displayName,
         body: trimmed,
         createdAt: new Date().toISOString(),
@@ -634,9 +638,22 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       return { ok: true, persisted: true, source: 'fixture', message: 'Comment deleted in demo mode.' };
     },
 
-    async listOrganizations() {
+    async listOrganizations(_session, page = {}) {
+      const limit = page.limit ?? 20;
+      const query = page.query?.trim().toLocaleLowerCase() ?? '';
+      const cursorMatch = page.pageToken === undefined ? null : /^fixture:([^:]*):(0|[1-9]\d*)$/.exec(page.pageToken);
+      if (page.pageToken !== undefined && !cursorMatch) throw new Error('The organization page token is invalid.');
+      let offset = 0;
+      if (cursorMatch) {
+        let cursorQuery = '';
+        try { cursorQuery = decodeURIComponent(cursorMatch[1]); } catch { throw new Error('The organization page token is invalid.'); }
+        if (cursorQuery !== query) throw new Error('The organization page token does not match this search.');
+        offset = Number(cursorMatch[2]);
+      }
+      const filtered = organizations.map(toSummary).filter((organization) => !query || organization.name.toLocaleLowerCase().includes(query));
+      const items = filtered.slice(offset, offset + limit);
       return {
-        data: clone(organizations.map(toSummary)),
+        data: { items: clone(items), nextPageToken: offset + items.length < filtered.length ? `fixture:${encodeURIComponent(query)}:${offset + items.length}` : undefined },
         source: 'fixture',
         message: 'Demo mode: organization records are local samples.',
       };
@@ -827,6 +844,17 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       };
       announcements.unshift(announcement);
       return success('Announcement published in demo mode.', hydrateAnnouncement(announcement, session));
+    },
+
+    async updateAnnouncement(announcementId, organizationId, body, session) {
+      const permission = assertOfficer<Announcement>(organizationId, session);
+      if (permission) return permission;
+      const announcement = announcements.find((item) => item.id === announcementId && item.organizationId === organizationId);
+      if (!announcement) return failure('not-found', 'Announcement not found.');
+      const trimmed = body.trim();
+      if (!trimmed) return failure('validation', 'Announcement text is required.');
+      announcement.body = trimmed;
+      return success('Announcement updated in demo mode.', hydrateAnnouncement(announcement, session));
     },
 
     async deleteAnnouncement(announcementId, organizationId, session) {

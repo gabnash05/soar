@@ -1,15 +1,66 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ButtonLink, LoadingBlock } from '../../components/ui';
+import { Button, ButtonLink, LoadingBlock } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
-import type { WorkflowDataClient } from './contracts';
-import { EmptyState, ErrorState, OrganizationAvatar, OrganizationIdentityArt, RouteUnavailableState, SourceNotice, useWorkflowQuery, useWorkflowSession, WorkflowPageFrame } from './pageParts';
-import { filterOrganizationsByName } from './workflowUtils';
-
+import type { OrganizationSummary, WorkflowDataClient } from './contracts';
+import { EmptyState, ErrorState, OrganizationAvatar, OrganizationIdentityArt, RouteUnavailableState, SourceNotice, useWorkflowSession, WorkflowPageFrame } from './pageParts';
 export function DirectoryView({ session, client }: { session: UserSession; client: WorkflowDataClient }) {
   const [query, setQuery] = useState('');
-  const { data, loading, error, sourceMessage, reload } = useWorkflowQuery(() => client.listOrganizations(session), [client, session.uid]);
-  const filtered = useMemo(() => filterOrganizationsByName(data ?? [], query), [data, query]);
+  const [data, setData] = useState<OrganizationSummary[]>([]);
+  const [nextPageToken, setNextPageToken] = useState<string | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const busy = useRef(false);
+
+  const loadFirstPage = useCallback(async () => {
+    const activeGeneration = ++generation.current;
+    busy.current = true;
+    setLoading(true);
+    setLoadingMore(false);
+    setError(null);
+    setPageError(null);
+    setData([]);
+    setNextPageToken(undefined);
+    try {
+      const result = await client.listOrganizations(session, { limit: 20, query });
+      if (generation.current !== activeGeneration) return;
+      setData(result.data.items);
+      setNextPageToken(result.data.nextPageToken);
+    } catch (caught) {
+      if (generation.current === activeGeneration) setError(caught instanceof Error ? caught.message : 'Unable to load organizations.');
+    } finally {
+      if (generation.current === activeGeneration) { busy.current = false; setLoading(false); }
+    }
+  }, [client, query, session]);
+
+  const loadNextPage = useCallback(async () => {
+    if (!nextPageToken || busy.current || loading || loadingMore) return;
+    const activeGeneration = generation.current;
+    busy.current = true;
+    setLoadingMore(true);
+    setPageError(null);
+    try {
+      const result = await client.listOrganizations(session, { limit: 20, pageToken: nextPageToken, query });
+      if (generation.current !== activeGeneration) return;
+      setData((current) => {
+        const ids = new Set(current.map((organization) => organization.id));
+        return [...current, ...result.data.items.filter((organization) => !ids.has(organization.id))];
+      });
+      setNextPageToken(result.data.nextPageToken);
+    } catch (caught) {
+      if (generation.current === activeGeneration) setPageError(caught instanceof Error ? caught.message : 'Unable to load more organizations.');
+    } finally {
+      if (generation.current === activeGeneration) { busy.current = false; setLoadingMore(false); }
+    }
+  }, [client, loading, loadingMore, nextPageToken, query, session]);
+
+  useEffect(() => {
+    void loadFirstPage();
+    return () => { generation.current += 1; busy.current = false; };
+  }, [loadFirstPage]);
 
   return (
     <WorkflowPageFrame
@@ -18,14 +69,14 @@ export function DirectoryView({ session, client }: { session: UserSession; clien
       description="Search organization names, review quick details, and open a profile when you find a match."
       session={session}
     >
-      <SourceNotice client={client} message={sourceMessage} />
+      <SourceNotice client={client} />
       <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0 pb-[18px]" aria-label="Organization search">
         <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)] flex items-end justify-between gap-4 max-[820px]:flex-col max-[820px]:items-start">
           <div>
             <h2>Search organizations</h2>
             <p>Search by organization name, then open the public profile that matches.</p>
           </div>
-          <p className="font-extrabold text-[var(--color-blue-deep)]" aria-live="polite">{filtered.length} result{filtered.length === 1 ? '' : 's'}</p>
+          <p className="font-extrabold text-[var(--color-blue-deep)]" aria-live="polite">{data.length} result{data.length === 1 ? '' : 's'}</p>
         </header>
         <div className="grid min-w-0 gap-1.5 max-w-[720px]">
           <label className="flex justify-between gap-3 text-[13px] font-bold text-[var(--color-navy)] [&_span:last-child:not(:first-child)]:font-normal [&_span:last-child:not(:first-child)]:text-[var(--muted-foreground)]" htmlFor="organization-search">Search by organization name</label>
@@ -40,15 +91,15 @@ export function DirectoryView({ session, client }: { session: UserSession; clien
         </div>
       </section>
       {loading ? <LoadingBlock label="Loading organizations" /> : null}
-      {error ? <ErrorState onRetry={reload}>{error}</ErrorState> : null}
-      {!loading && !error && data?.length === 0 ? (
+      {error ? <ErrorState onRetry={loadFirstPage}>{error}</ErrorState> : null}
+      {!loading && !error && data.length === 0 && !query.trim() && !nextPageToken ? (
         <EmptyState title="Organizations are not available">Directory records will appear here when they are available.</EmptyState>
       ) : null}
-      {!loading && !error && data && data.length > 0 && filtered.length === 0 ? (
-        <EmptyState title="No organizations match this search">Clear the search or try a different organization name.</EmptyState>
+      {!loading && !error && query.trim() && data.length === 0 ? (
+        <EmptyState title={nextPageToken ? 'No matches on this page' : 'No organizations match this search'}>{nextPageToken ? 'Continue loading to search more organizations, or clear the search to browse all.' : 'Clear the search or try a different organization name.'}</EmptyState>
       ) : null}
       <section className="grid min-w-0 grid-cols-1 gap-[18px] md:grid-cols-2 xl:grid-cols-3" aria-label="Organization directory results">
-        {filtered.map((organization) => {
+        {data.map((organization) => {
           const organizationPath = `/app/organizations/${organization.id}`;
           return (
             <article key={organization.id} className="grid min-w-0 content-start overflow-hidden rounded-[18px] border border-[var(--color-border)] bg-[var(--color-white)] shadow-[var(--shadow-soft)]">
@@ -71,6 +122,8 @@ export function DirectoryView({ session, client }: { session: UserSession; clien
           );
         })}
       </section>
+      {pageError ? <div className="py-4 text-center" role="alert">Could not load more organizations: {pageError} <Button type="button" variant="secondary" onClick={() => void loadNextPage()}>Retry loading organizations</Button></div> : null}
+      {nextPageToken && !pageError ? <div className="flex justify-center py-4">{loadingMore ? <span role="status">Loading more organizations…</span> : <Button type="button" variant="secondary" onClick={() => void loadNextPage()}>Load more organizations</Button>}</div> : null}
     </WorkflowPageFrame>
   );
 }
