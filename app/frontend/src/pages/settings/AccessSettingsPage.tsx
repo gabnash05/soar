@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, ButtonLink, Card, CardHeader, StatusChip } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
-import { hasActiveAccess } from '../../lib/contracts';
+import { hasActiveAccess, type RenewalCheckoutStatus } from '../../lib/contracts';
 import { isPaidFlowEnabled } from '../../lib/features';
 import { markFixtureRenewalConfirmedFromUrl } from '../../lib/fixtures';
 import { navigateToHostedCheckout } from '../../lib/redirects';
@@ -18,9 +18,14 @@ const formatDate = (value?: string) => {
 
 export const AccessSettingsPage = () => {
   const paidFlowEnabled = isPaidFlowEnabled();
-  const { session, requestManualRenewal, reloadSession, error, clearError, gateway } = useAuth('access-settings');
+  const { session, loading, requestManualRenewal, getRenewalStatus, reloadSession, error, clearError, gateway } = useAuth('access-settings');
   const [searchParams] = useSearchParams();
+  const renewalId = searchParams.get('renewalId');
+  const checkoutNotice = searchParams.get('checkout');
   const [message, setMessage] = useState<string | null>(null);
+  const [renewalStatus, setRenewalStatus] = useState<RenewalCheckoutStatus | null>(null);
+  const [renewalChecking, setRenewalChecking] = useState(false);
+  const [renewalPollCycle, setRenewalPollCycle] = useState(0);
   const [working, setWorking] = useState(false);
 
   useEffect(() => {
@@ -30,13 +35,41 @@ export const AccessSettingsPage = () => {
 
   useEffect(() => {
     if (!paidFlowEnabled) return;
-    const renewalId = searchParams.get('renewalId');
     const fixtureStatus = searchParams.get('fixtureStatus');
     if (gateway.mode === 'fixture' && renewalId && fixtureStatus === 'confirmed') {
       markFixtureRenewalConfirmedFromUrl(renewalId, fixtureStatus);
       void reloadSession().then(() => setMessage('Demo renewal applied locally.')).catch(() => {});
     }
-  }, [gateway.mode, paidFlowEnabled, reloadSession, searchParams]);
+    if (loading || !session || !renewalId) return;
+
+    let active = true;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    setRenewalStatus(null);
+    const checkRenewal = async () => {
+      if (!active) return;
+      setRenewalChecking(true);
+      try {
+        const next = await getRenewalStatus(renewalId);
+        if (!active) return;
+        setRenewalStatus(next);
+        attempts += 1;
+        if (next.status === 'confirmed') void reloadSession().catch(() => {});
+        if (next.status === 'pending' && attempts < 6) {
+          timeout = setTimeout(() => void checkRenewal(), 5000);
+        }
+      } catch {
+        // Keep the access settings screen available; the scoped safe error remains visible.
+      } finally {
+        if (active) setRenewalChecking(false);
+      }
+    };
+    void checkRenewal();
+    return () => {
+      active = false;
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [gateway.mode, getRenewalStatus, loading, paidFlowEnabled, reloadSession, renewalId, renewalPollCycle, searchParams, session?.uid]);
 
   if (!session) return null;
 
@@ -69,6 +102,28 @@ export const AccessSettingsPage = () => {
       </header>
 
       {message ? <div className="rounded-[var(--radius-md)] border border-[var(--color-blue-deep)] bg-[var(--color-navy-soft)] px-3.5 py-3 text-[var(--color-navy)]" role="status">{message}</div> : null}
+      {paidFlowEnabled && renewalId ? (
+        <section className="grid gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)] p-4" aria-live="polite">
+          <StatusChip tone={renewalStatus?.status === 'confirmed' ? 'approved' : renewalStatus?.status === 'failed' ? 'danger' : 'attention'}>
+            {renewalStatus?.status || 'checking'}
+          </StatusChip>
+          <h2>{renewalStatus?.status === 'confirmed' ? 'Renewal confirmed' : renewalStatus?.status === 'failed' ? 'Renewal not confirmed' : 'Checking renewal payment'}</h2>
+          <p className="m-0 text-[var(--muted-foreground)]">
+            {renewalStatus?.message || 'SOAR is checking the renewal record. Returning from checkout is not proof of payment.'}
+          </p>
+          {renewalStatus?.status !== 'confirmed' ? (
+            <Button type="button" variant="secondary" disabled={renewalChecking} onClick={() => setRenewalPollCycle((cycle) => cycle + 1)}>
+              {renewalChecking ? 'Checking payment…' : 'Check renewal status'}
+            </Button>
+          ) : null}
+          {checkoutNotice === 'cancelled' && renewalStatus?.status !== 'confirmed' ? (
+            <p className="m-0 text-sm text-[var(--color-navy)]" role="status">Checkout was closed. Access remains unchanged unless SOAR confirms payment.</p>
+          ) : null}
+          {checkoutNotice === 'success' && renewalStatus?.status === 'pending' ? (
+            <p className="m-0 text-sm text-[var(--color-blue-deep)]" role="status">Checkout returned successfully; waiting for the signed provider confirmation.</p>
+          ) : null}
+        </section>
+      ) : null}
       {error ? <div className="rounded-[var(--radius-md)] border border-[var(--color-orange-deep)] bg-[var(--color-danger-soft)] px-3.5 py-3 text-[var(--color-navy)]" role="alert">{error}</div> : null}
 
       <Card className="flex items-center justify-between gap-5 max-[820px]:flex-col max-[820px]:items-start [&_h2]:my-2.5">
@@ -110,7 +165,7 @@ export const AccessSettingsPage = () => {
             <li>Personal settings stay available for recovery and account management.</li>
             <li>Directory, applications, meetings, and organization management require active access.</li>
           </ul>
-          {gateway.mode === 'fixture' ? <div className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm bg-[var(--color-orange-soft)] text-[var(--color-navy)]">Demo renewals are simulated locally.</div> : null}
+          {gateway.mode === 'fixture' ? <div className="rounded-[var(--radius-md)] bg-[var(--color-orange-soft)] px-3.5 py-3 text-sm text-[var(--color-navy)]">Demo renewals are simulated locally.</div> : null}
         </Card>
       </div>
     </div>

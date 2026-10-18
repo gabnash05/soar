@@ -7,12 +7,12 @@ function boolFromEnv(value, fallback = false) {
 
 function loadPaymentConfigFromEnv(env = process.env) {
   return {
-    appBaseUrl: env.SOAR_APP_BASE_URL || 'http://localhost:5173',
+    appBaseUrl: env.SOAR_APP_BASE_URL || '',
     paymongoSecretKey: env.PAYMONGO_SECRET_KEY || '',
     paymongoWebhookSecret: env.PAYMONGO_WEBHOOK_SECRET || '',
     expectedLivemode: boolFromEnv(env.PAYMONGO_EXPECTED_LIVEMODE, false),
     secretPepper: env.PAYMENT_SECRET_PEPPER || '',
-    secureCookies: boolFromEnv(env.PAYMENT_SECURE_COOKIES, boolFromEnv(env.PAYMONGO_EXPECTED_LIVEMODE, false)),
+    secureCookies: boolFromEnv(env.PAYMENT_SECURE_COOKIES, true),
   };
 }
 

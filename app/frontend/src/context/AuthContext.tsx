@@ -7,6 +7,8 @@ import type {
   RegisterAccountInput,
   RegistrationPaymentInput,
   RegistrationPaymentIntent,
+  RegistrationRecoveryResult,
+  RenewalCheckoutStatus,
   RenewalRequest,
   SignInInput,
   UserSession,
@@ -34,9 +36,12 @@ interface AuthContextValue {
   signOut(): Promise<void>;
   sendPasswordRecovery(email: string): Promise<void>;
   startRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
+  requestPaidRegistrationRecovery(email: string): Promise<RegistrationRecoveryResult>;
+  acceptPaidRegistrationRecovery(intentId: string, recoveryCode: string): Promise<void>;
   registerAccount(input: RegisterAccountInput): Promise<UserSession>;
   resendEmailVerification(): Promise<void>;
   requestManualRenewal(): Promise<RenewalRequest>;
+  getRenewalStatus(renewalId: string): Promise<RenewalCheckoutStatus>;
   updateDisplayName(input: NameChangeInput): Promise<UserSession>;
   requestEmailChange(input: EmailChangeInput): Promise<void>;
 }
@@ -114,6 +119,11 @@ export const AuthProvider = ({ children, gateway: providedGateway }: { children:
     };
   }, [gateway]);
 
+  const getRenewalStatus = useCallback(
+    (renewalId: string) => run('access-settings', () => gateway.getRenewalStatus(renewalId)),
+    [gateway, run],
+  );
+
   const value: AuthContextValue = {
     gateway,
     session,
@@ -134,6 +144,8 @@ export const AuthProvider = ({ children, gateway: providedGateway }: { children:
       }),
     sendPasswordRecovery: (email) => run('password-recovery', () => gateway.sendPasswordRecovery(email)),
     startRegistrationPayment: (input) => run('registration', () => gateway.startRegistrationPayment(input)),
+    requestPaidRegistrationRecovery: (email) => run('registration', () => gateway.requestPaidRegistrationRecovery(email)),
+    acceptPaidRegistrationRecovery: (intentId, recoveryCode) => run('registration', () => gateway.acceptPaidRegistrationRecovery(intentId, recoveryCode)),
     registerAccount: (input) =>
       run('registration', async () => {
         const next = await gateway.registerAccount(input);
@@ -142,6 +154,7 @@ export const AuthProvider = ({ children, gateway: providedGateway }: { children:
       }),
     resendEmailVerification: () => run('email-verification', () => gateway.resendEmailVerification()),
     requestManualRenewal: () => run('access-settings', () => gateway.requestManualRenewal({ returnUrl: window.location.href })),
+    getRenewalStatus,
     updateDisplayName: (input) =>
       run('account-settings', async () => {
         if (!session) throw new UserFacingError('Sign in before changing your name.');

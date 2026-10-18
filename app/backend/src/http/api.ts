@@ -151,14 +151,24 @@ export function createApiApp() {
     await sendPaymentResult(res, paymentHandlers().recoverPaidRegistration(req));
   }));
 
+  app.post(['/payments/registration/recover/accept', '/api/payments/registration/recover/accept'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
+    await sendPaymentResult(res, paymentHandlers().acceptPaidRegistrationRecovery(req));
+  }));
+
   app.post(['/payments/renewals/start', '/api/payments/renewals/start'], asyncRoute(async (req, res) => {
     assertPaymentsEnabled();
     const user = await requireBearerToken(req);
     await sendPaymentResult(res, paymentHandlers().requestManualRenewal(attachAuthToPaymentRequest(req, user)));
   }));
 
-  app.get(['/payments/access/status', '/api/payments/access/status'], asyncRoute(async (req, res) => {
+  app.get(['/payments/renewals/status', '/api/payments/renewals/status'], asyncRoute(async (req, res) => {
     assertPaymentsEnabled();
+    const user = await requireBearerToken(req);
+    await sendPaymentResult(res, paymentHandlers().getRenewalStatus(attachAuthToPaymentRequest(req, user)));
+  }));
+
+  app.get(['/payments/access/status', '/api/payments/access/status'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     await sendPaymentResult(res, paymentHandlers().getAccessStatus(attachAuthToPaymentRequest(req, user)));
   }));

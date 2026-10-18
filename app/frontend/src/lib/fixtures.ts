@@ -7,6 +7,8 @@ import {
   type RegisterAccountInput,
   type RegistrationPaymentInput,
   type RegistrationPaymentIntent,
+  type RegistrationRecoveryResult,
+  type RenewalCheckoutStatus,
   type RenewalRequest,
   type UserSession,
   ValidationProblemError,
@@ -243,6 +245,14 @@ export const createFixtureGateway = (): BackendGateway => ({
     return getPaymentStatus(intentId);
   },
 
+  async requestPaidRegistrationRecovery(): Promise<RegistrationRecoveryResult> {
+    return { accepted: true, delivery: 'not_configured' };
+  },
+
+  async acceptPaidRegistrationRecovery(): Promise<void> {
+    throw new UserFacingError('Demo checkout cannot recover a real paid registration.');
+  },
+
   async registerAccount(input) {
     validateRegistration(input);
     const checkout = getPaymentStatus(input.intentId);
@@ -286,6 +296,16 @@ export const createFixtureGateway = (): BackendGateway => ({
       status: 'pending',
       amountPhp: 10,
       providerLabel: 'Demo renewal',
+      fixture: true,
+    };
+  },
+
+  async getRenewalStatus(renewalId): Promise<RenewalCheckoutStatus> {
+    const confirmed = sessionStorage.getItem(`${PAYMENT_PREFIX}${renewalId}`) === 'active';
+    return {
+      renewalId,
+      status: confirmed ? 'confirmed' : 'pending',
+      message: confirmed ? 'Demo renewal applied locally.' : 'Demo renewal is still pending.',
       fixture: true,
     };
   },

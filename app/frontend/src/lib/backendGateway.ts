@@ -14,6 +14,8 @@ import {
   type RegisterAccountInput,
   type RegistrationPaymentInput,
   type RegistrationPaymentIntent,
+  type RegistrationRecoveryResult,
+  type RenewalCheckoutStatus,
   type RenewalRequest,
   type RenewalRequestInput,
   type SignInInput,
@@ -33,9 +35,12 @@ export interface BackendGateway {
   sendPasswordRecovery(email: string): Promise<void>;
   startRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
   getCheckoutStatus(intentId: string): Promise<CheckoutStatus>;
+  requestPaidRegistrationRecovery(email: string): Promise<RegistrationRecoveryResult>;
+  acceptPaidRegistrationRecovery(intentId: string, recoveryCode: string): Promise<void>;
   registerAccount(input: RegisterAccountInput): Promise<UserSession>;
   resendEmailVerification(): Promise<void>;
   requestManualRenewal(input: RenewalRequestInput): Promise<RenewalRequest>;
+  getRenewalStatus(renewalId: string): Promise<RenewalCheckoutStatus>;
   getAccessStatus(): Promise<UserSession['access']>;
   updateDisplayName(input: NameChangeInput): Promise<NameChangeResult>;
   requestEmailChange(input: EmailChangeInput): Promise<void>;
@@ -125,9 +130,23 @@ const createProductionGateway = (): BackendGateway => ({
     return apiFetch<CheckoutStatus>(`/payments/registration/status?intentId=${encodeURIComponent(intentId)}`);
   },
 
+  async requestPaidRegistrationRecovery(email) {
+    return apiFetch<RegistrationRecoveryResult>('/payments/registration/recover', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async acceptPaidRegistrationRecovery(intentId, recoveryCode) {
+    await apiFetch('/payments/registration/recover/accept', {
+      method: 'POST',
+      body: JSON.stringify({ intentId, recoveryCode }),
+    });
+  },
+
   async registerAccount(input) {
     const checkout = await this.getCheckoutStatus(input.intentId);
-    if (!checkout.canCreateAccount || checkout.status !== 'active') {
+    if (!checkout.canCreateAccount) {
       throw new UserFacingError('Payment is not confirmed yet. Account creation remains locked.');
     }
 
@@ -155,6 +174,12 @@ const createProductionGateway = (): BackendGateway => ({
       method: 'POST',
       headers: await authHeaders(),
       body: JSON.stringify(input),
+    });
+  },
+
+  async getRenewalStatus(renewalId) {
+    return apiFetch<RenewalCheckoutStatus>(`/payments/renewals/status?renewalId=${encodeURIComponent(renewalId)}`, {
+      headers: await authHeaders(),
     });
   },
 
