@@ -31,13 +31,13 @@ export const EntryPage = () => {
             Discover campus organizations, follow announcements, manage application and meeting progress, and keep six-month access current from one role-aware workspace.
           </p>
           <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full">
-            {paidFlowEnabled ? <ButtonLink to="/register" variant="primary">Start with PHP10 access</ButtonLink> : null}
-            <ButtonLink to="/login" variant={paidFlowEnabled ? 'secondary' : 'primary'}>Sign in</ButtonLink>
+            <ButtonLink to="/register" variant="primary">{paidFlowEnabled ? 'Start with PHP10 access' : 'Create a free preview account'}</ButtonLink>
+            <ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>
           </div>
           <p className="hero-note text-sm text-white/80" role={paidFlowEnabled ? undefined : 'status'}>
             {paidFlowEnabled
               ? 'PHP10 six-month access is required before account creation. Expired accounts can still sign in to renew.'
-              : 'Account creation and payment are disabled in this non-production preview. Existing users can sign in.'}
+              : 'Create a free account for this pitch preview. Payment screens are demonstration-only; no checkout or charge is available.'}
           </p>
         </div>
       </div>

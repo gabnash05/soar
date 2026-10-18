@@ -5,6 +5,7 @@ import {
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
 } from '@firebase/auth';
 import {
@@ -13,6 +14,7 @@ import {
   type EmailChangeInput,
   type NameChangeInput,
   type NameChangeResult,
+  type PreviewRegistrationInput,
   type RegisterAccountInput,
   type RegistrationPaymentInput,
   type RegistrationPaymentIntent,
@@ -55,6 +57,7 @@ export interface BackendGateway {
   signOut(): Promise<void>;
   sendPasswordRecovery(email: string): Promise<void>;
   startRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
+  registerPreviewAccount(input: PreviewRegistrationInput): Promise<UserSession>;
   getCheckoutStatus(intentId: string): Promise<CheckoutStatus>;
   requestPaidRegistrationRecovery(email: string): Promise<RegistrationRecoveryResult>;
   acceptPaidRegistrationRecovery(intentId: string, recoveryCode: string): Promise<void>;
@@ -79,12 +82,14 @@ type RawAccess = Omit<Partial<AccessEntitlement>, 'status'> & {
 const normalizeAccess = (access: RawAccess): AccessEntitlement => {
   const status = access.status === 'none' ? 'missing' : access.status;
   const normalizedStatus = status ?? (access.active ? 'active' : 'missing');
+  const previewAccess = access.provenance === 'unpaid-preview';
   return {
     status: normalizedStatus,
+    provenance: access.provenance,
     annualFeePhp: 10,
-    feePhp: access.feePhp ?? 10,
-    periodMonths: access.periodMonths ?? 6,
-    periodLabel: access.periodLabel ?? '6 months',
+    feePhp: access.feePhp ?? (previewAccess ? 0 : 10),
+    periodMonths: access.periodMonths ?? (previewAccess ? undefined : 6),
+    periodLabel: access.periodLabel ?? (previewAccess ? 'Unpaid preview' : '6 months'),
     startsAt: access.startsAt,
     expiresAt: access.expiresAt ?? access.accessExpiresAt,
     lastPaymentReference: access.lastPaymentReference ?? access.latestPaymentId ?? undefined,
@@ -145,6 +150,37 @@ const createProductionGateway = (): BackendGateway => ({
       method: 'POST',
       body: JSON.stringify(input),
     });
+  },
+
+  async registerPreviewAccount(input: PreviewRegistrationInput) {
+    const { auth } = getFirebaseRuntime();
+    let credential: Awaited<ReturnType<typeof createUserWithEmailAndPassword>>;
+    try {
+      credential = await createUserWithEmailAndPassword(auth, input.email.trim(), input.password);
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+      if (code !== 'auth/email-already-in-use') throw error;
+      // The Auth user may exist from a previous attempt whose profile write did not finish.
+      credential = await signInWithEmailAndPassword(auth, input.email.trim(), input.password);
+    }
+
+    await apiFetch('/accounts/preview-registration', {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({
+        role: input.role,
+        displayName: input.displayName.trim(),
+        studentId: input.role === 'student' ? input.studentId?.trim() : undefined,
+        department: input.role === 'student' ? input.department : undefined,
+        companyName: input.role === 'sponsor' ? input.companyName?.trim() || undefined : undefined,
+      }),
+    });
+
+    if (!credential.user.emailVerified) await sendEmailVerification(credential.user);
+    const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
+    return mapSession({ ...session, emailVerified: credential.user.emailVerified });
   },
 
   async getCheckoutStatus(intentId) {

@@ -4,6 +4,7 @@ import { isCanonicalDepartment, normalizeDepartmentKey } from './departments';
 import type { BackendGateway } from './backendGateway';
 import {
   type CheckoutStatus,
+  type PreviewRegistrationInput,
   type RegisterAccountInput,
   type RegistrationPaymentInput,
   type RegistrationPaymentIntent,
@@ -239,6 +240,50 @@ export const createFixtureGateway = (): BackendGateway => ({
       providerLabel: 'Demo checkout',
       fixture: true,
     };
+  },
+
+  async registerPreviewAccount(input: PreviewRegistrationInput) {
+    if (!input.email.includes('@')) {
+      throw new ValidationProblemError('Enter a valid email address.', { email: 'Enter a valid email address.' });
+    }
+    if (input.password.length < 8) {
+      throw new ValidationProblemError('Use a longer password.', { password: 'Use a password with at least 8 characters.' });
+    }
+    if (input.role === 'student' && !input.studentId?.trim()) {
+      throw new ValidationProblemError('Enter your student ID.', { studentId: 'Enter your student ID.' });
+    }
+    if (input.role === 'student' && !isCanonicalDepartment(input.department)) {
+      throw new ValidationProblemError('Choose a supported department.', { department: 'Choose a supported department.' });
+    }
+
+    const session = makeFixtureSession(input.email.trim().toLowerCase(), {
+      uid: `preview-${input.email.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      displayName: input.displayName.trim(),
+      accountKind: input.role,
+      studentId: input.role === 'student' ? input.studentId?.trim() : undefined,
+      department: input.role === 'student' ? input.department : undefined,
+      departmentKey: input.role === 'student' && input.department ? normalizeDepartmentKey(input.department) : undefined,
+      companyName: input.role === 'sponsor' ? input.companyName?.trim() || undefined : undefined,
+      emailVerified: false,
+      access: {
+        status: 'active',
+        provenance: 'unpaid-preview',
+        annualFeePhp: 10,
+        feePhp: 0,
+        periodLabel: 'Unpaid preview',
+        startsAt: new Date().toISOString(),
+        renewalAvailable: false,
+      },
+      officerGrants: [],
+    });
+    writeSession(session);
+    writeRegisteredAccountOverride({
+      uid: session.uid,
+      accountKind: session.accountKind,
+      department: session.department,
+      departmentKey: session.departmentKey,
+    });
+    return session;
   },
 
   async getCheckoutStatus(intentId) {

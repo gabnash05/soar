@@ -16,11 +16,14 @@ export interface OrganizationGrant {
   grantedAt?: string;
 }
 
+export type AccessProvenance = 'provider-confirmed-payment' | 'unpaid-preview';
+
 export interface AccessEntitlement {
   status: AccessStatus;
+  provenance?: AccessProvenance;
   /** @deprecated Kept for backend compatibility while UI copy uses feePhp/periodLabel. */
   annualFeePhp: 10;
-  feePhp?: 10;
+  feePhp?: number;
   periodMonths?: 6;
   periodLabel?: string;
   startsAt?: string;
@@ -53,6 +56,16 @@ export interface RegistrationPaymentInput {
   department?: string;
   companyName?: string;
   returnUrl: string;
+}
+
+export interface PreviewRegistrationInput {
+  role: RegistrationRoleIntent;
+  email: string;
+  password: string;
+  displayName: string;
+  studentId?: string;
+  department?: string;
+  companyName?: string;
 }
 
 export interface RegistrationPaymentIntent {
@@ -163,7 +176,8 @@ export class ValidationProblemError extends Error {
 }
 
 export const hasActiveAccess = (session: UserSession | null | undefined): boolean =>
-  session?.access.status === 'active' && Boolean(session.access.expiresAt);
+  session?.access.status === 'active'
+  && (Boolean(session.access.expiresAt) || session.access.provenance === 'unpaid-preview');
 
 export const hasApprovedOfficerGrant = (session: UserSession | null | undefined): boolean =>
   Boolean(session?.officerGrants.some((grant) => grant.status === 'approved' || grant.status === 'active'));

@@ -43,7 +43,7 @@ export const LoginPage = () => {
         <div className="mb-5 inline-flex items-center gap-2 font-[var(--font-display)] text-xl font-extrabold leading-none text-[var(--color-navy)]"><SoarLogo /><span>SOAR</span></div>
         <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">Welcome back</p>
         <h1>Sign in to your account</h1>
-        <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">{paidFlowEnabled ? 'Entry, renewal, recovery, and settings remain available even when six-month access expires.' : 'Existing accounts can sign in. Registration and payment are disabled in this non-production preview.'}</p>
+        <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">{paidFlowEnabled ? 'Entry, renewal, recovery, and settings remain available even when six-month access expires.' : 'Existing accounts can sign in. New accounts receive unpaid preview access; the payment presentation cannot accept a checkout.'}</p>
         {gateway.mode === 'fixture' ? (
           <div className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-[var(--color-blue-deep)] text-sm">
 Demo accounts: student@example.edu, officer@example.edu, sponsor@example.com, expired@example.edu, unverified@example.edu.
@@ -61,7 +61,7 @@ Demo accounts: student@example.edu, officer@example.edu, sponsor@example.com, ex
         </form>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 font-bold text-[var(--color-blue-deep)] max-sm:flex-col max-sm:items-stretch">
           <Link to="/recovery">Forgot password?</Link>
-          {paidFlowEnabled ? <ButtonLink to="/register" variant="quiet">Create a new account</ButtonLink> : <span role="status">New account registration is unavailable in this preview.</span>}
+          <ButtonLink to="/register" variant="quiet">{paidFlowEnabled ? 'Create a new account' : 'Create a free preview account'}</ButtonLink>
         </div>
       </Card>
     </main>
