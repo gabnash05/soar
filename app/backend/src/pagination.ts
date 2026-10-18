@@ -1,6 +1,6 @@
 import { AppError } from './errors';
 
-export type CursorScope = 'organizations' | 'admin-organizations' | 'announcements' | 'announcement-comments' | 'date-entries';
+export type CursorScope = 'organizations' | 'admin-organizations' | 'admin-officers' | 'announcements' | 'announcement-comments' | 'date-entries';
 
 interface CursorPayload {
   v: 1;

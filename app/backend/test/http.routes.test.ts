@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => ({
   approveOfficerGrant: vi.fn(),
   assignAdminOfficerGrant: vi.fn(),
   assignInitialOrganizationOwner: vi.fn(),
+  listAdminOfficerGrants: vi.fn(),
   listAdminOrganizations: vi.fn(),
+  revokeAdminOfficerGrant: vi.fn(),
   searchAdminStudents: vi.fn(),
   revokeOfficerGrant: vi.fn(),
   attachAuthToPaymentRequest: vi.fn((req: unknown) => req),
@@ -73,7 +75,9 @@ vi.mock('../src/organizations/service', () => ({
   approveOfficerGrant: mocks.approveOfficerGrant,
   assignAdminOfficerGrant: mocks.assignAdminOfficerGrant,
   assignInitialOrganizationOwner: mocks.assignInitialOrganizationOwner,
+  listAdminOfficerGrants: mocks.listAdminOfficerGrants,
   listAdminOrganizations: mocks.listAdminOrganizations,
+  revokeAdminOfficerGrant: mocks.revokeAdminOfficerGrant,
   revokeOfficerGrant: mocks.revokeOfficerGrant,
   searchAdminStudents: mocks.searchAdminStudents,
 }));
@@ -419,6 +423,13 @@ describe('SOAR HTTP route contracts', () => {
       expect(ordinarySearch.status).toBe(403);
       const ordinaryOrganizations = await fetch(`${baseUrl}/api/admin/organizations`, { headers: { authorization: 'Bearer test-token' } });
       expect(ordinaryOrganizations.status).toBe(403);
+      const ordinaryOfficerList = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants`, { headers: { authorization: 'Bearer test-token' } });
+      expect(ordinaryOfficerList.status).toBe(403);
+      const ordinaryOfficerRevoke = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants/student-1`, {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(ordinaryOfficerRevoke.status).toBe(403);
       const ordinaryAssignment = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants`, {
         method: 'POST',
         headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
@@ -437,6 +448,8 @@ describe('SOAR HTTP route contracts', () => {
     expect(mocks.listAdminOrganizations).not.toHaveBeenCalled();
     expect(mocks.assignAdminOfficerGrant).not.toHaveBeenCalled();
     expect(mocks.assignInitialOrganizationOwner).not.toHaveBeenCalled();
+    expect(mocks.listAdminOfficerGrants).not.toHaveBeenCalled();
+    expect(mocks.revokeAdminOfficerGrant).not.toHaveBeenCalled();
   });
 
   it('serves bounded admin student and organization results and idempotent scoped grants', async () => {
@@ -445,6 +458,8 @@ describe('SOAR HTTP route contracts', () => {
     mocks.listAdminOrganizations.mockResolvedValue({ items: [{ id: 'robotics', name: 'Robotics Club' }] });
     mocks.assignInitialOrganizationOwner.mockResolvedValue({ orgId: 'robotics' });
     mocks.assignAdminOfficerGrant.mockResolvedValue({ orgId: 'robotics', uid: 'student-1', status: 'approved', alreadyAssigned: true });
+    mocks.listAdminOfficerGrants.mockResolvedValue({ items: [{ uid: 'student-1', displayName: 'Mara Santos', status: 'active', isOrganizationOwner: false }] });
+    mocks.revokeAdminOfficerGrant.mockResolvedValue({ orgId: 'robotics', uid: 'student-1', status: 'revoked', alreadyRevoked: false });
 
     await withApiServer(async (baseUrl) => {
       const students = await fetch(`${baseUrl}/api/admin/students?q=Mara`, { headers: { authorization: 'Bearer test-token' } });
@@ -462,6 +477,17 @@ describe('SOAR HTTP route contracts', () => {
       });
       expect(created.status).toBe(201);
 
+      const officers = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants?limit=25`, { headers: { authorization: 'Bearer test-token' } });
+      expect(officers.status).toBe(200);
+      await expect(officers.json()).resolves.toMatchObject({ items: [{ uid: 'student-1', status: 'active' }] });
+
+      const revoked = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants/student-1`, {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(revoked.status).toBe(200);
+      await expect(revoked.json()).resolves.toMatchObject({ status: 'revoked', alreadyRevoked: false });
+
       const assignment = await fetch(`${baseUrl}/api/admin/organizations/robotics/officer-grants`, {
         method: 'POST',
         headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
@@ -478,6 +504,8 @@ describe('SOAR HTTP route contracts', () => {
       'trusted-admin',
     );
     expect(mocks.assignAdminOfficerGrant).toHaveBeenCalledWith('robotics', { uid: 'student-1' }, 'trusted-admin');
+    expect(mocks.listAdminOfficerGrants).toHaveBeenCalledWith('robotics', { limit: '25' });
+    expect(mocks.revokeAdminOfficerGrant).toHaveBeenCalledWith('robotics', 'student-1', 'trusted-admin');
   });
 
   it('mounts request workflow routes with explicit application confirmation', async () => {

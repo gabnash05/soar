@@ -5,6 +5,13 @@ export interface AdminOrganizationOption {
   name: string;
 }
 
+export interface AdminOfficerGrantOption {
+  uid: string;
+  displayName: string;
+  status: 'active' | 'revoked';
+  isOrganizationOwner: boolean;
+}
+
 export interface AdminStudentOption {
   uid: string;
   displayName: string;
@@ -32,6 +39,12 @@ export async function listAdminOrganizations(pageToken?: string): Promise<AdminP
   return apiFetch(`/admin/organizations?${params}`, { headers: await authHeaders() });
 }
 
+export async function listAdminOfficerGrants(organizationId: string, pageToken?: string): Promise<AdminPage<AdminOfficerGrantOption>> {
+  const params = new URLSearchParams({ limit: '50' });
+  if (pageToken) params.set('pageToken', pageToken);
+  return apiFetch(`/admin/organizations/${encodeURIComponent(organizationId)}/officer-grants?${params}`, { headers: await authHeaders() });
+}
+
 export async function searchAdminStudents(query: string, pageToken?: string): Promise<AdminPage<AdminStudentOption>> {
   const params = new URLSearchParams({ q: query });
   if (pageToken) params.set('pageToken', pageToken);
@@ -43,6 +56,18 @@ export async function createAdminOrganization(input: CreateAdminOrganizationInpu
     method: 'POST',
     headers: await authHeaders(),
     body: JSON.stringify(input),
+  });
+}
+
+export async function revokeAdminOfficer(organizationId: string, uid: string): Promise<{
+  orgId: string;
+  uid: string;
+  status: 'revoked';
+  alreadyRevoked: boolean;
+}> {
+  return apiFetch(`/admin/organizations/${encodeURIComponent(organizationId)}/officer-grants/${encodeURIComponent(uid)}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
   });
 }
 
