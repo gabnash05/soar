@@ -17,7 +17,9 @@ vi.mock('../firebase', () => ({ adminAuth: state.adminAuth, db: state.db }));
 import {
   assignAdminOfficerGrant,
   assignInitialOrganizationOwner,
+  listAdminOfficerGrants,
   listAdminOrganizations,
+  revokeAdminOfficerGrant,
   searchAdminStudents
 } from './service';
 
@@ -103,6 +105,11 @@ function configureFakeFirestore() {
       state.docs.set(ref.path, options?.merge
         ? { ...(state.docs.get(ref.path) ?? {}), ...data } as Record<string, any>
         : data as Record<string, any>);
+    },
+    update: (ref: { path: string }, data: Record<string, unknown>) => {
+      const existing = state.docs.get(ref.path);
+      if (!existing) throw new Error(`Document does not exist: ${ref.path}`);
+      state.docs.set(ref.path, { ...existing, ...data });
     }
   }));
 }
@@ -245,6 +252,60 @@ describe('admin organization provisioning', () => {
     });
 
     await expect(assignAdminOfficerGrant('missing-org', { uid: 'student-01' }, 'trusted-admin')).rejects.toBeInstanceOf(AppError);
+  });
+
+  it('lists only exact organization grants with profile labels and bounded cursors', async () => {
+    state.docs.set('organizations/robotics', { orgId: 'robotics', name: 'Robotics Club', ownerUid: 'owner-1' });
+    state.docs.set('organizations/robotics/officerGrants/owner-1', { uid: 'owner-1', status: 'active' });
+    state.docs.set('organizations/robotics/officerGrants/student-1', { uid: 'student-1', status: 'active' });
+    state.docs.set('organizations/robotics/officerGrants/student-2', { uid: 'student-2', status: 'revoked' });
+    state.docs.set('organizations/civil/officerGrants/student-1', { uid: 'student-1', status: 'active' });
+    state.docs.set('accounts/owner-1', { displayName: 'Owner One' });
+    state.docs.set('accounts/student-1', { displayName: 'Mara Santos' });
+    state.docs.set('accounts/student-2', { displayName: 'Ari Reyes' });
+
+    const first = await listAdminOfficerGrants('robotics', { limit: 2 });
+    expect(first.items).toEqual([
+      { uid: 'owner-1', displayName: 'Owner One', status: 'active', isOrganizationOwner: true },
+      { uid: 'student-1', displayName: 'Mara Santos', status: 'active', isOrganizationOwner: false }
+    ]);
+    expect(first.nextPageToken).toBeTruthy();
+    await expect(listAdminOfficerGrants('robotics', { limit: 2, pageToken: first.nextPageToken })).resolves.toEqual({
+      items: [{ uid: 'student-2', displayName: 'Ari Reyes', status: 'revoked', isOrganizationOwner: false }]
+    });
+    await expect(listAdminOfficerGrants('missing', {})).rejects.toMatchObject({ code: 'organization_missing' });
+  });
+
+  it('revokes only the exact organization grant, preserves Auth/profile and other organization data, and is retry-safe', async () => {
+    const account = { role: 'student', displayName: 'Mara Santos', uid: 'student-1' };
+    const otherGrant = { uid: 'student-1', status: 'active', grantedByUid: 'another-admin' };
+    state.docs.set('organizations/robotics', { orgId: 'robotics', name: 'Robotics Club', ownerUid: 'owner-1' });
+    state.docs.set('organizations/civil', { orgId: 'civil', name: 'Civil Club', ownerUid: 'owner-2' });
+    state.docs.set('organizations/robotics/officerGrants/student-1', { uid: 'student-1', status: 'active', grantedByUid: 'first-admin' });
+    state.docs.set('organizations/civil/officerGrants/student-1', otherGrant);
+    state.docs.set('accounts/student-1', account);
+
+    await expect(revokeAdminOfficerGrant('robotics', 'student-1', 'trusted-admin')).resolves.toMatchObject({
+      orgId: 'robotics', uid: 'student-1', status: 'revoked', alreadyRevoked: false
+    });
+    expect(state.docs.get('organizations/robotics/officerGrants/student-1')).toMatchObject({
+      uid: 'student-1', status: 'revoked', grantedByUid: 'first-admin', revokedByUid: 'trusted-admin',
+      revokedAt: expect.anything(), updatedAt: expect.anything()
+    });
+    expect(state.docs.get('organizations/civil/officerGrants/student-1')).toEqual(otherGrant);
+    expect(state.docs.get('accounts/student-1')).toEqual(account);
+    await expect(revokeAdminOfficerGrant('robotics', 'student-1', 'trusted-admin')).resolves.toMatchObject({ alreadyRevoked: true });
+  });
+
+  it('does not revoke the organization owner or a grant whose stored UID mismatches its path', async () => {
+    state.docs.set('organizations/robotics', { orgId: 'robotics', ownerUid: 'owner-1' });
+    state.docs.set('organizations/robotics/officerGrants/owner-1', { uid: 'owner-1', status: 'active' });
+    state.docs.set('organizations/robotics/officerGrants/student-1', { uid: 'student-2', status: 'active' });
+
+    await expect(revokeAdminOfficerGrant('robotics', 'owner-1', 'trusted-admin')).rejects.toMatchObject({ code: 'organization_owner_cannot_be_revoked' });
+    await expect(revokeAdminOfficerGrant('robotics', 'student-1', 'trusted-admin')).rejects.toMatchObject({ code: 'invalid_officer_grant' });
+    expect(state.docs.get('organizations/robotics/officerGrants/owner-1')?.status).toBe('active');
+    expect(state.docs.get('organizations/robotics/officerGrants/student-1')?.status).toBe('active');
   });
 
   it('lists only organization picker fields with stable tied-name cursors across mutations', async () => {

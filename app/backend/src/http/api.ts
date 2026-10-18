@@ -10,7 +10,9 @@ import {
   approveOfficerGrant,
   assignAdminOfficerGrant,
   assignInitialOrganizationOwner,
+  listAdminOfficerGrants,
   listAdminOrganizations,
+  revokeAdminOfficerGrant,
   revokeOfficerGrant,
   searchAdminStudents
 } from '../organizations/service';
@@ -320,9 +322,19 @@ export function createApiApp() {
     res.status(201).json(await assignInitialOrganizationOwner(req.body, admin.uid));
   }));
 
+  app.get(['/admin/organizations/:orgId/officer-grants', '/api/admin/organizations/:orgId/officer-grants'], asyncRoute(async (req, res) => {
+    await requireAdmin(req);
+    res.json(await listAdminOfficerGrants(getParam(req, 'orgId'), req.query));
+  }));
+
   app.post(['/admin/organizations/:orgId/officer-grants', '/api/admin/organizations/:orgId/officer-grants'], asyncRoute(async (req, res) => {
     const admin = await requireAdmin(req);
     res.json(await assignAdminOfficerGrant(getParam(req, 'orgId'), req.body, admin.uid));
+  }));
+
+  app.delete(['/admin/organizations/:orgId/officer-grants/:uid', '/api/admin/organizations/:orgId/officer-grants/:uid'], asyncRoute(async (req, res) => {
+    const admin = await requireAdmin(req);
+    res.json(await revokeAdminOfficerGrant(getParam(req, 'orgId'), getParam(req, 'uid'), admin.uid));
   }));
 
   mountRequestRoutes(app, asyncRoute);
