@@ -253,7 +253,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
 
       {hasOfficerReview ? (
         <SubtabPanel baseId="meetings" tabId="review" activeId={activeId}>
-          <OfficerMeetingReview session={session} client={client} confirmedRequests={confirmedRequests} />
+          <OfficerMeetingReview session={session} client={client} confirmedRequests={confirmedRequests} onRequestsChanged={requestsQuery.reload} />
         </SubtabPanel>
       ) : null}
 

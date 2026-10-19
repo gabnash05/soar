@@ -12,7 +12,7 @@ import { FeedView } from '../FeedPage';
 import { MeetingsView } from '../MeetingsPage';
 import { EntryPage } from '../../access/EntryPage';
 import { OrganizationSettingsView } from '../../settings/OrganizationSettingsPage';
-import { DATE_ENTRY_SAVE_TIMEOUT_MS, DateEntriesSection, OfficerView } from '../OfficerPage';
+import { DATE_ENTRY_SAVE_TIMEOUT_MS, DateEntriesSection, MeetingDecisionsSection, OfficerView } from '../OfficerPage';
 import { OrganizationView } from '../OrganizationPage';
 
 const activeAccess: UserSession['access'] = {
@@ -479,7 +479,7 @@ describe('SOAR workflow pages', () => {
     expect(listMyMeetingRequests).toHaveBeenCalledTimes(2);
   });
 
-  it('shows an officer own-request result in both relevant tabs without review actions', async () => {
+  it('lets an officer decide their own submitted request and refreshes both status views', async () => {
     const user = userEvent.setup();
     const base = createFixtureWorkflowDataClient();
     const createdRequest: MeetingRequest = {
@@ -495,14 +495,22 @@ describe('SOAR workflow pages', () => {
       status: 'Pending',
       updatedAt: '2026-10-16T06:01:00.000Z',
     };
-    const requestMeeting = vi.fn().mockResolvedValue({
-      ok: true,
-      persisted: true,
-      source: 'fixture' as const,
-      message: 'Meeting request created as Pending.',
-      data: createdRequest,
+    let savedRequest: MeetingRequest | undefined;
+    const requestMeeting = vi.fn(async () => {
+      savedRequest = createdRequest;
+      return { ok: true, persisted: true, source: 'fixture' as const, message: 'Meeting request created as Pending.', data: createdRequest };
     });
-    const client: WorkflowDataClient = { ...base, requestMeeting };
+    const listMyMeetingRequests = vi.fn(async () => ({ data: savedRequest ? [savedRequest] : [], source: 'fixture' as const }));
+    const getOfficerDashboard = vi.fn(async (organizationId: string, session: UserSession) => {
+      const result = await base.getOfficerDashboard(organizationId, session);
+      if (!result.data || !savedRequest) return result;
+      return { ...result, data: { ...result.data, meetingRequests: [...result.data.meetingRequests.filter((request) => request.id !== savedRequest!.id), savedRequest] } };
+    });
+    const decideMeetingRequest = vi.fn(async (_id: string, status: 'Approved' | 'Declined') => {
+      savedRequest = { ...createdRequest, status, updatedAt: '2026-10-16T06:02:00.000Z' };
+      return { ok: true, persisted: true, source: 'fixture' as const, message: `Meeting request ${status.toLowerCase()}.`, data: savedRequest };
+    });
+    const client: WorkflowDataClient = { ...base, requestMeeting, listMyMeetingRequests, getOfficerDashboard, decideMeetingRequest };
     renderInRouter(<MeetingsView session={officerSession} client={client} />);
 
     await screen.findByRole('region', { name: 'Meeting requests to review' });
@@ -522,11 +530,82 @@ describe('SOAR workflow pages', () => {
     const reviewRequests = await screen.findByRole('region', { name: 'Meeting requests for this organization' });
     const ownRequestRow = within(reviewRequests).getByText('Lia Cruz').closest('tr');
     expect(ownRequestRow).not.toBeNull();
-    expect(within(ownRequestRow as HTMLElement).getByText(/Your request · check My requests for status/i)).toBeInTheDocument();
-    expect(within(ownRequestRow as HTMLElement).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
-    expect(within(ownRequestRow as HTMLElement).queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
-    expect(within(reviewRequests).getAllByRole('button', { name: 'Approve' }).length).toBeGreaterThan(0);
+    await user.click(within(ownRequestRow as HTMLElement).getByRole('button', { name: 'Approve' }));
+    expect(await within(ownRequestRow as HTMLElement).findByText('Approved')).toBeInTheDocument();
+    expect(decideMeetingRequest).toHaveBeenCalledWith(createdRequest.id, 'Approved', 'robotics', officerSession);
+    expect(getOfficerDashboard).toHaveBeenCalledTimes(2);
+    expect(listMyMeetingRequests).toHaveBeenCalledTimes(3);
+
+    await user.click(screen.getByRole('tab', { name: 'My requests' }));
+    const refreshedMyRequests = await screen.findByRole('region', { name: 'My meeting request statuses' });
+    const savedRow = within(refreshedMyRequests).getByText('Computer Engineering Department').closest('tr');
+    expect(savedRow).not.toBeNull();
+    expect(within(savedRow as HTMLElement).getByText('Approved')).toBeInTheDocument();
+    expect(within(refreshedMyRequests).getAllByText('2026-11-12, 14:30')).toHaveLength(1);
     expect(requestMeeting).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not show an unconfirmed own-request decision as accepted and refreshes both lists', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const ownRequest: MeetingRequest = {
+      id: 'meeting-officer-unconfirmed-decision',
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      dateEntryId: 'date-robotics-interview',
+      meetingTitle: 'Computer Engineering consultation window',
+      requesterUid: officerSession.uid,
+      requesterName: officerSession.displayName,
+      requestedDate: '2026-11-12',
+      requestedTime: '14:30',
+      status: 'Pending',
+      updatedAt: '2026-10-16T06:01:00.000Z',
+    };
+    const dashboard = (await base.getOfficerDashboard('robotics', officerSession)).data!;
+    const decideMeetingRequest = vi.fn().mockResolvedValue({ ok: true, persisted: 'unconfirmed', source: 'production', message: 'Internal failure details.' });
+    const client: WorkflowDataClient = { ...base, decideMeetingRequest };
+    const onDashboardChanged = vi.fn(async () => undefined);
+    const onRequestsChanged = vi.fn(async () => undefined);
+    renderInRouter(<MeetingDecisionsSection dashboard={{ ...dashboard, meetingRequests: [ownRequest] }} session={officerSession} client={client} onChanged={onDashboardChanged} onRequestsChanged={onRequestsChanged} />);
+
+    const table = screen.getByRole('region', { name: 'Meeting requests for this organization' });
+    const ownRequestRow = within(table).getByText('Lia Cruz').closest('tr') as HTMLElement;
+    await userEvent.setup().click(within(ownRequestRow).getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByText(/We could not confirm this meeting decision/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Internal failure details/i)).not.toBeInTheDocument();
+    expect(within(ownRequestRow).getByText('Pending')).toBeInTheDocument();
+    expect(screen.queryByText('Approved')).not.toBeInTheDocument();
+    expect(onDashboardChanged).toHaveBeenCalledTimes(1);
+    expect(onRequestsChanged).toHaveBeenCalledTimes(1);
+    expect(decideMeetingRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not expose self-decision actions through an organization-id alias grant', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const dashboard = (await base.getOfficerDashboard('robotics', officerSession)).data!;
+    const aliasedSession: UserSession = {
+      ...officerSession,
+      officerGrants: [{ organizationId: 'coding-society', organizationName: 'Computer Engineering Department', status: 'approved' }],
+    };
+    const ownRequest: MeetingRequest = {
+      id: 'meeting-officer-foreign-scope',
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      dateEntryId: 'date-robotics-interview',
+      meetingTitle: 'Computer Engineering consultation window',
+      requesterUid: officerSession.uid,
+      requesterName: officerSession.displayName,
+      requestedDate: '2026-11-12',
+      requestedTime: '14:30',
+      status: 'Pending',
+      updatedAt: '2026-10-16T06:01:00.000Z',
+    };
+    renderInRouter(<MeetingDecisionsSection dashboard={{ ...dashboard, meetingRequests: [ownRequest] }} session={aliasedSession} client={base} onChanged={() => undefined} />);
+
+    const table = screen.getByRole('region', { name: 'Meeting requests for this organization' });
+    const ownRequestRow = within(table).getByText('Lia Cruz').closest('tr') as HTMLElement;
+    expect(within(ownRequestRow).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(within(ownRequestRow).queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
   });
 
   it('does not present an unconfirmed meeting submission as saved', async () => {

@@ -38,7 +38,7 @@ describe('Supabase private-storage browser adapter', () => {
       alt: 'Organization logo',
     });
     expect(fetch).toHaveBeenCalledWith(target.signedUploadUrl, expect.objectContaining({
-      method: 'POST',
+      method: 'PUT',
       headers: expect.objectContaining({ 'Content-Type': 'image/png', 'x-upsert': 'false' }),
       body: file,
     }));
@@ -64,11 +64,11 @@ describe('Supabase private-storage browser adapter', () => {
       sizeBytes: file.size,
     });
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('token=upload'), expect.objectContaining({
-      method: 'POST',
+      method: 'PUT',
       headers: expect.objectContaining({
         'Content-Type': 'application/pdf',
         'x-upsert': 'false',
-        'x-metadata': JSON.stringify(metadata),
+        'x-metadata': btoa(JSON.stringify(metadata)),
       }),
       body: file,
     }));

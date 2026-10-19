@@ -896,8 +896,63 @@ function FormalRequestDocumentButton({ request }: { request: OfficerDashboard['m
   );
 }
 
-export function MeetingDecisionsSection({ dashboard, session, client, onChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void }) {
+export function MeetingDecisionsSection({ dashboard, session, client, onChanged, onRequestsChanged }: { dashboard: OfficerDashboard; session: UserSession; client: WorkflowDataClient; onChanged: () => void | Promise<void>; onRequestsChanged?: () => void | Promise<void> }) {
   const [result, setResult] = useState<WorkflowMutationResult<unknown> | null>(null);
+  const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
+  const decisionPendingRef = useRef(false);
+  const canDecideOrganization = getApprovedOfficerGrants(session).some((grant) => grant.organizationId === dashboard.organization.id);
+
+  const refreshDecisionViews = async () => {
+    try {
+      await Promise.all([onChanged(), onRequestsChanged?.()]);
+    } catch {
+      // Keep the last confirmed decision result; the query owners expose their own retry states.
+    }
+  };
+
+  const decide = async (request: MeetingRequest, status: Exclude<MeetingRequest['status'], 'Pending'>) => {
+    if (decisionPendingRef.current || !canDecideOrganization || request.organizationId !== dashboard.organization.id) return;
+    decisionPendingRef.current = true;
+    setBusyRequestId(request.id);
+    setResult(null);
+    let next: WorkflowMutationResult<MeetingRequest>;
+    try {
+      next = await client.decideMeetingRequest(request.id, status, dashboard.organization.id, session);
+    } catch (error) {
+      setResult({
+        ok: false,
+        persisted: 'unconfirmed',
+        source: client.mode,
+        reason: 'error',
+        message: 'We could not confirm this meeting decision. The request lists were refreshed; check the current status before trying again.',
+      });
+      await refreshDecisionViews();
+      decisionPendingRef.current = false;
+      setBusyRequestId(null);
+      return;
+    }
+
+    const confirmed = next.ok && next.persisted === true && next.data?.id === request.id &&
+      next.data.organizationId === dashboard.organization.id && next.data.status === status;
+    if (confirmed) {
+      setResult(next);
+      await refreshDecisionViews();
+    } else if (next.ok || next.persisted === true || next.persisted === 'unconfirmed') {
+      setResult({
+        ...next,
+        ok: false,
+        persisted: 'unconfirmed',
+        reason: 'error',
+        message: 'We could not confirm this meeting decision. The request lists were refreshed; check the current status before trying again.',
+      });
+      await refreshDecisionViews();
+    } else {
+      setResult(next);
+    }
+    decisionPendingRef.current = false;
+    setBusyRequestId(null);
+  };
+
   return (
     <section className="min-w-0 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)] first:border-t-0 first:pt-0">
       <header className="mb-3.5 grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:tracking-[-0.02em] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
@@ -916,22 +971,12 @@ export function MeetingDecisionsSection({ dashboard, session, client, onChanged 
               <td><MeetingStatusChip status={request.status} /></td>
               <td><FormalRequestDocumentButton request={request} /></td>
               <td>
-                {request.requesterUid === session.uid ? (
-                  <span className="text-xs text-[var(--muted-foreground)]">Your request · check My requests for status.</span>
-                ) : (
+                {canDecideOrganization && request.organizationId === dashboard.organization.id ? (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button type="button" variant="secondary" disabled={request.status === 'Approved'} onClick={async () => {
-                      const next = await client.decideMeetingRequest(request.id, 'Approved', dashboard.organization.id, session);
-                      setResult(next);
-                      if (next.ok) onChanged();
-                    }}>Approve</Button>
-                    <Button type="button" variant="danger" disabled={request.status === 'Declined'} onClick={async () => {
-                      const next = await client.decideMeetingRequest(request.id, 'Declined', dashboard.organization.id, session);
-                      setResult(next);
-                      if (next.ok) onChanged();
-                    }}>Decline</Button>
+                    <Button type="button" variant="secondary" disabled={Boolean(busyRequestId) || request.status === 'Approved'} onClick={() => { void decide(request, 'Approved'); }}>{busyRequestId === request.id ? 'Saving…' : 'Approve'}</Button>
+                    <Button type="button" variant="danger" disabled={Boolean(busyRequestId) || request.status === 'Declined'} onClick={() => { void decide(request, 'Declined'); }}>{busyRequestId === request.id ? 'Saving…' : 'Decline'}</Button>
                   </div>
-                )}
+                ) : null}
               </td>
             </tr>
           ))}
@@ -1014,7 +1059,7 @@ export function OfficerApplicationsReview({ session, client }: { session: UserSe
   );
 }
 
-export function OfficerMeetingReview({ session, client, confirmedRequests = [] }: { session: UserSession; client: WorkflowDataClient; confirmedRequests?: MeetingRequest[] }) {
+export function OfficerMeetingReview({ session, client, confirmedRequests = [], onRequestsChanged }: { session: UserSession; client: WorkflowDataClient; confirmedRequests?: MeetingRequest[]; onRequestsChanged?: () => void | Promise<void> }) {
   const grants = getApprovedOfficerGrants(session);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState(grants[0]?.organizationId ?? '');
 
@@ -1039,7 +1084,7 @@ export function OfficerMeetingReview({ session, client, confirmedRequests = [] }
             .forEach((request) => requestsById.set(request.id, request));
           dashboard.meetingRequests.forEach((request) => requestsById.set(request.id, request));
           const reconciledDashboard = { ...dashboard, meetingRequests: Array.from(requestsById.values()) };
-          return <MeetingDecisionsSection dashboard={reconciledDashboard} session={session} client={client} onChanged={reload} />;
+          return <MeetingDecisionsSection dashboard={reconciledDashboard} session={session} client={client} onChanged={reload} onRequestsChanged={onRequestsChanged} />;
         }}
       </OfficerDashboardBlock>
     </section>
