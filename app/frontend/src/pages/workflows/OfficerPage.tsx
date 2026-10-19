@@ -185,7 +185,7 @@ export function ProfileRecruitmentSection({ dashboard, session, client, onChange
         open={confirmSaveOpen}
         title="Approve organization changes"
         description={fixtureApproval
-          ? 'This simulated preview uses local approval only. It does not request a real password or contact Firebase, account, or payment services.'
+          ? 'This sample uses local approval only. It does not request a real password or contact Firebase, account, or payment services.'
           : `Enter your sign-in password to approve and save changes to ${dashboard.organization.name}. Your password is used only to reauthenticate your account and is never sent with the organization update.`}
         onClose={cancelApproval}
       >

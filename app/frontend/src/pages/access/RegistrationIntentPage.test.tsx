@@ -30,19 +30,19 @@ describe('RegistrationIntentPage', () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('shows a free account form and a clearly disconnected payment pitch panel in preview mode', () => {
+  it('shows a free account form and a clearly disconnected payment information when payments are unavailable', () => {
     vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'false');
     const gateway = renderPage();
 
-    expect(screen.getByRole('heading', { name: 'Create a free preview account' })).toBeInTheDocument();
-    expect(screen.getByRole('note', { name: 'Pitch payment presentation' })).toHaveTextContent(/UI only/i);
+    expect(screen.getByRole('heading', { name: 'Create a free account' })).toBeInTheDocument();
+    expect(screen.getByRole('note', { name: 'Payment information' })).toHaveTextContent(/payment unavailable/i);
     expect(screen.getByText(/no payment is requested or recorded/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create free preview account' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Create free account' })).toBeEnabled();
     expect(gateway.startRegistrationPayment).not.toHaveBeenCalled();
     expect(screen.getByRole('link', { name: 'Already have an account?' })).toHaveAttribute('href', '/login');
   });
 
-  it('creates a real-preview registration through its own path without checkout or paid access', async () => {
+  it('creates a account registration through its own path without checkout or paid access', async () => {
     vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'false');
     const gateway = renderPage();
     const user = userEvent.setup();
@@ -53,7 +53,7 @@ describe('RegistrationIntentPage', () => {
     await user.type(screen.getByLabelText(/create password/i), 'StrongPass123');
     await user.click(screen.getByRole('combobox', { name: /department/i }));
     await user.click(await screen.findByRole('option', { name: 'Computer Engineering Department' }));
-    await user.click(screen.getByRole('button', { name: 'Create free preview account' }));
+    await user.click(screen.getByRole('button', { name: 'Create free account' }));
 
     expect(gateway.registerPreviewAccount).toHaveBeenCalledWith({
       role: 'student',
