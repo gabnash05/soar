@@ -48,7 +48,7 @@ export const EmailVerificationPage = () => {
         <div className="mb-5 inline-flex items-center gap-2 font-[var(--font-display)] text-xl font-extrabold leading-none text-[var(--color-navy)]"><SoarLogo /><span>SOAR</span></div>
         <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">Email verification</p>
         <h1>Verify your email</h1>
-        <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">{session?.access.provenance === 'unpaid-preview' ? 'This account has unpaid preview access. Verify your email before using core workflows; no payment is recorded.' : 'Your PHP10 access is tied to this account, but the main app unlocks only after email verification.'}</p>
+        <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">{session?.access.provenance === 'unpaid-preview' ? 'This account has access without a recorded payment. Verify your email before using core workflows.' : 'Your PHP10 access is tied to this account, but the main app unlocks only after email verification.'}</p>
         <div className="my-[18px] grid gap-2.5 rounded-[var(--radius-md)] bg-[var(--color-off-white)] p-4 gap-1.5">
           <StatusChip tone={session?.emailVerified ? 'approved' : 'attention'}>{session?.emailVerified ? 'Verified' : 'Waiting for verification'}</StatusChip>
           <p>{session?.email}</p>

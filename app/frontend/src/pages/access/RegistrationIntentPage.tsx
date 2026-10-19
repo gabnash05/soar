@@ -133,21 +133,21 @@ export const RegistrationIntentPage = () => {
       <Card className="w-[min(520px,100%)] grid w-[min(980px,100%)] gap-[clamp(20px,4vw,44px)] md:grid-cols-[minmax(0,0.9fr)_minmax(280px,1fr)]">
         <div>
           <div className="mb-5 inline-flex items-center gap-2 font-[var(--font-display)] text-xl font-extrabold leading-none text-[var(--color-navy)]"><SoarLogo /><span>SOAR</span></div>
-          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">{paidFlowEnabled ? 'Payment before account creation' : 'Free pitch preview'}</p>
-          <h1>{paidFlowEnabled ? 'Start six-month access' : 'Create a free preview account'}</h1>
+          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-blue-deep)]">{paidFlowEnabled ? 'Payment before account creation' : 'Free account'}</p>
+          <h1>{paidFlowEnabled ? 'Start six-month access' : 'Create a free account'}</h1>
           <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">
             {paidFlowEnabled
               ? 'SOAR costs PHP10 per account for six months. Account creation unlocks after a successful checkout.'
-              : 'Create a student or sponsor account to explore the pitch preview. Verify your email before using core workflows.'}
+              : 'Create a student or sponsor account. Verify your email before using core workflows.'}
           </p>
           <div className="rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] px-3.5 py-3 text-sm text-[var(--color-blue-deep)]">
             Officers do not choose a separate signup. Register as a student with student ID; authorized organization staff grant organization-scoped officer access later.
           </div>
           {!paidFlowEnabled ? (
-            <aside className="grid gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-off-white)] px-3.5 py-3 text-sm" role="note" aria-label="Pitch payment presentation">
-              <strong className="text-[var(--color-navy)]">Payment presentation · UI only</strong>
+            <aside className="grid gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-off-white)] px-3.5 py-3 text-sm" role="note" aria-label="Payment information">
+              <strong className="text-[var(--color-navy)]">Payment unavailable</strong>
               <span className="font-bold text-[var(--color-blue-deep)]">PHP10 for six months</span>
-              <span className="text-[var(--muted-foreground)]">Checkout is not connected here. No payment is requested or recorded; {gateway.mode === 'fixture' ? 'fixture registration stays in this browser.' : 'the hosted preview grants access under an unpaid preview policy.'}</span>
+              <span className="text-[var(--muted-foreground)]">Checkout is not connected here. No payment is requested or recorded; {gateway.mode === 'fixture' ? 'fixture registration stays in this browser.' : 'account access is granted without payment.'}</span>
             </aside>
           ) : gateway.mode === 'fixture' ? (
             <div className="rounded-[var(--radius-md)] bg-[var(--color-orange-soft)] px-3.5 py-3 text-sm text-[var(--color-navy)]" role="note">Fixture checkout is simulated locally and does not create a real charge.</div>
@@ -162,7 +162,7 @@ export const RegistrationIntentPage = () => {
             ) : (
               <>
                 <li><strong>Profile</strong><span>Students choose one approved department.</span></li>
-                <li><strong>Preview</strong><span>Verify your email to use workflows; no payment is processed.</span></li>
+                <li><strong>Verify email</strong><span>Verify your email to use workflows; no payment is processed.</span></li>
               </>
             )}
           </ol>
@@ -199,7 +199,7 @@ export const RegistrationIntentPage = () => {
             </Field>
           )}
           <Button type="submit" disabled={submitting}>
-            {submitting ? (paidFlowEnabled ? 'Creating checkout…' : 'Creating account…') : paidFlowEnabled ? 'Continue to PHP10 checkout' : 'Create free preview account'}
+            {submitting ? (paidFlowEnabled ? 'Creating checkout…' : 'Creating account…') : paidFlowEnabled ? 'Continue to PHP10 checkout' : 'Create free account'}
           </Button>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 font-bold text-[var(--color-blue-deep)] max-sm:flex-col max-sm:items-stretch">
             <Link to="/login">Already have an account?</Link>

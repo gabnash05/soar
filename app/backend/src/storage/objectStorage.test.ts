@@ -47,7 +47,7 @@ describe('private Supabase object storage adapter', () => {
     expect((fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>).Authorization).toBe(`Bearer ${roleKey}`);
   });
 
-  it('keeps provider target errors safe for clients while logging only operation and status', async () => {
+  it('keeps provider target errors safe for clients while logging allowlisted codes only', async () => {
     const fetchMock = vi.mocked(fetch);
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
     const storagePath = 'announcement-images/org-1/post-1/photo.png';
@@ -67,6 +67,37 @@ describe('private Supabase object storage adapter', () => {
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(roleKey);
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(storagePath);
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('private detail');
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
+  it('logs newly recognized Supabase enum codes without provider details', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const storagePath = 'announcement-images/org-1/post-1/photo.png';
+    fetchMock.mockResolvedValueOnce(response({
+      code: 'InvalidBucketName',
+      message: `private detail ${roleKey} Bearer provider-bearer-token ${storagePath} https://project.supabase.co/storage/v1/object/upload/sign/private/path?token=signed-capability`,
+    }, 400));
+
+    try {
+      await expect(createSignedObjectUploadTarget(storagePath)).rejects.toMatchObject({
+        code: 'storage_unavailable',
+        status: 503,
+      });
+      expect(diagnostic).toHaveBeenCalledWith('Private storage operation failed', JSON.stringify({
+        operation: 'create_signed_upload_target',
+        phase: 'provider_http_error',
+        providerStatus: 400,
+        providerErrorCode: 'InvalidBucketName',
+      }));
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(roleKey);
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(storagePath);
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('private detail');
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('provider-bearer-token');
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('signed-capability');
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('https://project.supabase.co/storage/v1/object/upload/sign/private/path');
     } finally {
       diagnostic.mockRestore();
     }
