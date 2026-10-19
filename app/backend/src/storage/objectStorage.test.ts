@@ -72,12 +72,12 @@ describe('private Supabase object storage adapter', () => {
     }
   });
 
-  it('logs newly recognized Supabase enum codes without provider details', async () => {
+  it('logs corrected official Supabase enum codes without provider details', async () => {
     const fetchMock = vi.mocked(fetch);
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
     const storagePath = 'announcement-images/org-1/post-1/photo.png';
     fetchMock.mockResolvedValueOnce(response({
-      code: 'InvalidBucketName',
+      code: 'S3BucketNotEmpty',
       message: `private detail ${roleKey} Bearer provider-bearer-token ${storagePath} https://project.supabase.co/storage/v1/object/upload/sign/private/path?token=signed-capability`,
     }, 400));
 
@@ -90,7 +90,7 @@ describe('private Supabase object storage adapter', () => {
         operation: 'create_signed_upload_target',
         phase: 'provider_http_error',
         providerStatus: 400,
-        providerErrorCode: 'InvalidBucketName',
+        providerErrorCode: 'S3BucketNotEmpty',
       }));
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(roleKey);
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(storagePath);
@@ -106,7 +106,7 @@ describe('private Supabase object storage adapter', () => {
   it('omits unrecognized provider codes and messages from diagnostics', async () => {
     const fetchMock = vi.mocked(fetch);
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
-    fetchMock.mockResolvedValueOnce(response({ code: `unknown-${roleKey}`, message: 'raw provider body' }, 502));
+    fetchMock.mockResolvedValueOnce(response({ code: 'ResourceNotEmpty', message: `raw provider body ${roleKey}` }, 502));
 
     try {
       await expect(createSignedObjectUploadTarget('announcement-images/org-1/post-1/photo.png')).rejects.toMatchObject({
@@ -120,6 +120,7 @@ describe('private Supabase object storage adapter', () => {
       }));
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(roleKey);
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('raw provider body');
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('ResourceNotEmpty');
     } finally {
       diagnostic.mockRestore();
     }
