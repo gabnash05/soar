@@ -1,5 +1,6 @@
 import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
+import { SUPABASE_SIGNED_UPLOAD_MAX_TTL_SECONDS } from '../storage/objectStorage';
 import { advanceOrganizationDeletion, type OrganizationDeletionStorage, type OrganizationStorageFamily } from './cascade';
 
 type Data = Record<string, unknown>;
@@ -146,7 +147,7 @@ class FakeObjectStorage implements OrganizationDeletionStorage {
 
 const organizationId = 'cascade-org';
 const nowAt = Timestamp.fromDate(new Date('2026-10-19T00:00:00.000Z'));
-const signedUploadLifetimeMs = 2 * 60 * 60 * 1000;
+const signedUploadLifetimeMs = SUPABASE_SIGNED_UPLOAD_MAX_TTL_SECONDS * 1000;
 const logoPath = `organization-logos/${organizationId}/logo.png`;
 const announcementPath = `announcement-images/${organizationId}/post-001/post.png`;
 const meetingPath = `meeting-request-documents/${organizationId}/meeting_001/formal-request.pdf`;

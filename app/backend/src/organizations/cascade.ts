@@ -8,8 +8,8 @@ import { announcementImagePathMatch, assertLogoPathForOrganization } from '../co
 
 const MAX_FIRESTORE_DELETES_PER_REQUEST = 100;
 const MAX_OBJECT_DELETES_PER_REQUEST = 25;
-// Supabase signed upload tokens remain usable for up to two hours; Firebase Storage writes are blocked by rules once deletion is marked.
-const MAX_OUTSTANDING_UPLOAD_TOKEN_MS = 2 * 60 * 60 * 1000;
+// Keep the persisted upload drain tied to the adapter's documented Supabase maximum; Firebase rules also block writes once deletion is marked.
+const MAX_OUTSTANDING_UPLOAD_TOKEN_MS = objectStorageModule.SUPABASE_SIGNED_UPLOAD_MAX_TTL_SECONDS * 1000;
 
 export const ORGANIZATION_DELETION_PHASES = [
   'officerGrants',
@@ -23,7 +23,7 @@ export const ORGANIZATION_DELETION_PHASES = [
 ] as const;
 
 export type OrganizationDeletionPhase = (typeof ORGANIZATION_DELETION_PHASES)[number];
-export type OrganizationStorageFamily = 'organization-logos' | 'announcement-images' | 'meeting-request-documents';
+export type OrganizationStorageFamily = objectStorageModule.OrganizationStorageFamily;
 
 interface StoredDeletionProgress {
   phase: OrganizationDeletionPhase;
