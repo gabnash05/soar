@@ -44,6 +44,53 @@ describe('private Supabase object storage adapter', () => {
     expect((fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>).Authorization).toBe(`Bearer ${roleKey}`);
   });
 
+  it('keeps provider target errors safe for clients while logging only operation and status', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const storagePath = 'announcement-images/org-1/post-1/photo.png';
+    fetchMock.mockResolvedValueOnce(response({ code: 'BucketNotFound', message: `private detail ${roleKey} ${storagePath}` }, 503));
+
+    try {
+      await expect(createSignedObjectUploadTarget(storagePath)).rejects.toMatchObject({
+        code: 'storage_unavailable',
+        status: 503,
+      });
+      expect(diagnostic).toHaveBeenCalledWith('Private storage operation failed', JSON.stringify({
+        operation: 'create_signed_upload_target',
+        phase: 'provider_http_error',
+        providerStatus: 503,
+        providerErrorCode: 'BucketNotFound',
+      }));
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(roleKey);
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(storagePath);
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('private detail');
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
+  it('omits unrecognized provider codes and messages from diagnostics', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce(response({ code: `unknown-${roleKey}`, message: 'raw provider body' }, 502));
+
+    try {
+      await expect(createSignedObjectUploadTarget('announcement-images/org-1/post-1/photo.png')).rejects.toMatchObject({
+        code: 'storage_unavailable',
+        status: 503,
+      });
+      expect(diagnostic).toHaveBeenCalledWith('Private storage operation failed', JSON.stringify({
+        operation: 'create_signed_upload_target',
+        phase: 'provider_http_error',
+        providerStatus: 502,
+      }));
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(roleKey);
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('raw provider body');
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
   it('does not mint a private PDF download capability with its upload target', async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValueOnce(response({ url: '/object/upload/sign/soar-files/meeting-request-documents/org-1/meeting-1/request.pdf?token=upload-capability' }));
@@ -85,6 +132,28 @@ describe('private Supabase object storage adapter', () => {
 
     await expect(downloadStoredObject('meeting-request-documents/org-1/meeting-1/request.pdf')).resolves.toEqual(Buffer.from('%PDF'));
     expect(fetchMock).toHaveBeenNthCalledWith(2, `${storageBase}/storage/v1/object/sign/soar-files/meeting-request-documents/org-1/meeting-1/request.pdf?token=read-capability`);
+  });
+
+  it('preserves provider failures as unavailable instead of misreporting them as missing files', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock
+      .mockResolvedValueOnce(response({ signedURL: '/object/sign/soar-files/announcement-images/org-1/post-1/photo.png?token=read-capability' }))
+      .mockResolvedValueOnce(new Response('upstream failure', { status: 503 }));
+
+    try {
+      await expect(downloadStoredObject('announcement-images/org-1/post-1/photo.png')).rejects.toMatchObject({
+        code: 'storage_unavailable',
+        status: 503,
+      });
+      expect(diagnostic).toHaveBeenCalledWith('Private storage operation failed', JSON.stringify({
+        operation: 'download_object',
+        phase: 'signed_download_http_error',
+        providerStatus: 503,
+      }));
+    } finally {
+      diagnostic.mockRestore();
+    }
   });
 
   it('rejects unsafe paths and missing Supabase configuration without exposing provider details', async () => {
