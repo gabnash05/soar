@@ -3,6 +3,9 @@ import { apiFetch, authHeaders } from './apiClient';
 export interface AdminOrganizationOption {
   id: string;
   name: string;
+  deletionStatus?: 'deleting';
+  deletionPhase?: string;
+  retryAfterAt?: string;
 }
 
 export interface AdminOfficerGrantOption {
@@ -56,6 +59,21 @@ export async function createAdminOrganization(input: CreateAdminOrganizationInpu
     method: 'POST',
     headers: await authHeaders(),
     body: JSON.stringify(input),
+  });
+}
+
+export interface AdminOrganizationDeletionResult {
+  orgId: string;
+  status: 'in_progress' | 'complete';
+  alreadyDeleted?: boolean;
+  phase?: string;
+  retryAfterAt?: string;
+}
+
+export async function deleteAdminOrganization(organizationId: string): Promise<AdminOrganizationDeletionResult> {
+  return apiFetch(`/admin/organizations/${encodeURIComponent(organizationId)}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
   });
 }
 

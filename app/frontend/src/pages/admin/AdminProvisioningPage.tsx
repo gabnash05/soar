@@ -4,6 +4,7 @@ import { CANONICAL_DEPARTMENTS } from '../../lib/departments';
 import {
   assignAdminOfficer,
   createAdminOrganization,
+  deleteAdminOrganization,
   listAdminOfficerGrants,
   listAdminOrganizations,
   revokeAdminOfficer,
@@ -22,6 +23,20 @@ const adminTabs = [
 
 function messageFor(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function deletionPhaseLabel(phase?: string) {
+  const labels: Record<string, string> = {
+    officerGrants: 'removing officer grants',
+    announcements: 'removing announcements and discussions',
+    applications: 'removing applications',
+    meetingRequests: 'removing meeting requests and private PDFs',
+    calendarEntries: 'removing dated entries',
+    organizationLogo: 'removing the organization logo',
+    storedObjects: 'checking for remaining organization files',
+    finalize: 'verifying completion'
+  };
+  return phase ? labels[phase] ?? 'cleaning organization data' : 'cleaning organization data';
 }
 
 function StudentPicker({
@@ -200,7 +215,12 @@ export function AdminProvisioningPage() {
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [revokeMessage, setRevokeMessage] = useState<string | null>(null);
+  const [organizationToDelete, setOrganizationToDelete] = useState<AdminOrganizationOption | null>(null);
+  const [deletionBusy, setDeletionBusy] = useState(false);
+  const [deletionError, setDeletionError] = useState<string | null>(null);
+  const [deletionMessage, setDeletionMessage] = useState<string | null>(null);
   const officerLoadGeneration = useRef(0);
+  const selectedOrganization = organizations.find((organization) => organization.id === selectedOrganizationId);
 
   const loadOrganizations = useCallback(async (pageToken?: string, replace = false) => {
     if (pageToken) setLoadMoreOrganizations(true);
@@ -243,7 +263,7 @@ export function AdminProvisioningPage() {
   }, []);
 
   useEffect(() => {
-    if (activeId !== 'manage' || !selectedOrganizationId) {
+    if (activeId !== 'manage' || !selectedOrganizationId || selectedOrganization?.deletionStatus === 'deleting') {
       officerLoadGeneration.current += 1;
       setOfficerGrants([]);
       setOfficerGrantsPageToken(undefined);
@@ -251,7 +271,7 @@ export function AdminProvisioningPage() {
       return;
     }
     void loadOfficerGrants(selectedOrganizationId, undefined, true);
-  }, [activeId, loadOfficerGrants, selectedOrganizationId]);
+  }, [activeId, loadOfficerGrants, selectedOrganization?.deletionStatus, selectedOrganizationId]);
 
   const handleCreateOrganization = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -316,6 +336,45 @@ export function AdminProvisioningPage() {
     } finally {
       setRevokeBusy(false);
     }
+  };
+
+  const runOrganizationDeletion = async (organization: AdminOrganizationOption) => {
+    setDeletionError(null);
+    setDeletionMessage(null);
+    setDeletionBusy(true);
+    try {
+      const result = await deleteAdminOrganization(organization.id);
+      if (result.status === 'complete') {
+        setOrganizations((current) => current.filter((item) => item.id !== organization.id));
+        if (selectedOrganizationId === organization.id) {
+          setSelectedOrganizationId('');
+          setOfficerGrants([]);
+        }
+        setOrganizationToDelete(null);
+        setDeletionMessage(`${organization.name} and its organization-owned records and files were deleted. User accounts and unrelated organization data were preserved.`);
+        return;
+      }
+
+      setOrganizations((current) => current.map((item) => item.id === organization.id
+        ? { ...item, deletionStatus: 'deleting', deletionPhase: result.phase, retryAfterAt: result.retryAfterAt }
+        : item));
+      setOfficerGrants([]);
+      setOfficerGrantsPageToken(undefined);
+      setOrganizationToDelete(null);
+      setDeletionMessage(`${organization.name} is locked while cleanup continues. The organization and its progress record remain until every owned record and file is accounted for.`);
+    } catch (caught) {
+      setDeletionError(messageFor(caught, 'Organization cleanup could not finish. The organization is not reported deleted; retry safely to continue.'));
+    } finally {
+      setDeletionBusy(false);
+    }
+  };
+
+  const handleDeleteOrganization = async () => {
+    if (organizationToDelete) await runOrganizationDeletion(organizationToDelete);
+  };
+
+  const handleContinueOrganizationDeletion = async () => {
+    if (selectedOrganization?.deletionStatus === 'deleting') await runOrganizationDeletion(selectedOrganization);
   };
 
   const handleAssignOfficer = async (event: FormEvent<HTMLFormElement>) => {
@@ -451,7 +510,7 @@ export function AdminProvisioningPage() {
                     required
                   >
                     <option value="" disabled>Choose an organization</option>
-                    {organizations.map((organization) => <option value={organization.id} key={organization.id}>{organization.name}</option>)}
+                    {organizations.map((organization) => <option value={organization.id} key={organization.id} disabled={organization.deletionStatus === 'deleting'}>{organization.name}{organization.deletionStatus === 'deleting' ? ' (deletion in progress)' : ''}</option>)}
                   </Select>
                 </Field>
               ) : null}
@@ -508,11 +567,32 @@ export function AdminProvisioningPage() {
                     }}
                   >
                     <option value="" disabled>Choose an organization</option>
-                    {organizations.map((organization) => <option value={organization.id} key={organization.id}>{organization.name}</option>)}
+                    {organizations.map((organization) => <option value={organization.id} key={organization.id}>{organization.name}{organization.deletionStatus === 'deleting' ? ' (deletion in progress)' : ''}</option>)}
                   </Select>
                 </Field>
               ) : null}
-              {selectedOrganizationId ? (
+              {deletionMessage ? <p className="m-0 text-sm font-bold text-[var(--color-blue-deep)]" role="status" aria-live="polite">{deletionMessage}</p> : null}
+              {selectedOrganization?.deletionStatus === 'deleting' ? (
+                <section className="grid min-w-0 gap-3 border-t border-[var(--color-border)] pt-4" aria-label="Organization deletion progress">
+                  <div>
+                    <h2 className="m-0 font-[var(--font-display)] text-base font-bold text-[var(--color-navy)]">Deletion in progress</h2>
+                    <p className="m-0 mt-1 max-w-[68ch] text-sm text-[var(--muted-foreground)]">{selectedOrganization.name} is locked against new organization changes while cleanup is incomplete. Current step: {deletionPhaseLabel(selectedOrganization.deletionPhase)}.</p>
+                    {selectedOrganization.retryAfterAt ? <p className="m-0 mt-1 max-w-[68ch] text-sm text-[var(--muted-foreground)]">Previously issued upload links may remain usable until {new Date(selectedOrganization.retryAfterAt).toLocaleString()}. Retry after that time to verify and remove any remaining files.</p> : null}
+                  </div>
+                  {deletionError ? <p className="m-0 text-sm font-bold text-[var(--color-orange-deep)]" role="alert">{deletionError}</p> : null}
+                  <div><Button type="button" variant="danger" disabled={deletionBusy} onClick={() => void handleContinueOrganizationDeletion()}>{deletionBusy ? 'Continuing cleanup…' : 'Continue deletion'}</Button></div>
+                </section>
+              ) : selectedOrganization ? (
+                <section className="grid min-w-0 gap-3 border-t border-[var(--color-border)] pt-4" aria-label="Delete selected organization">
+                  <div>
+                    <h2 className="m-0 font-[var(--font-display)] text-base font-bold text-[var(--color-navy)]">Delete organization</h2>
+                    <p className="m-0 mt-1 max-w-[68ch] text-sm text-[var(--muted-foreground)]">Permanently removes this organization, its officer grants, announcements and discussion, dated entries, applications, meeting requests, and owned private files. Student and sponsor Auth accounts and profiles, other organizations, and their grants and data stay unchanged.</p>
+                  </div>
+                  {deletionError ? <p className="m-0 text-sm font-bold text-[var(--color-orange-deep)]" role="alert">{deletionError}</p> : null}
+                  <div><Button type="button" variant="danger" disabled={deletionBusy} onClick={() => { setDeletionError(null); setOrganizationToDelete(selectedOrganization); }}>Delete organization</Button></div>
+                </section>
+              ) : null}
+              {selectedOrganizationId && selectedOrganization?.deletionStatus !== 'deleting' ? (
                 <section className="grid min-w-0 gap-3" aria-label="Organization officer grants">
                   <div>
                     <h2 className="m-0 font-[var(--font-display)] text-base font-bold text-[var(--color-navy)]">Officer access</h2>
@@ -542,7 +622,7 @@ export function AdminProvisioningPage() {
                           <Button
                             type="button"
                             variant="danger"
-                            disabled={grant.status !== 'active' || grant.isOrganizationOwner || revokeBusy}
+                            disabled={grant.status !== 'active' || grant.isOrganizationOwner || revokeBusy || selectedOrganization?.deletionStatus === 'deleting'}
                             onClick={() => {
                               setRevokeError(null);
                               setRevokeMessage(null);
@@ -568,6 +648,28 @@ export function AdminProvisioningPage() {
             </div>
           </CardBody>
         </Card>
+        <ConfirmDialog
+          open={Boolean(organizationToDelete)}
+          title="Delete this organization and its data?"
+          description={organizationToDelete ? <>
+            <p className="m-0">You are deleting <strong>{organizationToDelete.name}</strong>. This permanently removes its profile and logo, officer grants, announcements with likes/comments/media, calendar entries, applications, meeting requests, and private request PDFs.</p>
+            <p className="m-0 mt-2">Cleanup may require safe retries. Until every owned record and file is accounted for, the organization remains locked and is not reported as deleted.</p>
+            <p className="m-0 mt-2">User Auth accounts and profiles, unrelated organizations, and their grants and content will not be deleted.</p>
+          </> : ''}
+          confirmLabel="Delete organization"
+          cancelLabel="Keep organization"
+          destructive
+          busy={deletionBusy}
+          error={deletionError}
+          onOpenChange={(open) => {
+            if (!open) {
+              setOrganizationToDelete(null);
+              setDeletionError(null);
+              void loadOrganizations(undefined, true);
+            }
+          }}
+          onConfirm={handleDeleteOrganization}
+        />
         <ConfirmDialog
           open={Boolean(officerToRevoke)}
           title="Revoke officer access?"

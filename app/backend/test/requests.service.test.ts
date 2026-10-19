@@ -298,6 +298,39 @@ describe('request service application workflow', () => {
     await expect(service.listMyApplications(user('student'))).resolves.toMatchObject([{ id: 'legacy-application-record', stage: 'Declined' }]);
   });
 
+  it('rejects new applications as soon as organization deletion is marked', async () => {
+    store.organizations.get('org1')!.deletionStatus = 'deleting';
+    const service = serviceFor(store);
+
+    await expectCode(service.confirmExternalApplication(user('student'), {
+      organizationId: 'org1',
+      opportunityId: 'org1-member-2026',
+      externalFormOpened: true,
+      confirmedExternalSubmission: true
+    }), 'organization_deleting');
+    expect(store.applications.size).toBe(0);
+  });
+
+  it('blocks meeting requests and private upload targets while organization deletion is active', async () => {
+    store.organizations.get('org1')!.deletionStatus = 'deleting';
+    const service = serviceFor(store);
+    const input = {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30'
+    };
+
+    await expectCode(service.requestMeeting(user('student'), input), 'organization_deleting');
+    await expectCode(service.createMeetingDocumentTarget(user('student'), {
+      ...input,
+      fileName: 'formal-request.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024
+    }), 'organization_deleting');
+    expect(store.meetings.size).toBe(0);
+  });
+
   it('blocks sponsor applications and non-manager applicant queues', async () => {
     const service = serviceFor(store);
     await expectCode(service.confirmExternalApplication(user('sponsor'), {

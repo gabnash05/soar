@@ -18,6 +18,9 @@ async function assertOrganizationOwner(orgId: string, uid: string): Promise<void
   if (orgSnap.data()?.ownerUid !== uid) {
     throw new AppError('not_organization_owner', 'Only the assigned organization owner can manage officer grants.', 403);
   }
+  if (orgSnap.data()?.deletionStatus === 'deleting') {
+    throw new AppError('organization_deleting', 'This organization is being deleted and can no longer be changed.', 409);
+  }
 }
 
 async function getAuthUser(uid: string) {
@@ -104,13 +107,25 @@ export async function approveOfficerGrant(actor: DecodedIdToken, orgId: string, 
     throw new AppError('owner_already_granted', 'The organization owner already has access.', 409);
   }
 
-  await db.doc(officerGrantPath(orgId, input.uid)).set({
-    uid: input.uid,
-    status: 'active',
-    grantedByUid: actor.uid,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp()
-  }, { merge: true });
+  const organizationRef = db.doc(organizationPath(orgId));
+  const grantRef = db.doc(officerGrantPath(orgId, input.uid));
+  await db.runTransaction(async (transaction) => {
+    const organization = await transaction.get(organizationRef);
+    if (!organization.exists) throw new AppError('organization_missing', 'The organization was not found.', 404);
+    if (organization.data()?.ownerUid !== actor.uid) {
+      throw new AppError('not_organization_owner', 'Only the assigned organization owner can manage officer grants.', 403);
+    }
+    if (organization.data()?.deletionStatus === 'deleting') {
+      throw new AppError('organization_deleting', 'This organization is being deleted and can no longer be changed.', 409);
+    }
+    transaction.set(grantRef, {
+      uid: input.uid,
+      status: 'active',
+      grantedByUid: actor.uid,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  });
 
   return { orgId, uid: input.uid, status: 'approved' };
 }
@@ -121,7 +136,7 @@ const adminStudentSearchSchema = z.object({
 });
 
 export async function listAdminOrganizations(rawQuery: unknown): Promise<{
-  items: Array<{ id: string; name: string }>;
+  items: Array<{ id: string; name: string; deletionStatus?: 'deleting'; deletionPhase?: string; retryAfterAt?: string }>;
   nextPageToken?: string;
 }> {
   const query = organizationListQuerySchema.parse(rawQuery);
@@ -132,10 +147,25 @@ export async function listAdminOrganizations(rawQuery: unknown): Promise<{
   const docs = snap.docs.slice(0, query.limit);
   const last = docs.at(-1);
   return {
-    items: docs.map((doc) => ({
-      id: typeof doc.data().orgId === 'string' ? doc.data().orgId : doc.id,
-      name: typeof doc.data().name === 'string' ? doc.data().name : 'Organization'
-    })),
+    items: docs.map((doc) => {
+      const data = doc.data();
+      const deletionProgress = typeof data.deletionProgress === 'object' && data.deletionProgress !== null
+        ? data.deletionProgress as Record<string, unknown>
+        : undefined;
+      const retryAt = deletionProgress?.uploadDrainUntil;
+      const retryAfterAt = typeof (retryAt as Timestamp | undefined)?.toDate === 'function'
+        ? (retryAt as Timestamp).toDate().toISOString()
+        : undefined;
+      return {
+        id: typeof data.orgId === 'string' ? data.orgId : doc.id,
+        name: typeof data.name === 'string' ? data.name : 'Organization',
+        ...(data.deletionStatus === 'deleting' ? {
+          deletionStatus: 'deleting' as const,
+          ...(typeof deletionProgress?.phase === 'string' ? { deletionPhase: deletionProgress.phase } : {}),
+          ...(retryAfterAt ? { retryAfterAt } : {})
+        } : {})
+      };
+    }),
     ...(snap.docs.length > query.limit && last ? { nextPageToken: encodeCursor('admin-organizations', '', [String(last.data().name ?? ''), last.id]) } : {})
   };
 }
@@ -293,6 +323,9 @@ export async function assignAdminOfficerGrant(orgId: string, rawBody: unknown, a
     if (!organization.exists) {
       throw new AppError('organization_missing', 'The organization was not found.', 404);
     }
+    if (organization.data()?.deletionStatus === 'deleting') {
+      throw new AppError('organization_deleting', 'This organization is being deleted and can no longer be changed.', 409);
+    }
     if (!account.exists) {
       throw new AppError('target_account_missing', 'The selected account was not found.', 404);
     }
@@ -323,17 +356,30 @@ export async function revokeOfficerGrant(actor: DecodedIdToken, orgId: string, u
     throw new AppError('cannot_revoke_owner', 'The assigned owner cannot revoke their own owner access.', 409);
   }
 
+  const organizationRef = db.doc(organizationPath(orgId));
   const grantRef = db.doc(officerGrantPath(orgId, uid));
-  const grantSnap = await grantRef.get();
-  if (!grantSnap.exists) {
-    throw new AppError('grant_missing', 'The officer grant was not found.', 404);
-  }
+  await db.runTransaction(async (transaction) => {
+    const [organization, grant] = await Promise.all([transaction.get(organizationRef), transaction.get(grantRef)]);
+    if (!organization.exists) throw new AppError('organization_missing', 'The organization was not found.', 404);
+    if (organization.data()?.ownerUid !== actor.uid) {
+      throw new AppError('not_organization_owner', 'Only the assigned organization owner can manage officer grants.', 403);
+    }
+    if (organization.data()?.deletionStatus === 'deleting') {
+      throw new AppError('organization_deleting', 'This organization is being deleted and can no longer be changed.', 409);
+    }
+    if (!grant.exists) {
+      throw new AppError('grant_missing', 'The officer grant was not found.', 404);
+    }
+    if (grant.data()?.uid !== uid) {
+      throw new AppError('invalid_officer_grant', 'The officer grant identity does not match this organization and account.', 409);
+    }
 
-  await grantRef.update({
-    status: 'revoked',
-    revokedByUid: actor.uid,
-    revokedAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp()
+    transaction.update(grantRef, {
+      status: 'revoked',
+      revokedByUid: actor.uid,
+      revokedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    });
   });
 
   return { orgId, uid, status: 'revoked' };
