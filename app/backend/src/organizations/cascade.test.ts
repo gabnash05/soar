@@ -146,6 +146,7 @@ class FakeObjectStorage implements OrganizationDeletionStorage {
 
 const organizationId = 'cascade-org';
 const nowAt = Timestamp.fromDate(new Date('2026-10-19T00:00:00.000Z'));
+const signedUploadLifetimeMs = 2 * 60 * 60 * 1000;
 const logoPath = `organization-logos/${organizationId}/logo.png`;
 const announcementPath = `announcement-images/${organizationId}/post-001/post.png`;
 const meetingPath = `meeting-request-documents/${organizationId}/meeting_001/formal-request.pdf`;
@@ -245,6 +246,48 @@ describe('confirmed organization cascade', () => {
     expect(database.documents.has('calendarEntries/unrelated-date')).toBe(true);
     expect(database.documents.has('applications/unrelated-application')).toBe(true);
     expect([...storage.objects]).toEqual(['organization-logos/unrelated-org/logo.png']);
+  });
+
+  it('waits through the full signed-upload lifetime and sweeps files uploaded during the drain', async () => {
+    const { database, storage } = fixture();
+    const initial = await advanceOrganizationDeletion(organizationId, 'trusted-admin', {
+      database: database as unknown as Firestore,
+      storage,
+      now: () => nowAt
+    });
+    const progress = database.documents.get(`organizations/${organizationId}`)?.deletionProgress as { uploadDrainUntil: Timestamp };
+    expect(progress.uploadDrainUntil.toMillis() - nowAt.toMillis()).toBe(signedUploadLifetimeMs);
+    expect(initial).toMatchObject({
+      status: 'in_progress',
+      phase: 'storedObjects',
+      retryAfterAt: new Date(nowAt.toMillis() + signedUploadLifetimeMs).toISOString()
+    });
+
+    const uploadDuringDrain = `announcement-images/${organizationId}/late-upload/photo.png`;
+    storage.objects.add(uploadDuringDrain);
+    const beforeExpiry = Timestamp.fromMillis(progress.uploadDrainUntil.toMillis() - 1);
+    const earlyRetry = await advanceOrganizationDeletion(organizationId, 'trusted-admin', {
+      database: database as unknown as Firestore,
+      storage,
+      now: () => beforeExpiry
+    });
+    expect(earlyRetry).toMatchObject({ status: 'in_progress', phase: 'storedObjects' });
+    expect(storage.objects.has(uploadDuringDrain)).toBe(true);
+
+    let result = await advanceOrganizationDeletion(organizationId, 'trusted-admin', {
+      database: database as unknown as Firestore,
+      storage,
+      now: () => progress.uploadDrainUntil
+    });
+    for (let attempt = 0; result.status !== 'complete' && attempt < 12; attempt += 1) {
+      result = await advanceOrganizationDeletion(organizationId, 'trusted-admin', {
+        database: database as unknown as Firestore,
+        storage,
+        now: () => progress.uploadDrainUntil
+      });
+    }
+    expect(result).toMatchObject({ status: 'complete' });
+    expect(storage.objects.has(uploadDuringDrain)).toBe(false);
   });
 
   it('keeps a durable deleting record on a mid-cleanup storage failure and resumes idempotently', async () => {
