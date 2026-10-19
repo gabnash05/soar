@@ -1,5 +1,5 @@
 import { Timestamp, type Firestore } from 'firebase-admin/firestore';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SUPABASE_SIGNED_UPLOAD_MAX_TTL_SECONDS } from '../storage/objectStorage';
 import { advanceOrganizationDeletion, type OrganizationDeletionStorage, type OrganizationStorageFamily } from './cascade';
 
@@ -151,6 +151,73 @@ const signedUploadLifetimeMs = SUPABASE_SIGNED_UPLOAD_MAX_TTL_SECONDS * 1000;
 const logoPath = `organization-logos/${organizationId}/logo.png`;
 const announcementPath = `announcement-images/${organizationId}/post-001/post.png`;
 const meetingPath = `meeting-request-documents/${organizationId}/meeting_001/formal-request.pdf`;
+const supabaseBase = 'https://project.supabase.co';
+
+function configureSupabaseStorage() {
+  vi.stubEnv('SOAR_STORAGE_PROVIDER', 'supabase');
+  vi.stubEnv('SUPABASE_URL', supabaseBase);
+  vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'synthetic-service-role-key');
+  vi.stubEnv('SOAR_FILES_BUCKET', 'soar-files');
+}
+
+function supabaseResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+function mockSupabaseStorage(objects: Set<string>, cappedPrefix?: string) {
+  const calls: Array<{ url: string; method: string; body: string }> = [];
+  const missingDeletes: string[] = [];
+  const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? 'GET';
+    const body = String(init?.body ?? '');
+    calls.push({ url: url.toString(), method, body });
+
+    if (method === 'DELETE' && url.pathname.endsWith('/object/soar-files')) {
+      const request = JSON.parse(body) as { prefixes?: unknown };
+      const paths = request.prefixes;
+      if (!Array.isArray(paths) || paths.length !== 1 || typeof paths[0] !== 'string') {
+        return supabaseResponse({ code: 'InvalidRequest' }, 400);
+      }
+      const path = paths[0];
+      if (!objects.delete(path)) {
+        missingDeletes.push(path);
+        return supabaseResponse({ code: 'NotFound' }, 404);
+      }
+      return supabaseResponse({}, 200);
+    }
+
+    if (method === 'POST' && url.pathname.endsWith('/object/list/soar-files')) {
+      const request = JSON.parse(body) as { prefix?: string; offset?: number; limit?: number };
+      const prefix = request.prefix ?? '';
+      const offset = request.offset ?? 0;
+      const limit = request.limit ?? 100;
+      if (prefix === cappedPrefix) {
+        return supabaseResponse(Array.from({ length: 100 }, (_, index) => ({
+          name: `file-${String(index).padStart(3, '0')}.png`, id: `object-${offset}-${index}`
+        })));
+      }
+
+      const directoryPrefix = `${prefix}/`;
+      const children = new Map<string, boolean>();
+      for (const path of objects) {
+        if (!path.startsWith(directoryPrefix)) continue;
+        const remainder = path.slice(directoryPrefix.length);
+        const slash = remainder.indexOf('/');
+        const name = slash < 0 ? remainder : remainder.slice(0, slash);
+        if (name) children.set(name, (children.get(name) ?? false) || slash >= 0);
+      }
+      const entries = [...children.entries()]
+        .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+        .map(([name, isDirectory]) => ({ name, id: isDirectory ? null : 'object-id' }));
+      return supabaseResponse(entries.slice(offset, offset + limit));
+    }
+
+    return supabaseResponse({ code: 'NotFound' }, 404);
+  });
+
+  return { fetchMock, calls, missingDeletes };
+}
 
 function fixture() {
   const database = new FakeFirestore();
@@ -289,6 +356,106 @@ describe('confirmed organization cascade', () => {
     }
     expect(result).toMatchObject({ status: 'complete' });
     expect(storage.objects.has(uploadDuringDrain)).toBe(false);
+  });
+
+  it('runs the cascade through the Supabase adapter with owned nested pages, exact deletes and a late upload', async () => {
+    configureSupabaseStorage();
+    const expectedOrphans = Array.from({ length: 30 }, (_, index) =>
+      `announcement-images/${organizationId}/late-upload/photo-${String(index).padStart(3, '0')}.png`
+    );
+    const uploadDuringDrain = `announcement-images/${organizationId}/late-upload/photo-late.png`;
+    const unrelatedObject = 'announcement-images/unrelated-org/unrelated-post/keep.png';
+    const providerObjects = new Set([...expectedOrphans, unrelatedObject]);
+    const { fetchMock, calls, missingDeletes } = mockSupabaseStorage(providerObjects);
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const { database } = fixture();
+      const initial = await advanceOrganizationDeletion(organizationId, 'trusted-admin', {
+        database: database as unknown as Firestore,
+        now: () => nowAt
+      });
+      const progress = database.documents.get(`organizations/${organizationId}`)?.deletionProgress as { uploadDrainUntil: Timestamp };
+      expect(initial.retryAfterAt).toBe(progress.uploadDrainUntil.toDate().toISOString());
+      expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
+
+      providerObjects.add(uploadDuringDrain);
+      const earlyRetry = await advanceOrganizationDeletion(organizationId, 'trusted-admin', {
+        database: database as unknown as Firestore,
+        now: () => Timestamp.fromMillis(progress.uploadDrainUntil.toMillis() - 1)
+      });
+      expect(earlyRetry).toMatchObject({ status: 'in_progress', phase: 'storedObjects' });
+      expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
+      expect(providerObjects.has(uploadDuringDrain)).toBe(true);
+
+      let result = await advanceOrganizationDeletion(organizationId, 'trusted-admin', {
+        database: database as unknown as Firestore,
+        now: () => progress.uploadDrainUntil
+      });
+      for (let attempt = 0; result.status !== 'complete' && attempt < 16; attempt += 1) {
+        result = await advanceOrganizationDeletion(organizationId, 'trusted-admin', {
+          database: database as unknown as Firestore,
+          now: () => progress.uploadDrainUntil
+        });
+      }
+      expect(result).toMatchObject({ status: 'complete' });
+      expect(providerObjects).toEqual(new Set([unrelatedObject]));
+
+      const deleteCalls = calls.filter((call) => call.method === 'DELETE');
+      const deletedPaths = deleteCalls.flatMap((call) => {
+        const request = JSON.parse(call.body) as { prefixes: string[] };
+        expect(request.prefixes).toHaveLength(1);
+        return request.prefixes;
+      });
+      const directPaths = [announcementPath, meetingPath, logoPath].sort();
+      expect(deletedPaths.slice(0, 3).sort()).toEqual(directPaths);
+      const sweptPaths = deletedPaths.slice(3);
+      expect(sweptPaths).toEqual([...expectedOrphans, uploadDuringDrain].sort());
+      expect(sweptPaths.slice(0, 25).every((path) => path <= sweptPaths[24]!)).toBe(true);
+      expect(sweptPaths.slice(25).every((path) => path > sweptPaths[24]!)).toBe(true);
+      expect(missingDeletes.sort()).toEqual(directPaths);
+      expect(calls.filter((call) => call.method === 'POST').some((call) =>
+        (JSON.parse(call.body) as { prefix?: string }).prefix === `announcement-images/${organizationId}/late-upload`
+      )).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('preserves deleting progress when the real adapter refuses a capped storage traversal', async () => {
+    configureSupabaseStorage();
+    const cappedPrefix = `organization-logos/${organizationId}`;
+    const { fetchMock, calls } = mockSupabaseStorage(new Set(), cappedPrefix);
+    vi.stubGlobal('fetch', fetchMock);
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const { database } = fixture();
+      await advanceOrganizationDeletion(organizationId, 'trusted-admin', {
+        database: database as unknown as Firestore,
+        now: () => nowAt
+      });
+      const progress = database.documents.get(`organizations/${organizationId}`)?.deletionProgress as { uploadDrainUntil: Timestamp };
+      await expect(advanceOrganizationDeletion(organizationId, 'trusted-admin', {
+        database: database as unknown as Firestore,
+        now: () => progress.uploadDrainUntil
+      })).rejects.toMatchObject({ code: 'organization_deletion_incomplete', status: 503 });
+
+      expect(calls.filter((call) => call.method === 'POST')).toHaveLength(101);
+      expect(calls.filter((call) => call.method === 'DELETE')).toHaveLength(3);
+      expect(database.documents.get(`organizations/${organizationId}`)?.deletionStatus).toBe('deleting');
+      expect(database.documents.get(`organizations/${organizationId}`)?.deletionProgress).toMatchObject({
+        phase: 'storedObjects',
+        storageFamily: 'organization-logos'
+      });
+      expect(database.documents.has(`organizations/${organizationId}`)).toBe(true);
+      expect(diagnostic).toHaveBeenCalledWith('Private storage operation failed', expect.stringContaining('listing_limit_exceeded'));
+    } finally {
+      diagnostic.mockRestore();
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('keeps a durable deleting record on a mid-cleanup storage failure and resumes idempotently', async () => {
