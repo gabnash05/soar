@@ -118,7 +118,7 @@ describe('SOAR workflow pages', () => {
     try {
       vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'true');
       const { unmount } = renderInRouter(<EntryPage />);
-      expect(screen.getByRole('note', { name: 'Simulated preview' })).toHaveTextContent(/Sample accounts and local workflow data only/i);
+      expect(screen.getByRole('note', { name: 'Sample data' })).toHaveTextContent(/Accounts and workflows are local/i);
       unmount();
 
       vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'false');
@@ -1477,7 +1477,7 @@ describe('SOAR workflow pages', () => {
       await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
 
       const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
-      expect(dialog).toHaveTextContent(/simulated preview uses local approval only/i);
+      expect(dialog).toHaveTextContent(/this sample uses local approval only/i);
       expect(within(dialog).queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
       await user.click(within(dialog).getByRole('button', { name: /^Approve simulated changes$/i }));
 
