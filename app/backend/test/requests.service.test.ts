@@ -490,7 +490,99 @@ describe('request service meeting workflow', () => {
     await expect(service.listOrganizationMeetings(user('owner'), 'org1')).resolves.toHaveLength(1);
   });
 
-  it('lets approved organization managers approve or decline requests without an interview stage', async () => {
+  it('lets a granted officer accept or decline their own requests and repeat the same decision safely', async () => {
+    const service = serviceFor(store);
+    const ownApproved = await service.requestMeeting(user('officer'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30'
+    });
+    const ownDeclined = await service.requestMeeting(user('officer'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:45'
+    });
+
+    const approvals = await Promise.all(Array.from({ length: 3 }, () =>
+      service.updateMeetingStatus(user('officer'), ownApproved.id, 'org1', { status: 'Approved' }),
+    ));
+    const declined = await service.updateMeetingStatus(user('officer'), ownDeclined.id, 'org1', { status: 'Declined' });
+
+    expect(approvals.map((decision) => decision.status)).toEqual(['Approved', 'Approved', 'Approved']);
+    expect(declined.status).toBe('Declined');
+    expect(store.meetings.get(ownApproved.id)).toMatchObject({ status: 'Approved', decidedByUid: 'officer', decidedAt: fixedNow });
+    expect(store.meetings.get(ownDeclined.id)).toMatchObject({ status: 'Declined', decidedByUid: 'officer', decidedAt: fixedNow });
+  });
+
+  it('keeps decisions on other requests working and rejects missing or cross-organization grants', async () => {
+    const service = serviceFor(store);
+    const otherRequest = await service.requestMeeting(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30'
+    });
+    const approved = await service.updateMeetingStatus(user('officer'), otherRequest.id, 'org1', { status: 'Approved' });
+    expect(approved.status).toBe('Approved');
+
+    store.organizations.set('org2', {
+      ...store.organizations.get('org1')!,
+      orgId: 'org2',
+      name: 'Architecture Club',
+      slug: 'architecture-club'
+    });
+    store.calendarEntries.set('availability2', {
+      orgId: 'org2',
+      organizationName: 'Architecture Club',
+      kind: 'availability',
+      title: 'Studio consultation',
+      date: '2026-11-12',
+      startTime: '09:00',
+      endTime: '12:00'
+    });
+    const crossOrganizationRequest = await service.requestMeeting(user('student'), {
+      organizationId: 'org2',
+      dateEntryId: 'availability2',
+      requestedDate: '2026-11-12',
+      requestedTime: '10:00'
+    });
+    await expectCode(service.updateMeetingStatus(user('officer'), crossOrganizationRequest.id, 'org2', { status: 'Approved' }), 'not_organization_manager');
+    await expectCode(service.updateMeetingStatus(user('officer'), crossOrganizationRequest.id, 'org1', { status: 'Approved' }), 'meeting_request_missing');
+
+    store.grants.delete('org1/officer');
+    await expectCode(service.updateMeetingStatus(user('officer'), otherRequest.id, 'org1', { status: 'Approved' }), 'not_organization_manager');
+    store.grants.set('org1/officer', { status: 'revoked' });
+    await expectCode(service.updateMeetingStatus(user('officer'), otherRequest.id, 'org1', { status: 'Approved' }), 'not_organization_manager');
+    await expectCode(service.updateMeetingStatus(user('student'), otherRequest.id, 'org1', { status: 'Approved' }), 'not_organization_manager');
+    await expectCode(service.updateMeetingStatus(user('sponsor'), otherRequest.id, 'org1', { status: 'Approved' }), 'not_organization_manager');
+    store.accounts.set('admin', { uid: 'admin', role: 'admin', displayName: 'Admin User' });
+    await expectCode(service.updateMeetingStatus(user('admin'), otherRequest.id, 'org1', { status: 'Approved' }), 'not_organization_manager');
+  });
+
+  it('requires active verified access before an otherwise authorized officer can decide a request', async () => {
+    const created = await serviceFor(store).requestMeeting(user('officer'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30'
+    });
+    const guardedAccessService = createRequestService({
+      store,
+      ensureActiveAccess: async (actor) => {
+        if (actor.email_verified !== true) throw Object.assign(new Error('Verify your email first.'), { code: 'email_not_verified' });
+        throw Object.assign(new Error('Access is expired.'), { code: 'access_inactive' });
+      },
+      now: () => fixedNow,
+      verifyMeetingDocumentUpload: async () => undefined
+    });
+
+    await expectCode(guardedAccessService.updateMeetingStatus(user('officer'), created.id, 'org1', { status: 'Approved' }), 'access_inactive');
+    await expectCode(guardedAccessService.updateMeetingStatus({ ...user('officer'), email_verified: false } as DecodedIdToken, created.id, 'org1', { status: 'Approved' }), 'email_not_verified');
+  });
+
+  it('lets the assigned organization owner approve and decline requests without an interview stage', async () => {
     const service = serviceFor(store);
     const created = await service.requestMeeting(user('student'), {
       organizationId: 'org1',
