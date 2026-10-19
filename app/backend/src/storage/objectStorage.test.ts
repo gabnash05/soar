@@ -6,9 +6,12 @@ vi.mock('../firebase', () => ({ defaultStorageBucket }));
 import {
   createSignedObjectDownloadUrl,
   createSignedObjectUploadTarget,
+  deleteStoredObject,
   downloadStoredObject,
   getStoredObjectMetadata,
   isSupabaseStorageEnabled,
+  listOrganizationObjects,
+  SUPABASE_SIGNED_UPLOAD_MAX_TTL_SECONDS,
 } from './objectStorage';
 
 const storageBase = 'https://project.supabase.co';
@@ -166,6 +169,193 @@ describe('private Supabase object storage adapter', () => {
     vi.stubEnv('SUPABASE_URL', 'https://attacker.example.test');
     await expect(createSignedObjectDownloadUrl('announcement-images/org-1/post-1/photo.png')).rejects.toMatchObject({ code: 'storage_not_configured' });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('records the documented two-hour signed upload maximum without changing the existing upload endpoint', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(response({ url: '/object/upload/sign/soar-files/organization-logos/org-1/photo.png?token=upload-capability' }));
+
+    await createSignedObjectUploadTarget('organization-logos/org-1/photo.png');
+
+    expect(SUPABASE_SIGNED_UPLOAD_MAX_TTL_SECONDS).toBe(7200);
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ method: 'POST', body: '{}' }));
+  });
+
+  it('deletes one exact Supabase object and treats a missing object as idempotent success', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const path = 'announcement-images/org-1/post-1/photo.png';
+    fetchMock
+      .mockResolvedValueOnce(response([{ name: 'photo.png' }]))
+      .mockResolvedValueOnce(response({ code: 'NotFound' }, 404));
+
+    await expect(deleteStoredObject(path)).resolves.toBeUndefined();
+    await expect(deleteStoredObject(path)).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, `${storageBase}/storage/v1/object/${bucket}`, expect.objectContaining({
+      method: 'DELETE',
+      body: JSON.stringify({ prefixes: [path] }),
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `${storageBase}/storage/v1/object/${bucket}`, expect.objectContaining({
+      method: 'DELETE',
+      body: JSON.stringify({ prefixes: [path] }),
+    }));
+  });
+
+  it('keeps Supabase deletion errors sanitized and rejects non-organization paths before access', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const path = 'meeting-request-documents/org-1/meeting-1/request.pdf';
+    fetchMock.mockResolvedValueOnce(response({ code: 'Unauthorized', message: `private ${roleKey} ${path}` }, 400));
+
+    try {
+      await expect(deleteStoredObject(path)).rejects.toMatchObject({ code: 'storage_unavailable', status: 503 });
+      expect(diagnostic).toHaveBeenCalledWith('Private storage operation failed', JSON.stringify({
+        operation: 'delete_object',
+        phase: 'provider_http_error',
+        providerStatus: 400,
+        providerErrorCode: 'Unauthorized',
+      }));
+      await expect(deleteStoredObject('unrelated-bucket/path/file')).rejects.toMatchObject({ code: 'invalid_storage_path' });
+      await expect(deleteStoredObject('organization-logos/org-1/folder/')).rejects.toMatchObject({ code: 'invalid_storage_path' });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(roleKey);
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(path);
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
+  it('lists nested Supabase files as exact lexicographic exclusive pages under one organization prefix', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock
+      .mockResolvedValueOnce(response([
+        { name: 'post-2', id: null, metadata: null },
+        { name: 'post-1', id: null, metadata: null },
+        { name: 'logo.png', id: 'logo-object', metadata: { size: 10 } },
+      ]))
+      .mockResolvedValueOnce(response([
+        { name: 'b.png', id: 'b-object', metadata: { size: 20 } },
+        { name: 'a.png', id: 'a-object', metadata: { size: 10 } },
+        { name: 'nested', id: null, metadata: null },
+      ]))
+      .mockResolvedValueOnce(response([{ name: 'last.webp', id: 'nested-object', metadata: { size: 30 } }]));
+
+    const result = await listOrganizationObjects(
+      'org-1',
+      'announcement-images',
+      'announcement-images/org-1/post-1/a.png',
+      2,
+    );
+
+    expect(result.items).toEqual([
+      'announcement-images/org-1/post-1/b.png',
+      'announcement-images/org-1/post-1/nested/last.webp',
+    ]);
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)) as { prefix: string });
+    expect(bodies.map((body) => body.prefix)).toEqual([
+      'announcement-images/org-1',
+      'announcement-images/org-1/post-1',
+      'announcement-images/org-1/post-1/nested',
+    ]);
+    expect(bodies.every((body) => !body.prefix.startsWith('announcement-images/org-10'))).toBe(true);
+  });
+
+  it('orders Supabase files and nested-folder contents by full object path', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock
+      .mockResolvedValueOnce(response([
+        { name: 'post-1', id: null, metadata: null },
+        { name: 'post-1.txt', id: 'root-object', metadata: { size: 3 } },
+      ]))
+      .mockResolvedValueOnce(response([{ name: 'a.png', id: 'nested-object', metadata: { size: 10 } }]));
+
+    const result = await listOrganizationObjects('org-1', 'announcement-images', undefined, 2);
+
+    expect(result.items).toEqual([
+      'announcement-images/org-1/post-1.txt',
+      'announcement-images/org-1/post-1/a.png',
+    ]);
+  });
+
+  it('paginates Supabase listings with stable exclusive cursors and a 25-object maximum', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const entries = Array.from({ length: 102 }, (_, i) => ({
+      name: `image-${String(i).padStart(3, '0')}.png`,
+      id: `object-${i}`,
+      metadata: { size: i + 1 },
+    }));
+    fetchMock
+      .mockResolvedValueOnce(response(entries.slice(0, 100)))
+      .mockResolvedValueOnce(response(entries.slice(100)))
+      .mockResolvedValueOnce(response(entries.slice(0, 100)))
+      .mockResolvedValueOnce(response(entries.slice(100)));
+
+    const first = await listOrganizationObjects('org-1', 'organization-logos', undefined, 25);
+    const cursor = first.items.at(-1);
+    const second = await listOrganizationObjects('org-1', 'organization-logos', cursor, 25);
+
+    expect(first.items).toHaveLength(25);
+    expect(second.items).toHaveLength(25);
+    expect(first.items.at(-1)).toBe('organization-logos/org-1/image-024.png');
+    expect(second.items[0]).toBe('organization-logos/org-1/image-025.png');
+    expect(second.items.every((item) => item > cursor!)).toBe(true);
+    expect(new Set([...first.items, ...second.items]).size).toBe(50);
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).offset)).toEqual([0, 100, 0, 100]);
+    await expect(listOrganizationObjects('org-1', 'organization-logos', undefined, 26)).rejects.toMatchObject({ code: 'invalid_storage_list_limit' });
+    await expect(listOrganizationObjects('org-1', 'organization-logos', 'organization-logos/org-10/photo.png', 25)).rejects.toMatchObject({ code: 'invalid_storage_path' });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('lists Firebase Storage objects with an exact trailing-slash prefix and ignores directory markers', async () => {
+    vi.stubEnv('SOAR_STORAGE_PROVIDER', 'firebase');
+    const getFiles = vi.fn().mockResolvedValue([[
+      { name: 'announcement-images/org-1/post-1/c.png' },
+      { name: 'announcement-images/org-1/post-1/' },
+      { name: 'announcement-images/org-1/post-1/b.png' },
+      { name: 'announcement-images/org-1/post-1/a.png' },
+    ], {}]);
+    defaultStorageBucket.mockReturnValue({ getFiles });
+
+    const result = await listOrganizationObjects(
+      'org-1',
+      'announcement-images',
+      'announcement-images/org-1/post-1/a.png',
+      2,
+    );
+
+    expect(result.items).toEqual([
+      'announcement-images/org-1/post-1/b.png',
+      'announcement-images/org-1/post-1/c.png',
+    ]);
+    expect(getFiles).toHaveBeenCalledWith(expect.objectContaining({
+      prefix: 'announcement-images/org-1/',
+      startOffset: 'announcement-images/org-1/post-1/a.png',
+      maxResults: 100,
+      autoPaginate: false,
+    }));
+  });
+
+  it('deletes one exact Firebase object and distinguishes a missing object from a missing bucket', async () => {
+    vi.stubEnv('SOAR_STORAGE_PROVIDER', 'firebase');
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const missingObject = Object.assign(new Error('do not log this provider detail'), { code: 404 });
+    const fileDelete = vi.fn().mockRejectedValueOnce(missingObject).mockRejectedValueOnce(missingObject);
+    const bucketExists = vi.fn().mockResolvedValueOnce([true]).mockResolvedValueOnce([false]);
+    const file = vi.fn(() => ({ delete: fileDelete }));
+    defaultStorageBucket.mockReturnValue({ file, exists: bucketExists });
+    const path = 'organization-logos/org-1/photo.png';
+
+    try {
+      await expect(deleteStoredObject(path)).resolves.toBeUndefined();
+      await expect(deleteStoredObject(path)).rejects.toMatchObject({ code: 'storage_not_configured', status: 503 });
+      expect(file).toHaveBeenCalledWith(path);
+      expect(fileDelete).toHaveBeenCalledTimes(2);
+      expect(bucketExists).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(path);
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('do not log this provider detail');
+    } finally {
+      diagnostic.mockRestore();
+    }
   });
 
   it('uses Firebase Storage unchanged unless the explicit Supabase provider is selected', async () => {
