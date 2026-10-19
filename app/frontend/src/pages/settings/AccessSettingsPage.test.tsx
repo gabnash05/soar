@@ -10,7 +10,7 @@ describe('AccessSettingsPage', () => {
   beforeEach(() => vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'true'));
   afterEach(() => vi.unstubAllEnvs());
 
-  it('shows access status without offering payment in the unpaid preview', async () => {
+  it('shows access status without offering payment when payment is unavailable', async () => {
     vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'false');
     render(
       <MemoryRouter initialEntries={['/settings/access']}>
@@ -22,11 +22,11 @@ describe('AccessSettingsPage', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/renewal is disabled/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/renewal is unavailable/i);
     expect(screen.queryByRole('button', { name: /renew/i })).not.toBeInTheDocument();
   });
 
-  it('labels unpaid preview access without a payment fee or provider reference', async () => {
+  it('labels account access without a payment fee or provider reference', async () => {
     vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'false');
     const session = makeSession({
       access: {
@@ -47,8 +47,9 @@ describe('AccessSettingsPage', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Pitch preview access' })).toBeInTheDocument();
-    expect(screen.getAllByText('Unpaid preview').length).toBeGreaterThan(0);
+    expect(await screen.findByRole('heading', { name: 'Account access' })).toBeInTheDocument();
+    expect(screen.getByText('Active access')).toBeInTheDocument();
+    expect(screen.queryByText(/preview/i)).not.toBeInTheDocument();
     expect(screen.getByText('No payment')).toBeInTheDocument();
     expect(screen.getByText('No payment recorded')).toBeInTheDocument();
     expect(screen.queryByText('PHP10')).not.toBeInTheDocument();

@@ -19,12 +19,13 @@ describe('landing and sign-in recovery links', () => {
     expect(screen.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
   });
 
-  it('offers free preview signup while clearly keeping payment presentation disconnected', () => {
+  it('offers free account signup while clearly stating checkout is unavailable', () => {
     vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'false');
     render(<MemoryRouter><EntryPage /></MemoryRouter>);
 
-    expect(screen.getByRole('link', { name: /create a free preview account/i })).toHaveAttribute('href', '/register');
-    expect(screen.getByRole('status')).toHaveTextContent(/payment screens are demonstration-only/i);
+    expect(screen.getByRole('link', { name: /create a free account/i })).toHaveAttribute('href', '/register');
+    expect(screen.getByRole('status')).toHaveTextContent(/checkout is unavailable; no payment is requested or recorded/i);
+    expect(screen.queryByText(/preview/i)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sign in' })).toBeInTheDocument();
   });
 
@@ -45,7 +46,7 @@ describe('landing and sign-in recovery links', () => {
     expect(hero?.className).toContain('gap-[clamp(24px,4vw,40px)]');
   });
 
-  it('offers free preview signup from sign-in when payment is disabled', () => {
+  it('offers free account signup from sign-in when payment is disabled', () => {
     vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'false');
     render(
       <MemoryRouter>
@@ -55,8 +56,8 @@ describe('landing and sign-in recovery links', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('link', { name: 'Create a free preview account' })).toHaveAttribute('href', '/register');
-    expect(screen.getByText(/payment presentation cannot accept a checkout/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Create a free account' })).toHaveAttribute('href', '/register');
+    expect(screen.getByText(/checkout is unavailable/i)).toBeInTheDocument();
   });
 
   it('keeps password recovery available from sign-in', () => {

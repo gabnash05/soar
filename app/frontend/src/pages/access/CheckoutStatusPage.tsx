@@ -165,7 +165,7 @@ export const CheckoutStatusPage = () => {
     return (
       <main className="grid min-h-screen place-items-center p-[clamp(18px,4vw,48px)] max-sm:px-3.5">
         <StateBlock symbol="!" title="Checkout unavailable" actions={<ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>}>
-          Payment confirmation and account creation are disabled in this non-production preview. No payment or registration can be completed here.
+          Payment confirmation and account creation are unavailable here. No payment was made or account created.
         </StateBlock>
       </main>
     );

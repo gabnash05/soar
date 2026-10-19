@@ -49,7 +49,7 @@ describe('AppShell navigation', () => {
     expect(screen.getByText('Computer Engineering Department')).toBeInTheDocument();
   });
 
-  it('labels server-granted unpaid preview access without presenting it as a payment', async () => {
+  it('labels server-granted account access without preview status wording', async () => {
     renderShell(makeSession({
       access: {
         status: 'active',
@@ -62,8 +62,8 @@ describe('AppShell navigation', () => {
     }));
 
     await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
-    expect(screen.getByText('Unpaid preview')).toBeInTheDocument();
-    expect(screen.queryByText('Active access')).not.toBeInTheDocument();
+    expect(screen.getByText('Account active')).toBeInTheDocument();
+    expect(screen.queryByText(/preview/i)).not.toBeInTheDocument();
   });
 
   it('shows only the provisioning tab to the trusted Admin account type without payment or officer status UI', async () => {

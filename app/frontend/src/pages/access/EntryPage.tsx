@@ -7,9 +7,9 @@ export const EntryPage = () => {
   return (
   <main className="relative isolate mx-auto w-[min(1200px,100%)] p-[clamp(18px,4vw,56px)] max-sm:px-3.5">
     {import.meta.env.VITE_SOAR_USE_FIXTURES === 'true' ? (
-      <aside className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-y border-[var(--color-border)] py-2 text-sm text-[var(--muted-foreground)]" role="note" aria-label="Simulated preview">
-        <strong className="font-bold text-[var(--color-navy)]">Simulated preview</strong>
-        <span>Sample accounts and local workflow data only; no live payments or backend records.</span>
+      <aside className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-y border-[var(--color-border)] py-2 text-sm text-[var(--muted-foreground)]" role="note" aria-label="Sample data">
+        <strong className="font-bold text-[var(--color-navy)]">Sample data</strong>
+        <span>Accounts and workflows are local; payments and backend records are not used.</span>
       </aside>
     ) : null}
     <section className="grid items-stretch gap-[clamp(20px,4vw,56px)] max-lg:grid-cols-1">
@@ -31,13 +31,13 @@ export const EntryPage = () => {
             Discover campus organizations, follow announcements, manage application and meeting progress, and keep six-month access current from one role-aware workspace.
           </p>
           <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full">
-            <ButtonLink to="/register" variant="primary">{paidFlowEnabled ? 'Start with PHP10 access' : 'Create a free preview account'}</ButtonLink>
+            <ButtonLink to="/register" variant="primary">{paidFlowEnabled ? 'Start with PHP10 access' : 'Create a free account'}</ButtonLink>
             <ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>
           </div>
           <p className="hero-note text-sm text-white/80" role={paidFlowEnabled ? undefined : 'status'}>
             {paidFlowEnabled
               ? 'PHP10 six-month access is required before account creation. Expired accounts can still sign in to renew.'
-              : 'Create a free account for this pitch preview. Payment screens are demonstration-only; no checkout or charge is available.'}
+              : 'Create a free account. Checkout is unavailable; no payment is requested or recorded.'}
           </p>
         </div>
       </div>
