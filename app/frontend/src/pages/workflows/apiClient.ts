@@ -201,6 +201,7 @@ async function mapOrganizationSummary(raw: unknown): Promise<OrganizationSummary
     recruitmentTitle: pickString(item.recruitmentTitle || recruitment.title),
     department: pickString(item.department) || undefined,
     departmentKey: pickString(item.departmentKey) || undefined,
+    reportsUrl: pickString(item.reportsUrl) || undefined,
   };
 }
 
@@ -213,6 +214,7 @@ async function mapOrganizationProfile(raw: unknown): Promise<OrganizationProfile
     ...summary,
     description: pickString(item.description),
     applicationsOpen: item.applicationsOpen !== false,
+    reportsUrl: pickString(item.reportsUrl) || undefined,
     recruitment: {
       id: recruitmentOpportunityId(summary.id, title, pickString(recruitment.id || recruitment.opportunityId)),
       organizationId: summary.id,
@@ -517,6 +519,11 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
       const payload = await profileInputToBackend(input);
       const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(input.organizationId)}`, await bodyInit(payload, 'PATCH'));
       return mutationResult('Organization profile saved.', await mapOrganizationProfile(response));
+    },
+
+    async setOrganizationReportsUrl(organizationId, reportsUrl) {
+      const response = await apiFetch<unknown>(`/organizations/${encodeURIComponent(organizationId)}`, await bodyInit({ reportsUrl }, 'PATCH'));
+      return mutationResult('Reports link saved.', await mapOrganizationProfile(response));
     },
 
     async setApplicationsOpen(organizationId, applicationsOpen, _session) {

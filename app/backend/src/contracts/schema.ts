@@ -98,6 +98,7 @@ export interface OrganizationDocument {
   departmentKey?: string;
   logoPath?: string;
   applicationsOpen?: boolean;
+  reportsUrl?: string;
   recruitment?: OrganizationRecruitment;
   createdAt: Timestamp;
   updatedAt: Timestamp;

@@ -95,11 +95,13 @@ export interface OrganizationSummary {
   recruitmentTitle: string;
   department?: string;
   departmentKey?: string;
+  reportsUrl?: string;
 }
 
 export interface OrganizationProfile extends OrganizationSummary {
   description: string;
   applicationsOpen?: boolean;
+  reportsUrl?: string;
   recruitment: RecruitmentOpportunity;
   posts: Announcement[];
   dateEntries: DateEntry[];
@@ -251,6 +253,7 @@ export interface WorkflowDataClient {
   getOfficerDashboard(organizationId: string, session: UserSession): Promise<WorkflowQueryResult<OfficerDashboard | undefined>>;
   saveOrganizationProfile(input: OrganizationProfileInput, session: UserSession): Promise<WorkflowMutationResult<OrganizationProfile>>;
   setApplicationsOpen(organizationId: string, applicationsOpen: boolean, session: UserSession): Promise<WorkflowMutationResult<{ applicationsOpen: boolean }>>;
+  setOrganizationReportsUrl(organizationId: string, reportsUrl: string, session: UserSession): Promise<WorkflowMutationResult<OrganizationProfile>>;
   publishAnnouncement(input: AnnouncementInput, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   updateAnnouncement(announcementId: string, organizationId: string, body: string, session: UserSession): Promise<WorkflowMutationResult<Announcement>>;
   deleteAnnouncement(announcementId: string, organizationId: string, session: UserSession): Promise<WorkflowMutationResult>;
