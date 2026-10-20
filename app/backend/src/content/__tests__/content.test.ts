@@ -36,6 +36,15 @@ describe('content validation', () => {
     expectParseFailure(() => organizationProfileUpdateSchema.parse({ department: 'Computer Science' }));
   });
 
+  it('validates optional HTTPS reports links, trims values, and allows clearing without disturbing omitted fields', () => {
+    expect(organizationProfileUpdateSchema.parse({ reportsUrl: '  https://example.org/reports  ' }).reportsUrl).toBe('https://example.org/reports');
+    expect(organizationProfileUpdateSchema.parse({ reportsUrl: '' }).reportsUrl).toBe('');
+    expect(organizationProfileUpdateSchema.parse({ applicationsOpen: false })).not.toHaveProperty('reportsUrl');
+    for (const reportsUrl of ['http://example.org', 'javascript:alert(1)', 'https://user:pass@example.org', 'not a url']) {
+      expectParseFailure(() => organizationProfileUpdateSchema.parse({ reportsUrl }));
+    }
+  });
+
   it('rejects empty announcements and comments through schemas', () => {
     expect(announcementCreateSchema.parse({ body: '  Tryouts Friday  ' }).body).toBe('Tryouts Friday');
     expectParseFailure(() => announcementCreateSchema.parse({ body: '   ' }));

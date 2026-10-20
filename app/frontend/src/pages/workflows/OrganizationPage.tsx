@@ -160,6 +160,7 @@ export function OrganizationView({ organizationId, session, client }: { organiza
   const tabItems = [
     { id: 'feed', label: 'Feed', count: profile?.posts.length },
     { id: 'about', label: 'About' },
+    { id: 'reports', label: 'Reports' },
     { id: 'dates', label: 'Dates & availability', count: profile?.dateEntries.length },
     ...(canApply ? [{ id: 'apply', label: 'Apply' }] : []),
   ];
@@ -232,6 +233,15 @@ export function OrganizationView({ organizationId, session, client }: { organiza
               <p><strong>Recruitment:</strong> {profile.recruitment.title}</p>
               <p><strong>Requirements:</strong> {profile.recruitment.requirements}</p>
               <p><strong>Instructions:</strong> {profile.recruitment.instructions}</p>
+            </section>
+          </SubtabPanel>
+
+          <SubtabPanel baseId="organization-profile" tabId="reports" activeId={activeId}>
+            <section className="grid min-w-0 gap-3 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)]">
+              <header className="grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]">
+                <h2>Reports</h2><p>View this organization’s accomplishment and financial reports.</p><p className="m-0 text-sm text-[var(--muted-foreground)]">Access is managed by the external service.</p>
+              </header>
+              {profile.reportsUrl ? <ExternalButtonLink href={profile.reportsUrl} target="_blank">View reports</ExternalButtonLink> : <p className="m-0 text-sm text-[var(--muted-foreground)]">Reports link has not been set up yet.</p>}
             </section>
           </SubtabPanel>
 

@@ -11,14 +11,14 @@ const optionalText = (max: number) => trimmedString.max(max).optional();
 const blankableText = (max: number) => z.string().trim().max(max).optional();
 const organizationDepartmentUpdateSchema = z.union([departmentSchema, z.literal('')]);
 
-const httpUrl = trimmedString.url().max(2048).refine((value) => {
+const httpsUrl = trimmedString.url().max(2048).refine((value) => {
   try {
     const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:';
+    return url.protocol === 'https:' && Boolean(url.hostname) && !url.username && !url.password;
   } catch {
     return false;
   }
-}, 'URL must use http or https.');
+}, 'URL must be a valid HTTPS URL without embedded credentials.');
 
 export const paginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
@@ -31,6 +31,7 @@ export const organizationListQuerySchema = paginationSchema.extend({
 
 export const organizationProfileUpdateSchema = z.object({
   applicationsOpen: z.boolean().optional(),
+  reportsUrl: z.union([httpsUrl, z.literal('')]).optional(),
   name: optionalText(140),
   shortDescription: blankableText(180),
   description: blankableText(4000),
@@ -47,7 +48,7 @@ export const organizationProfileUpdateSchema = z.object({
     title: blankableText(140),
     requirements: blankableText(4000),
     instructions: blankableText(4000),
-    applicationLink: z.union([httpUrl, z.literal('')]).optional()
+    applicationLink: z.union([trimmedString.url().max(2048).refine((value) => { try { const url = new URL(value); return (url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password; } catch { return false; } }, 'URL must use http or https without embedded credentials.'), z.literal('')]).optional()
   }).optional()
 }).strict();
 

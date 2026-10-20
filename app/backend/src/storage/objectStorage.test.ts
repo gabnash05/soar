@@ -72,12 +72,12 @@ describe('private Supabase object storage adapter', () => {
     }
   });
 
-  it('logs newly recognized Supabase enum codes without provider details', async () => {
+  it('logs corrected official Supabase enum codes without provider details', async () => {
     const fetchMock = vi.mocked(fetch);
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
     const storagePath = 'announcement-images/org-1/post-1/photo.png';
     fetchMock.mockResolvedValueOnce(response({
-      code: 'InvalidBucketName',
+      code: 'S3BucketNotEmpty',
       message: `private detail ${roleKey} Bearer provider-bearer-token ${storagePath} https://project.supabase.co/storage/v1/object/upload/sign/private/path?token=signed-capability`,
     }, 400));
 
@@ -90,7 +90,7 @@ describe('private Supabase object storage adapter', () => {
         operation: 'create_signed_upload_target',
         phase: 'provider_http_error',
         providerStatus: 400,
-        providerErrorCode: 'InvalidBucketName',
+        providerErrorCode: 'S3BucketNotEmpty',
       }));
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(roleKey);
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(storagePath);
@@ -106,7 +106,7 @@ describe('private Supabase object storage adapter', () => {
   it('omits unrecognized provider codes and messages from diagnostics', async () => {
     const fetchMock = vi.mocked(fetch);
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
-    fetchMock.mockResolvedValueOnce(response({ code: `unknown-${roleKey}`, message: 'raw provider body' }, 502));
+    fetchMock.mockResolvedValueOnce(response({ code: 'ResourceNotEmpty', message: `raw provider body ${roleKey}` }, 502));
 
     try {
       await expect(createSignedObjectUploadTarget('announcement-images/org-1/post-1/photo.png')).rejects.toMatchObject({
@@ -120,6 +120,7 @@ describe('private Supabase object storage adapter', () => {
       }));
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(roleKey);
       expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('raw provider body');
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('ResourceNotEmpty');
     } finally {
       diagnostic.mockRestore();
     }
@@ -136,26 +137,65 @@ describe('private Supabase object storage adapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('reads exact object metadata and retains only the meeting binding metadata fields', async () => {
+  it('reads meeting bindings from the documented object-info metadata field and retains only allowed fields', async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(response([{
-      name: 'formal-request.pdf',
+    fetchMock.mockResolvedValueOnce(response({
+      size: 4096,
+      content_type: 'application/pdf',
       metadata: {
-        size: 4096,
-        mimetype: 'application/pdf',
         orgId: 'org-1',
         meetingRequestId: 'meeting-1',
         requesterUid: 'student-1',
         unrelated: 'not returned',
       },
-    }]));
+    }));
 
     await expect(getStoredObjectMetadata('meeting-request-documents/org-1/meeting-1/formal-request.pdf')).resolves.toEqual({
       contentType: 'application/pdf',
       sizeBytes: 4096,
       customMetadata: { orgId: 'org-1', meetingRequestId: 'meeting-1', requesterUid: 'student-1' },
+      metadataShape: 'flat',
     });
-    expect(fetchMock).toHaveBeenCalledWith(`${storageBase}/storage/v1/object/list/${bucket}`, expect.objectContaining({ method: 'POST' }));
+    expect(fetchMock).toHaveBeenCalledWith(`${storageBase}/storage/v1/object/info/${bucket}/meeting-request-documents/org-1/meeting-1/formal-request.pdf`, expect.objectContaining({ method: 'GET' }));
+    expect((fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>).Authorization).toBe(`Bearer ${roleKey}`);
+  });
+
+  it('treats missing object-info user metadata as empty rather than provider file metadata', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(response({
+      size: 12,
+      content_type: 'application/pdf',
+      metadata: null,
+    }));
+
+    await expect(getStoredObjectMetadata('meeting-request-documents/org-1/empty.pdf')).resolves.toEqual({
+      contentType: 'application/pdf',
+      sizeBytes: 12,
+      customMetadata: {},
+      metadataShape: 'empty',
+    });
+  });
+
+  it('maps the documented missing-object info error without exposing provider details', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce(response({ code: 'NoSuchKey', message: 'private object detail' }, 400));
+
+    try {
+      await expect(getStoredObjectMetadata('meeting-request-documents/org-1/missing.pdf')).rejects.toMatchObject({
+        code: 'storage_object_missing',
+        status: 404,
+      });
+      expect(diagnostic).toHaveBeenCalledWith('Private storage operation failed', JSON.stringify({
+        operation: 'get_object_info',
+        phase: 'provider_http_error',
+        providerStatus: 400,
+        providerErrorCode: 'NoSuchKey',
+      }));
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('private object detail');
+    } finally {
+      diagnostic.mockRestore();
+    }
   });
 
   it('downloads a private object only through a short-lived signed URL', async () => {
@@ -399,6 +439,7 @@ describe('private Supabase object storage adapter', () => {
       contentType: 'image/png',
       sizeBytes: 12,
       customMetadata: { alt: 'photo' },
+      metadataShape: 'firebase',
     });
   });
 });

@@ -100,6 +100,7 @@ export interface OrganizationDocument {
   applicationsOpen?: boolean;
   deletionStatus?: 'deleting';
   deletionProgress?: Record<string, unknown>;
+  reportsUrl?: string;
   recruitment?: OrganizationRecruitment;
   createdAt: Timestamp;
   updatedAt: Timestamp;
