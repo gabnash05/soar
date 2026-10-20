@@ -71,7 +71,7 @@ function storageUrl(baseUrl: string, path: string): string {
   return `${baseUrl}/storage/v1${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-type StorageOperation = 'create_signed_upload_target' | 'create_signed_download_url' | 'list_object_metadata' | 'download_object' | 'delete_object' | 'list_organization_objects';
+type StorageOperation = 'create_signed_upload_target' | 'create_signed_download_url' | 'get_object_info' | 'download_object' | 'delete_object' | 'list_organization_objects';
 type StorageFailurePhase = 'network_error' | 'provider_http_error' | 'invalid_json_response' | 'invalid_response_shape' | 'invalid_signed_url' | 'object_not_found' | 'signed_download_http_error' | 'firebase_error' | 'listing_limit_exceeded';
 
 // Keep this allowlist in sync with Supabase Storage's public ErrorCode enum.
@@ -328,11 +328,6 @@ export async function createSignedObjectDownloadUrl(storagePath: string): Promis
   return url;
 }
 
-function parentPath(path: string): { directory: string; name: string } {
-  const slash = path.lastIndexOf('/');
-  return { directory: slash < 0 ? '' : path.slice(0, slash), name: path.slice(slash + 1) };
-}
-
 export async function getStoredObjectMetadata(storagePath: string): Promise<StoredObjectMetadata> {
   if (!isSupabaseStorageEnabled()) {
     try {
@@ -350,57 +345,32 @@ export async function getStoredObjectMetadata(storagePath: string): Promise<Stor
   }
 
   const settings = config();
-  const encoded = parentPath(encodeObjectPath(storagePath));
-  const response = await requestStorage(`/object/list/${encodeURIComponent(settings.bucket)}`, {
-    method: 'POST',
-    body: JSON.stringify({ prefix: encoded.directory, search: encoded.name, limit: 100, offset: 0 }),
-  }, 'list_object_metadata');
+  // Supabase's object-info renderer maps the user_metadata column to the top-level `metadata` field.
+  // Pinned contract: https://github.com/supabase/storage/blob/c826a70ac6e6f56d3e6033ccb164fb1ff5282570/src/storage/renderer/info.ts
+  const response = await requestStorage(`/object/info/${encodeURIComponent(settings.bucket)}/${encodeObjectPath(storagePath)}`, {
+    method: 'GET',
+  }, 'get_object_info');
   if (!response.ok) {
-    logStorageFailure('list_object_metadata', 'provider_http_error', response.status, await safeProviderErrorCode(response));
+    const providerErrorCode = await safeProviderErrorCode(response);
+    logStorageFailure('get_object_info', 'provider_http_error', response.status, providerErrorCode);
+    if (response.status === 404 || providerErrorCode === 'NoSuchKey') {
+      throw new AppError('storage_object_missing', 'The uploaded file was not found.', 404);
+    }
     throw new AppError('storage_unavailable', 'The private file service could not verify the uploaded file.', 503);
   }
-  let entries: unknown;
-  try {
-    entries = await response.json();
-  } catch {
-    logStorageFailure('list_object_metadata', 'invalid_json_response');
-    throw new AppError('storage_unavailable', 'The private file service returned an invalid file record.', 503);
-  }
-  if (!Array.isArray(entries)) {
-    logStorageFailure('list_object_metadata', 'invalid_response_shape');
-    throw new AppError('storage_unavailable', 'The private file service returned an invalid file record.', 503);
-  }
-  const object = entries.find((entry) => typeof entry === 'object' && entry !== null && (entry as Record<string, unknown>).name === encoded.name) as Record<string, unknown> | undefined;
-  if (!object) {
-    logStorageFailure('list_object_metadata', 'object_not_found');
-    throw new AppError('storage_object_missing', 'The uploaded file was not found.', 404);
-  }
-  const metadata = typeof object.metadata === 'object' && object.metadata !== null ? object.metadata as Record<string, unknown> : {};
-  const nestedUserMetadata = typeof metadata.userMetadata === 'object' && metadata.userMetadata !== null
-    ? metadata.userMetadata as Record<string, unknown>
-    : typeof metadata.user_metadata === 'object' && metadata.user_metadata !== null
-      ? metadata.user_metadata as Record<string, unknown>
-      : undefined;
-  const outerUserMetadata = (typeof object.userMetadata === 'object' && object.userMetadata !== null) ||
-    (typeof object.user_metadata === 'object' && object.user_metadata !== null);
-  const userMetadata = nestedUserMetadata ?? metadata;
+
+  const result = await readStorageResponse(response, 'get_object_info');
+  const userMetadata = typeof result.metadata === 'object' && result.metadata !== null && !Array.isArray(result.metadata)
+    ? result.metadata as Record<string, unknown>
+    : {};
   const customMetadata = Object.fromEntries(['orgId', 'meetingRequestId', 'requesterUid']
     .filter((key) => userMetadata[key] !== undefined)
     .map((key) => [key, String(userMetadata[key])]));
-  const metadataShape: StoredObjectMetadataShape = nestedUserMetadata
-    ? 'nested'
-    : outerUserMetadata
-      ? 'outer'
-      : ['orgId', 'meetingRequestId', 'requesterUid'].some((key) => metadata[key] !== undefined)
-        ? 'flat'
-        : Object.keys(metadata).length > 0
-          ? 'provider-only'
-          : 'empty';
   return {
-    contentType: typeof metadata.mimetype === 'string' ? metadata.mimetype : typeof metadata.contentType === 'string' ? metadata.contentType : undefined,
-    sizeBytes: Number(metadata.size ?? metadata.contentLength ?? 0),
+    contentType: typeof result.content_type === 'string' ? result.content_type : undefined,
+    sizeBytes: Number(result.size ?? 0),
     customMetadata,
-    metadataShape,
+    metadataShape: Object.keys(userMetadata).length > 0 ? 'flat' : 'empty',
   };
 }
 
