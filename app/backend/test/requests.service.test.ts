@@ -231,19 +231,18 @@ describe('meeting document metadata diagnostics', () => {
     }
   });
 
-  it('does not emit the binding diagnostic before content and size validation passes', () => {
+  it('does not emit the binding diagnostic before content-type and size validation pass', () => {
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const check = {
+      document: { storagePath: 'private/file.pdf', fileName: 'file.pdf', contentType: 'application/pdf' as const, sizeBytes: 620 },
+      requesterUid: 'requester',
+      orgId: 'org',
+      meetingRequestId: 'meeting',
+    };
+    const validSize = { sizeBytes: 620, customMetadata: {} };
     try {
-      expect(() => verifyMeetingDocumentMetadata({
-        document: { storagePath: 'private/file.pdf', fileName: 'file.pdf', contentType: 'application/pdf', sizeBytes: 620 },
-        requesterUid: 'requester',
-        orgId: 'org',
-        meetingRequestId: 'meeting',
-      }, {
-        contentType: 'image/png',
-        sizeBytes: 620,
-        customMetadata: {},
-      })).toThrow();
+      expect(() => verifyMeetingDocumentMetadata(check, { ...validSize, contentType: 'image/png' })).toThrow();
+      expect(() => verifyMeetingDocumentMetadata(check, { ...validSize, contentType: 'application/pdf', sizeBytes: 621 })).toThrow();
       expect(diagnostic).not.toHaveBeenCalled();
     } finally {
       diagnostic.mockRestore();
