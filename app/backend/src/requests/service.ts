@@ -3,6 +3,7 @@ import type { DecodedIdToken } from 'firebase-admin/auth';
 import { Timestamp } from 'firebase-admin/firestore';
 import { db } from '../firebase';
 import { createSignedObjectUploadTarget, getStoredObjectMetadata } from '../storage/objectStorage';
+import type { StoredObjectMetadata } from '../storage/objectStorage';
 import { meetingRequestDocumentStoragePath } from '../contracts/paths';
 import { requireActiveAccess } from '../identity/access';
 import type { ApplicationStatus, MeetingStatus, OrganizationDocument } from '../contracts/schema';
@@ -46,17 +47,8 @@ export interface RequestServiceDeps {
   verifyMeetingDocumentUpload: (check: MeetingDocumentUploadCheck) => Promise<void>;
 }
 
-async function verifyUploadedMeetingDocument({ document, requesterUid, orgId, meetingRequestId }: MeetingDocumentUploadCheck): Promise<void> {
-  let metadata;
-  try {
-    metadata = await getStoredObjectMetadata(document.storagePath);
-  } catch (error) {
-    if (error instanceof AppError && error.code === 'storage_object_missing') {
-      throw new AppError('meeting_document_missing', 'Upload the formal request PDF before submitting the meeting request.', 400);
-    }
-    throw error;
-  }
-
+export function verifyMeetingDocumentMetadata(check: MeetingDocumentUploadCheck, metadata: StoredObjectMetadata): void {
+  const { document, requesterUid, orgId, meetingRequestId } = check;
   const custom = metadata.customMetadata;
   const actualSize = Number(metadata.sizeBytes ?? 0);
   if (metadata.contentType !== document.contentType || document.contentType !== 'application/pdf') {
@@ -66,8 +58,34 @@ async function verifyUploadedMeetingDocument({ document, requesterUid, orgId, me
     throw new AppError('meeting_document_size_mismatch', 'The uploaded formal request document size does not match the submitted metadata.', 400);
   }
   if (custom.orgId !== orgId || custom.meetingRequestId !== meetingRequestId || custom.requesterUid !== requesterUid) {
+    const diagnostic = {
+      event: 'meeting_document_metadata_binding_mismatch',
+      metadataShape: metadata.metadataShape ?? 'unknown',
+      contentTypeMatches: metadata.contentType === document.contentType,
+      sizeMatches: actualSize === document.sizeBytes,
+      organizationBindingPresent: typeof custom.orgId === 'string',
+      organizationBindingMatches: custom.orgId === orgId,
+      meetingBindingPresent: typeof custom.meetingRequestId === 'string',
+      meetingBindingMatches: custom.meetingRequestId === meetingRequestId,
+      requesterBindingPresent: typeof custom.requesterUid === 'string',
+      requesterBindingMatches: custom.requesterUid === requesterUid,
+    };
+    console.error('Meeting document metadata verification failed', JSON.stringify(diagnostic));
     throw new AppError('meeting_document_metadata_mismatch', 'The uploaded formal request document is not linked to this requester and organization.', 400);
   }
+}
+
+async function verifyUploadedMeetingDocument(check: MeetingDocumentUploadCheck): Promise<void> {
+  let metadata;
+  try {
+    metadata = await getStoredObjectMetadata(check.document.storagePath);
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'storage_object_missing') {
+      throw new AppError('meeting_document_missing', 'Upload the formal request PDF before submitting the meeting request.', 400);
+    }
+    throw error;
+  }
+  verifyMeetingDocumentMetadata(check, metadata);
 }
 
 const defaultDeps = (): RequestServiceDeps => ({

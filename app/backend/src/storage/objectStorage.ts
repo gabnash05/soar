@@ -1,10 +1,13 @@
 import { defaultStorageBucket } from '../firebase';
 import { AppError } from '../errors';
 
+export type StoredObjectMetadataShape = 'nested' | 'outer' | 'flat' | 'provider-only' | 'empty' | 'firebase' | 'unknown';
+
 export interface StoredObjectMetadata {
   contentType?: string;
   sizeBytes: number;
   customMetadata: Record<string, string>;
+  metadataShape?: StoredObjectMetadataShape;
 }
 
 export interface SupabaseUploadTarget {
@@ -334,10 +337,12 @@ export async function getStoredObjectMetadata(storagePath: string): Promise<Stor
   if (!isSupabaseStorageEnabled()) {
     try {
       const [metadata] = await defaultStorageBucket().file(storagePath).getMetadata();
+      const customMetadata = Object.fromEntries(Object.entries(metadata.metadata ?? {}).map(([key, value]) => [key, String(value)]));
       return {
         contentType: metadata.contentType,
         sizeBytes: Number(metadata.size ?? 0),
-        customMetadata: Object.fromEntries(Object.entries(metadata.metadata ?? {}).map(([key, value]) => [key, String(value)])),
+        customMetadata,
+        metadataShape: Object.keys(customMetadata).length > 0 ? 'firebase' : 'empty',
       };
     } catch {
       throw new AppError('storage_object_missing', 'The uploaded file was not found.', 404);
@@ -371,18 +376,31 @@ export async function getStoredObjectMetadata(storagePath: string): Promise<Stor
     throw new AppError('storage_object_missing', 'The uploaded file was not found.', 404);
   }
   const metadata = typeof object.metadata === 'object' && object.metadata !== null ? object.metadata as Record<string, unknown> : {};
-  const userMetadata = typeof metadata.userMetadata === 'object' && metadata.userMetadata !== null
+  const nestedUserMetadata = typeof metadata.userMetadata === 'object' && metadata.userMetadata !== null
     ? metadata.userMetadata as Record<string, unknown>
     : typeof metadata.user_metadata === 'object' && metadata.user_metadata !== null
       ? metadata.user_metadata as Record<string, unknown>
-      : metadata;
+      : undefined;
+  const outerUserMetadata = (typeof object.userMetadata === 'object' && object.userMetadata !== null) ||
+    (typeof object.user_metadata === 'object' && object.user_metadata !== null);
+  const userMetadata = nestedUserMetadata ?? metadata;
   const customMetadata = Object.fromEntries(['orgId', 'meetingRequestId', 'requesterUid']
     .filter((key) => userMetadata[key] !== undefined)
     .map((key) => [key, String(userMetadata[key])]));
+  const metadataShape: StoredObjectMetadataShape = nestedUserMetadata
+    ? 'nested'
+    : outerUserMetadata
+      ? 'outer'
+      : ['orgId', 'meetingRequestId', 'requesterUid'].some((key) => metadata[key] !== undefined)
+        ? 'flat'
+        : Object.keys(metadata).length > 0
+          ? 'provider-only'
+          : 'empty';
   return {
     contentType: typeof metadata.mimetype === 'string' ? metadata.mimetype : typeof metadata.contentType === 'string' ? metadata.contentType : undefined,
     sizeBytes: Number(metadata.size ?? metadata.contentLength ?? 0),
     customMetadata,
+    metadataShape,
   };
 }
 
