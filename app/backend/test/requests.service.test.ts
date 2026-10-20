@@ -3,7 +3,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import type { AccountRole, ApplicationStatus, MeetingStatus, OrganizationDocument } from '../src/contracts/schema';
 import type { ApplicationDocument, CalendarEntryDocument, MeetingRequestDocument, RequestStore } from '../src/requests/contracts';
-import { createRequestService } from '../src/requests/service';
+import { createRequestService, verifyMeetingDocumentMetadata } from '../src/requests/service';
 
 const fixedNow = Timestamp.fromDate(new Date('2026-10-08T12:00:00.000Z'));
 
@@ -161,6 +161,94 @@ async function expectCode(promise: Promise<unknown>, code: string) {
 async function expectValidation(promise: Promise<unknown>) {
   await expect(promise).rejects.toHaveProperty('issues');
 }
+
+describe('meeting document metadata diagnostics', () => {
+  it('logs only allowlisted match booleans and a safe shape category on binding mismatch', () => {
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const check = {
+      document: {
+        storagePath: 'private/meeting-secret-path/formal-request.pdf',
+        fileName: 'private-form-name.pdf',
+        contentType: 'application/pdf' as const,
+        sizeBytes: 620,
+      },
+      requesterUid: 'private-requester-uid',
+      orgId: 'private-organization-id',
+      meetingRequestId: 'private-meeting-id',
+    };
+    const metadata = {
+      contentType: 'application/pdf',
+      sizeBytes: 620,
+      metadataShape: 'outer' as const,
+      customMetadata: {
+        orgId: 'observed-private-organization',
+        meetingRequestId: 'private-meeting-id',
+        providerSecretKey: 'Bearer private-provider-token',
+        providerRawBody: 'private raw provider body',
+      },
+    };
+
+    try {
+      let thrown: unknown;
+      try {
+        verifyMeetingDocumentMetadata(check, metadata);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toMatchObject({ code: 'meeting_document_metadata_mismatch', status: 400 });
+      expect(diagnostic).toHaveBeenCalledWith('Meeting document metadata verification failed', JSON.stringify({
+        event: 'meeting_document_metadata_binding_mismatch',
+        metadataShape: 'outer',
+        contentTypeMatches: true,
+        sizeMatches: true,
+        organizationBindingPresent: true,
+        organizationBindingMatches: false,
+        meetingBindingPresent: true,
+        meetingBindingMatches: true,
+        requesterBindingPresent: false,
+        requesterBindingMatches: false,
+      }));
+      const emitted = JSON.stringify(diagnostic.mock.calls);
+      for (const privateValue of [
+        check.document.storagePath,
+        check.document.fileName,
+        check.requesterUid,
+        check.orgId,
+        check.meetingRequestId,
+        metadata.customMetadata.orgId,
+        metadata.customMetadata.meetingRequestId,
+        metadata.customMetadata.providerSecretKey,
+        metadata.customMetadata.providerRawBody,
+        'orgId',
+        'meetingRequestId',
+        'requesterUid',
+        'providerSecretKey',
+      ]) {
+        expect(emitted).not.toContain(privateValue);
+      }
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
+  it('does not emit the binding diagnostic before content-type and size validation pass', () => {
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const check = {
+      document: { storagePath: 'private/file.pdf', fileName: 'file.pdf', contentType: 'application/pdf' as const, sizeBytes: 620 },
+      requesterUid: 'requester',
+      orgId: 'org',
+      meetingRequestId: 'meeting',
+    };
+    const validSize = { sizeBytes: 620, customMetadata: {} };
+    try {
+      expect(() => verifyMeetingDocumentMetadata(check, { ...validSize, contentType: 'image/png' })).toThrow();
+      expect(() => verifyMeetingDocumentMetadata(check, { ...validSize, contentType: 'application/pdf', sizeBytes: 621 })).toThrow();
+      expect(diagnostic).not.toHaveBeenCalled();
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+});
 
 describe('request service application workflow', () => {
   let store: FakeRequestStore;

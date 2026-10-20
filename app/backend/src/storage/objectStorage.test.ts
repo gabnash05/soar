@@ -155,8 +155,36 @@ describe('private Supabase object storage adapter', () => {
       contentType: 'application/pdf',
       sizeBytes: 4096,
       customMetadata: { orgId: 'org-1', meetingRequestId: 'meeting-1', requesterUid: 'student-1' },
+      metadataShape: 'flat',
     });
     expect(fetchMock).toHaveBeenCalledWith(`${storageBase}/storage/v1/object/list/${bucket}`, expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('classifies nested and outer custom metadata shapes without exposing extra provider fields', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock
+      .mockResolvedValueOnce(response([{
+        name: 'nested.pdf',
+        metadata: {
+          size: 12,
+          mimetype: 'application/pdf',
+          userMetadata: { orgId: 'org-1', meetingRequestId: 'meeting-1', requesterUid: 'student-1', privateExtra: 'not returned' },
+        },
+      }]))
+      .mockResolvedValueOnce(response([{
+        name: 'outer.pdf',
+        metadata: { size: 12, mimetype: 'application/pdf' },
+        user_metadata: { orgId: 'org-2', meetingRequestId: 'meeting-2', requesterUid: 'student-2' },
+      }]));
+
+    await expect(getStoredObjectMetadata('meeting-request-documents/org-1/nested.pdf')).resolves.toMatchObject({
+      customMetadata: { orgId: 'org-1', meetingRequestId: 'meeting-1', requesterUid: 'student-1' },
+      metadataShape: 'nested',
+    });
+    await expect(getStoredObjectMetadata('meeting-request-documents/org-2/outer.pdf')).resolves.toMatchObject({
+      customMetadata: {},
+      metadataShape: 'outer',
+    });
   });
 
   it('downloads a private object only through a short-lived signed URL', async () => {
@@ -400,6 +428,7 @@ describe('private Supabase object storage adapter', () => {
       contentType: 'image/png',
       sizeBytes: 12,
       customMetadata: { alt: 'photo' },
+      metadataShape: 'firebase',
     });
   });
 });
