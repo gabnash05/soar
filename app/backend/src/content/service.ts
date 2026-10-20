@@ -114,6 +114,7 @@ function summaryFromOrganization(data: DocumentData) {
     departmentKey: data.departmentKey ?? '',
     logoPath: data.logoPath ?? '',
     recruitmentTitle: data.recruitment?.title ?? '',
+    reportsUrl: data.reportsUrl ?? '',
     updatedAt: iso(data.updatedAt)
   };
 }
@@ -301,6 +302,7 @@ export async function getOrganizationProfile(user: DecodedIdToken, orgIdParam: s
   return {
     ...summaryFromOrganization(data),
     applicationsOpen: data.applicationsOpen !== false,
+    reportsUrl: data.reportsUrl ?? '',
     recruitment: recruitmentFromOrganization(data),
     posts: posts.items,
     dateEntries: dateEntries.items,
@@ -315,6 +317,7 @@ export async function updateOrganizationProfile(user: DecodedIdToken, orgIdParam
   const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
 
   if (input.applicationsOpen !== undefined) update.applicationsOpen = input.applicationsOpen;
+  if (input.reportsUrl !== undefined) update.reportsUrl = input.reportsUrl || FieldValue.delete();
   if (input.name !== undefined) {
     update.name = input.name;
     update.searchName = normalizedName(input.name);
