@@ -137,19 +137,18 @@ describe('private Supabase object storage adapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('reads exact object metadata and retains only the meeting binding metadata fields', async () => {
+  it('reads meeting bindings from the documented object-info metadata field and retains only allowed fields', async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(response([{
-      name: 'formal-request.pdf',
+    fetchMock.mockResolvedValueOnce(response({
+      size: 4096,
+      content_type: 'application/pdf',
       metadata: {
-        size: 4096,
-        mimetype: 'application/pdf',
         orgId: 'org-1',
         meetingRequestId: 'meeting-1',
         requesterUid: 'student-1',
         unrelated: 'not returned',
       },
-    }]));
+    }));
 
     await expect(getStoredObjectMetadata('meeting-request-documents/org-1/meeting-1/formal-request.pdf')).resolves.toEqual({
       contentType: 'application/pdf',
@@ -157,34 +156,46 @@ describe('private Supabase object storage adapter', () => {
       customMetadata: { orgId: 'org-1', meetingRequestId: 'meeting-1', requesterUid: 'student-1' },
       metadataShape: 'flat',
     });
-    expect(fetchMock).toHaveBeenCalledWith(`${storageBase}/storage/v1/object/list/${bucket}`, expect.objectContaining({ method: 'POST' }));
+    expect(fetchMock).toHaveBeenCalledWith(`${storageBase}/storage/v1/object/info/${bucket}/meeting-request-documents/org-1/meeting-1/formal-request.pdf`, expect.objectContaining({ method: 'GET' }));
+    expect((fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>).Authorization).toBe(`Bearer ${roleKey}`);
   });
 
-  it('classifies nested and outer custom metadata shapes without exposing extra provider fields', async () => {
+  it('treats missing object-info user metadata as empty rather than provider file metadata', async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock
-      .mockResolvedValueOnce(response([{
-        name: 'nested.pdf',
-        metadata: {
-          size: 12,
-          mimetype: 'application/pdf',
-          userMetadata: { orgId: 'org-1', meetingRequestId: 'meeting-1', requesterUid: 'student-1', privateExtra: 'not returned' },
-        },
-      }]))
-      .mockResolvedValueOnce(response([{
-        name: 'outer.pdf',
-        metadata: { size: 12, mimetype: 'application/pdf' },
-        user_metadata: { orgId: 'org-2', meetingRequestId: 'meeting-2', requesterUid: 'student-2' },
-      }]));
+    fetchMock.mockResolvedValueOnce(response({
+      size: 12,
+      content_type: 'application/pdf',
+      metadata: null,
+    }));
 
-    await expect(getStoredObjectMetadata('meeting-request-documents/org-1/nested.pdf')).resolves.toMatchObject({
-      customMetadata: { orgId: 'org-1', meetingRequestId: 'meeting-1', requesterUid: 'student-1' },
-      metadataShape: 'nested',
-    });
-    await expect(getStoredObjectMetadata('meeting-request-documents/org-2/outer.pdf')).resolves.toMatchObject({
+    await expect(getStoredObjectMetadata('meeting-request-documents/org-1/empty.pdf')).resolves.toEqual({
+      contentType: 'application/pdf',
+      sizeBytes: 12,
       customMetadata: {},
-      metadataShape: 'outer',
+      metadataShape: 'empty',
     });
+  });
+
+  it('maps the documented missing-object info error without exposing provider details', async () => {
+    const fetchMock = vi.mocked(fetch);
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce(response({ code: 'NoSuchKey', message: 'private object detail' }, 400));
+
+    try {
+      await expect(getStoredObjectMetadata('meeting-request-documents/org-1/missing.pdf')).rejects.toMatchObject({
+        code: 'storage_object_missing',
+        status: 404,
+      });
+      expect(diagnostic).toHaveBeenCalledWith('Private storage operation failed', JSON.stringify({
+        operation: 'get_object_info',
+        phase: 'provider_http_error',
+        providerStatus: 400,
+        providerErrorCode: 'NoSuchKey',
+      }));
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain('private object detail');
+    } finally {
+      diagnostic.mockRestore();
+    }
   });
 
   it('downloads a private object only through a short-lived signed URL', async () => {
