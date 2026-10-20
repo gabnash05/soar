@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useBeforeUnload, useBlocker, useSearchParams } from 'react-router-dom';
-import { ButtonLink, ConfirmDialog, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
+import { Button, ButtonLink, ConfirmDialog, ExternalButtonLink, LoadingBlock, RoleBadge, StateBlock, StatusChip, SubtabNav, SubtabPanel, useQueryTab } from '../../components/ui';
 import type { UserSession } from '../../lib/contracts';
 import type { OrganizationProfile, WorkflowDataClient } from '../workflows/contracts';
 import { OrganizationApplicationIntakePanel } from '../workflows/ApplicationIntakeControl';
@@ -27,7 +27,34 @@ const managementTabs = [
   { id: 'intake', label: 'Application intake' },
   { id: 'announcements', label: 'Announcements' },
   { id: 'dates', label: 'Dates & availability' },
+  { id: 'reports', label: 'Reports' },
 ];
+
+function ReportsLinkEditor({ organization, session, client, onSaved }: { organization: OrganizationProfile; session: UserSession; client: WorkflowDataClient; onSaved: () => void }) {
+  const [url, setUrl] = useState(organization.reportsUrl ?? '');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const valid = (value: string) => {
+    if (!value.trim()) return true;
+    try { const parsed = new URL(value.trim()); return parsed.protocol === 'https:' && Boolean(parsed.hostname) && !parsed.username && !parsed.password; } catch { return false; }
+  };
+  const save = async () => {
+    setSaving(true); setError(''); setMessage('');
+    try {
+      const result = await client.setOrganizationReportsUrl(organization.id, url.trim(), session);
+      if (!result.ok) { setError(result.message ?? 'Could not save the reports link.'); return; }
+      setUrl(result.data?.reportsUrl ?? ''); setMessage('Reports link saved.'); onSaved();
+    } catch { setError('Could not save the reports link. Check your connection and try again.'); }
+    finally { setSaving(false); }
+  };
+  return <section className="grid min-w-0 gap-3 border-t border-[var(--color-border)] py-[clamp(16px,3vw,24px)]">
+    <header className="grid gap-1 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.25rem,2.4vw,1.75rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.14] [&_h2]:text-[var(--color-navy)] [&_p]:m-0 [&_p]:max-w-[68ch] [&_p]:text-[var(--muted-foreground)]"><h2>Reports</h2><p>View this organization’s accomplishment and financial reports.</p><p className="m-0 text-sm text-[var(--muted-foreground)]">Access is managed by the external service.</p></header>
+    {organization.reportsUrl ? <ExternalButtonLink className="w-fit max-w-full whitespace-normal" href={organization.reportsUrl} target="_blank">View reports</ExternalButtonLink> : <p className="m-0 text-sm text-[var(--muted-foreground)]">No reports link is set up yet.</p>}
+    <div className="grid min-w-0 gap-1.5"><label htmlFor="organization-reports-url" className="text-[13px] font-bold text-[var(--color-navy)]">Reports URL</label><input id="organization-reports-url" type="url" inputMode="url" autoComplete="url" value={url} onChange={(event) => setUrl(event.target.value)} aria-invalid={!valid(url)} aria-describedby="reports-url-help reports-url-state" className="min-h-[46px] w-full rounded-[7px] border border-[var(--color-border)] bg-[var(--color-white)] px-[13px] py-2.5 text-[var(--color-ink)] focus:border-[var(--color-blue-deep)] focus:outline-none focus:ring-3 focus:ring-[var(--color-blue-soft)]" /><p id="reports-url-help" className="m-0 text-xs text-[var(--muted-foreground)]">Use a complete HTTPS URL. Leave blank to remove the current link.</p></div>
+    <div className="flex flex-wrap items-center gap-3"><Button type="button" disabled={saving || !valid(url) || url.trim() === (organization.reportsUrl ?? '')} onClick={save}>{saving ? 'Saving…' : 'Save reports link'}</Button><p id="reports-url-state" role="status" aria-live="polite" className="m-0 text-sm text-[var(--muted-foreground)]">{error || message}</p></div>
+  </section>;
+}
 
 function DepartmentStudentCountPanel({ organization, session, client }: { organization: OrganizationProfile; session: UserSession; client: WorkflowDataClient }) {
   const { data, loading, error, sourceMessage } = useWorkflowQuery(
@@ -184,6 +211,9 @@ export function OrganizationSettingsView({ session, client, reauthenticate }: { 
               </SubtabPanel>
               <SubtabPanel baseId="organization-management" tabId="dates" activeId={activeId}>
                 <DateEntriesSection dashboard={dashboard} session={session} client={client} onChanged={reload} />
+              </SubtabPanel>
+              <SubtabPanel baseId="organization-management" tabId="reports" activeId={activeId}>
+                <ReportsLinkEditor key={`${dashboard.organization.id}:${dashboard.organization.reportsUrl ?? ''}`} organization={dashboard.organization} session={session} client={client} onSaved={reload} />
               </SubtabPanel>
             </section>
           );

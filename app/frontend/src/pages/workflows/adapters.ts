@@ -76,6 +76,7 @@ export const unavailableWorkflowDataClient: WorkflowDataClient = {
   getOfficerDashboard: () => unavailableQuery<OfficerDashboard | undefined>(undefined),
   saveOrganizationProfile: () => unavailableMutation<OrganizationProfile>(),
   setApplicationsOpen: () => unavailableMutation<{ applicationsOpen: boolean }>(),
+  setOrganizationReportsUrl: () => unavailableMutation<OrganizationProfile>(),
   publishAnnouncement: () => unavailableMutation<Announcement>(),
   updateAnnouncement: () => unavailableMutation<Announcement>(),
   deleteAnnouncement: () => unavailableMutation(),
@@ -801,6 +802,17 @@ export function createFixtureWorkflowDataClient(): WorkflowDataClient {
       organization.recruitment.instructions = input.recruitmentInstructions.trim();
       organization.recruitment.externalFormUrl = input.externalFormUrl?.trim();
       return success('Organization profile saved in demo mode.', hydrateOrganization(organization, session));
+    },
+
+    async setOrganizationReportsUrl(organizationId, reportsUrl, session) {
+      const permission = assertOfficer<OrganizationProfile>(organizationId, session);
+      if (permission) return permission;
+      const organization = getOrganizationById(organizationId);
+      if (!organization) return failure('not-found', 'Organization not found.');
+      const normalized = reportsUrl.trim();
+      if (normalized) { try { const url = new URL(normalized); if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) throw new Error(); } catch { return failure('error', 'Enter a valid HTTPS URL without embedded credentials.'); } }
+      organization.reportsUrl = normalized || undefined;
+      return success('Reports link saved in demo mode.', { ...organization });
     },
 
     async setApplicationsOpen(organizationId, applicationsOpen, session) {

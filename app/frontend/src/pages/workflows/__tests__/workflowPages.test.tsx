@@ -118,12 +118,12 @@ describe('SOAR workflow pages', () => {
     try {
       vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'true');
       const { unmount } = renderInRouter(<EntryPage />);
-      expect(screen.getByRole('note', { name: 'Simulated preview' })).toHaveTextContent(/Sample accounts and local workflow data only/i);
+      expect(screen.getByRole('note', { name: 'Sample data' })).toHaveTextContent(/Accounts and workflows are local/i);
       unmount();
 
       vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'false');
       renderInRouter(<EntryPage />);
-      expect(screen.queryByRole('note', { name: 'Simulated preview' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('note', { name: 'Sample data' })).not.toBeInTheDocument();
     } finally {
       vi.unstubAllEnvs();
     }
@@ -371,6 +371,33 @@ describe('SOAR workflow pages', () => {
     expect(availabilityHeader).toHaveClass('justify-between', 'max-[820px]:flex-col', 'max-[820px]:items-stretch');
     expect(requestMeetingLink.parentElement).toHaveClass('max-[820px]:w-full');
     expect(within(datesPanel).getByText('Availability')).toHaveAttribute('aria-label', 'Meeting/interview availability');
+  });
+
+  it('shows the accomplishment and financial reports explanation above the viewer-only action or unset state', async () => {
+    const fixture = createFixtureWorkflowDataClient();
+    const { unmount } = renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={fixture} />, ['/app/organizations/robotics?tab=reports']);
+    const tab = await screen.findByRole('tabpanel', { name: 'Reports' });
+    const explanation = within(tab).getByText('View this organization’s accomplishment and financial reports.');
+    expect(explanation).toBeInTheDocument();
+    expect(within(tab).getByText('Reports link has not been set up yet.')).toBeInTheDocument();
+    expect(within(tab).queryByRole('link', { name: 'View reports' })).not.toBeInTheDocument();
+    expect(within(tab).queryByRole('textbox')).not.toBeInTheDocument();
+    unmount();
+
+    const configured: WorkflowDataClient = {
+      ...fixture,
+      getOrganization: async (id, session) => {
+        const result = await fixture.getOrganization(id, session);
+        return result.data ? { ...result, data: { ...result.data, reportsUrl: 'https://reports.example.org/org' } } : result;
+      },
+    };
+    renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={configured} />, ['/app/organizations/robotics?tab=reports']);
+    const configuredTab = await screen.findByRole('tabpanel', { name: 'Reports' });
+    const action = within(configuredTab).getByRole('link', { name: 'View reports' });
+    expect(action).toHaveAttribute('href', 'https://reports.example.org/org');
+    expect(action).toHaveAttribute('target', '_blank');
+    expect(configuredTab.querySelector('header')?.compareDocumentPosition(action) ?? 0).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(within(configuredTab).queryByRole('textbox')).not.toBeInTheDocument();
   });
 
   it('shows a safe recovery message when the meeting service returns an internal failure', async () => {
@@ -1040,6 +1067,38 @@ describe('SOAR workflow pages', () => {
     expect(await screen.findByRole('group', { name: 'Application intake for Architecture Department' })).toBeInTheDocument();
   });
 
+  it('lets a scoped officer set, clear, and recover from reports-link save errors in the Reports tab', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    const saveReports = vi.fn(client.setOrganizationReportsUrl.bind(client));
+    let failNext = true;
+    client.setOrganizationReportsUrl = async (...args) => {
+      if (failNext) {
+        failNext = false;
+        return { ok: false, persisted: false, source: client.mode, reason: 'error', message: 'Reports link could not be saved.' };
+      }
+      return saveReports(...args);
+    };
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} />, ['/settings/organization?organizationId=robotics&tab=reports']);
+    const reportsPanel = await screen.findByRole('tabpanel', { name: 'Reports' });
+    expect(within(reportsPanel).getByText('View this organization’s accomplishment and financial reports.')).toBeInTheDocument();
+    expect(within(reportsPanel).getByText('No reports link is set up yet.')).toBeInTheDocument();
+    const editor = within(reportsPanel).getByRole('textbox', { name: 'Reports URL' });
+    await user.type(editor, 'https://reports.example.org/robotics');
+    const save = within(reportsPanel).getByRole('button', { name: 'Save reports link' });
+    await user.click(save);
+    expect(await within(reportsPanel).findByText('Reports link could not be saved.')).toBeInTheDocument();
+    await user.click(save);
+    expect(await screen.findByRole('link', { name: 'View reports' })).toHaveAttribute('href', 'https://reports.example.org/robotics');
+    expect(saveReports).toHaveBeenCalledWith('robotics', 'https://reports.example.org/robotics', officerSession);
+
+    const currentEditor = screen.getByRole('textbox', { name: 'Reports URL' });
+    await user.clear(currentEditor);
+    await user.click(screen.getByRole('button', { name: 'Save reports link' }));
+    expect(await screen.findByText('No reports link is set up yet.')).toBeInTheDocument();
+    expect(saveReports).toHaveBeenLastCalledWith('robotics', '', officerSession);
+  });
+
   it('lets an approved officer close and reopen only the selected organization intake', async () => {
     const user = userEvent.setup();
     const client = createFixtureWorkflowDataClient();
@@ -1477,7 +1536,7 @@ describe('SOAR workflow pages', () => {
       await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
 
       const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
-      expect(dialog).toHaveTextContent(/simulated preview uses local approval only/i);
+      expect(dialog).toHaveTextContent(/This sample uses local approval only/i);
       expect(within(dialog).queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
       await user.click(within(dialog).getByRole('button', { name: /^Approve simulated changes$/i }));
 
