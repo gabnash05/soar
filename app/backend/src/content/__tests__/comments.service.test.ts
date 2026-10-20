@@ -486,6 +486,20 @@ describe('announcement comment ownership service behavior', () => {
     expect(fakeDb.docs.get('organizations/org1')?.applicationsOpen).toBe(false);
   });
 
+  it('persists, reads, preserves, clears, and scopes an organization reports URL', async () => {
+    const { getOrganizationProfile, updateOrganizationProfile } = await import('../service');
+    const saved = await updateOrganizationProfile(user('officer'), 'org1', { reportsUrl: 'https://reports.example.org/org' });
+    expect(saved.reportsUrl).toBe('https://reports.example.org/org');
+    expect(fakeDb.docs.get('organizations/org1')?.reportsUrl).toBe('https://reports.example.org/org');
+    await updateOrganizationProfile(user('officer'), 'org1', { applicationsOpen: false });
+    expect((await getOrganizationProfile(user('student1'), 'org1')).reportsUrl).toBe('https://reports.example.org/org');
+    await updateOrganizationProfile(user('officer'), 'org1', { reportsUrl: '' });
+    expect(fakeDb.docs.get('organizations/org1')?.reportsUrl).not.toBe('https://reports.example.org/org');
+    const clearedValue = fakeDb.docs.get('organizations/org1')?.reportsUrl;
+    await expect(updateOrganizationProfile(user('student1'), 'org1', { reportsUrl: 'https://reports.example.org/unauthorized' })).rejects.toMatchObject({ code: 'organization_management_required' });
+    expect(fakeDb.docs.get('organizations/org1')?.reportsUrl).toBe(clearedValue);
+  });
+
   it('denies application-intake changes by ungranted, cross-organization, and revoked officers', async () => {
     const { updateOrganizationProfile } = await import('../service');
     const now = Timestamp.fromDate(new Date('2026-10-11T00:00:00.000Z'));

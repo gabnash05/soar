@@ -373,6 +373,33 @@ describe('SOAR workflow pages', () => {
     expect(within(datesPanel).getByText('Availability')).toHaveAttribute('aria-label', 'Meeting/interview availability');
   });
 
+  it('shows the accomplishment and financial reports explanation above the viewer-only action or unset state', async () => {
+    const fixture = createFixtureWorkflowDataClient();
+    const { unmount } = renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={fixture} />, ['/app/organizations/robotics?tab=reports']);
+    const tab = await screen.findByRole('tabpanel', { name: 'Reports' });
+    const explanation = within(tab).getByText('View this organization’s accomplishment and financial reports.');
+    expect(explanation).toBeInTheDocument();
+    expect(within(tab).getByText('Reports link has not been set up yet.')).toBeInTheDocument();
+    expect(within(tab).queryByRole('link', { name: 'View reports' })).not.toBeInTheDocument();
+    expect(within(tab).queryByRole('textbox')).not.toBeInTheDocument();
+    unmount();
+
+    const configured: WorkflowDataClient = {
+      ...fixture,
+      getOrganization: async (id, session) => {
+        const result = await fixture.getOrganization(id, session);
+        return result.data ? { ...result, data: { ...result.data, reportsUrl: 'https://reports.example.org/org' } } : result;
+      },
+    };
+    renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={configured} />, ['/app/organizations/robotics?tab=reports']);
+    const configuredTab = await screen.findByRole('tabpanel', { name: 'Reports' });
+    const action = within(configuredTab).getByRole('link', { name: 'View reports' });
+    expect(action).toHaveAttribute('href', 'https://reports.example.org/org');
+    expect(action).toHaveAttribute('target', '_blank');
+    expect(configuredTab.querySelector('header')?.compareDocumentPosition(action) ?? 0).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(within(configuredTab).queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
   it('shows a safe recovery message when the meeting service returns an internal failure', async () => {
     const user = userEvent.setup();
     const fixtureClient = createFixtureWorkflowDataClient();
