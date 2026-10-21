@@ -164,25 +164,36 @@ describe('SOAR workflow pages', () => {
     expect(screen.getByText('Late match')).toBeInTheDocument();
   });
 
-  it('bounds organization logo artwork consistently without changing directory actions or fallbacks', async () => {
+  it('contains landscape, portrait, square and edge-to-edge organization logos in equal directory slots', async () => {
     const base = createFixtureWorkflowDataClient();
+    const svgLogo = (viewBox: string, artwork: string) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}">${artwork}</svg>`)}`;
     const organizations = [
-      { id: 'wide', slug: 'wide', name: 'Wide mark', shortDescription: 'Wide', contactEmail: 'wide@example.edu', recruitmentTitle: 'Join', logoUrl: '/wide.svg' },
-      { id: 'tall', slug: 'tall', name: 'Tall mark', shortDescription: 'Tall', contactEmail: 'tall@example.edu', recruitmentTitle: 'Join', logoUrl: '/tall.svg' },
+      { id: 'landscape', slug: 'landscape', name: 'Landscape mark', shortDescription: 'Wide', contactEmail: 'wide@example.edu', recruitmentTitle: 'Join', logoUrl: svgLogo('0 0 1200 400', '<rect x="40" y="120" width="1120" height="160" fill="#1a1851"/>') },
+      { id: 'portrait', slug: 'portrait', name: 'Portrait mark', shortDescription: 'Tall', contactEmail: 'tall@example.edu', recruitmentTitle: 'Join', logoUrl: svgLogo('0 0 400 1200', '<rect x="120" y="40" width="160" height="1120" fill="#1a1851"/>') },
+      { id: 'square', slug: 'square', name: 'Square mark', shortDescription: 'Square', contactEmail: 'square@example.edu', recruitmentTitle: 'Join', logoUrl: svgLogo('0 0 800 800', '<circle cx="400" cy="400" r="360" fill="#1a1851"/>') },
+      { id: 'edge-to-edge', slug: 'edge-to-edge', name: 'Edge-to-edge mark', shortDescription: 'Full bleed', contactEmail: 'edge@example.edu', recruitmentTitle: 'Join', logoUrl: svgLogo('0 0 1200 800', '<rect width="1200" height="800" fill="#1a1851"/>') },
       { id: 'none', slug: 'none', name: 'No mark', shortDescription: 'None', contactEmail: 'none@example.edu', recruitmentTitle: 'Join' },
     ];
     renderInRouter(<DirectoryView session={studentSession} client={{ ...base, listOrganizations: vi.fn().mockResolvedValue({ data: { items: organizations }, source: 'fixture' }) }} />);
     const results = screen.getByRole('region', { name: 'Organization directory results' });
     const images = await screen.findAllByAltText(/logo$/i);
-    expect(images).toHaveLength(4);
+    expect(images).toHaveLength(8);
+    expect(images.every((image) => image.parentElement?.className.includes('[&_img]:object-contain'))).toBe(true);
+    const avatars = [...results.querySelectorAll('img')].filter((image) => image.parentElement?.className.includes('size-[52px]'));
+    expect(avatars).toHaveLength(4);
+    expect(avatars.every((image) => image.parentElement?.className.includes('[&_img]:p-[5px]'))).toBe(true);
     const artwork = [...results.querySelectorAll('.org-identity-art')];
-    expect(artwork).toHaveLength(3);
+    expect(artwork).toHaveLength(5);
     expect(new Set(artwork.map((element) => element.className)).size).toBe(1);
+    expect(artwork[0].className).toContain('h-[220px]');
+    expect(artwork[0].className).toContain('max-sm:h-[180px]');
     expect(artwork[0].className).toContain('[&_img]:object-contain');
-    expect(artwork[1].querySelector('img')).toHaveAttribute('alt', 'Tall mark logo');
-    expect(artwork[2]).toHaveTextContent('NM');
-    expect(screen.getByRole('link', { name: 'Open Wide mark profile' })).toHaveAttribute('href', '/app/organizations/wide');
-    expect(screen.getAllByRole('link', { name: 'View profile' })).toHaveLength(3);
+    expect(artwork[1].querySelector('img')).toHaveAttribute('alt', 'Portrait mark logo');
+    expect(artwork[2].querySelector('img')).toHaveAttribute('alt', 'Square mark logo');
+    expect(artwork[3].querySelector('img')).toHaveAttribute('alt', 'Edge-to-edge mark logo');
+    expect(artwork[4]).toHaveTextContent('NM');
+    expect(screen.getByRole('link', { name: 'Open Landscape mark profile' })).toHaveAttribute('href', '/app/organizations/landscape');
+    expect(screen.getAllByRole('link', { name: 'View profile' })).toHaveLength(5);
   });
 
   it('filters the organization directory by name and shows no-results copy', async () => {
@@ -992,6 +1003,8 @@ describe('SOAR workflow pages', () => {
     const { container: profileContainer } = renderInRouter(<OrganizationView organizationId="robotics" session={studentSession} client={createFixtureWorkflowDataClient()} />);
     expect(await screen.findByText(/Department organization for Computer Engineering students/i)).toBeInTheDocument();
     expect(profileContainer.querySelector('.profile-identity-art')).toHaveTextContent('CE');
+    expect(profileContainer.querySelector('.profile-identity-art')).toHaveClass('h-[260px]', 'max-[820px]:h-[210px]', 'overflow-hidden');
+    expect(profileContainer.querySelector('.profile-identity-art')?.className).toContain('[&_img]:object-contain');
   });
 
   it('protects dirty announcement dialogs and returns focus to the trigger', async () => {
@@ -1478,6 +1491,19 @@ describe('SOAR workflow pages', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('keeps the officer logo upload preview uncropped for portrait artwork', async () => {
+    const user = userEvent.setup();
+    const client = createFixtureWorkflowDataClient();
+    renderInRouter(<OrganizationSettingsView session={officerSession} client={client} reauthenticate={async () => undefined} />, ['/settings/organization?organizationId=robotics']);
+
+    await user.upload(await screen.findByLabelText(/Logo image/i), new File(['portrait-logo'], 'portrait.png', { type: 'image/png' }));
+    const preview = await screen.findByAltText('Computer Engineering Department logo preview');
+    const frame = preview.closest('figure');
+    expect(frame).toHaveClass('[&_img]:object-contain');
+    expect(frame).not.toHaveClass('[&_img]:object-cover');
+    expect(frame).toHaveClass('[&_img]:max-h-[340px]', '[&_img]:w-full');
   });
 
   it('requires transient password approval before one organization profile save', async () => {
