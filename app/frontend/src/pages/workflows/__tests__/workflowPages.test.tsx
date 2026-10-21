@@ -164,6 +164,27 @@ describe('SOAR workflow pages', () => {
     expect(screen.getByText('Late match')).toBeInTheDocument();
   });
 
+  it('bounds organization logo artwork consistently without changing directory actions or fallbacks', async () => {
+    const base = createFixtureWorkflowDataClient();
+    const organizations = [
+      { id: 'wide', slug: 'wide', name: 'Wide mark', shortDescription: 'Wide', contactEmail: 'wide@example.edu', recruitmentTitle: 'Join', logoUrl: '/wide.svg' },
+      { id: 'tall', slug: 'tall', name: 'Tall mark', shortDescription: 'Tall', contactEmail: 'tall@example.edu', recruitmentTitle: 'Join', logoUrl: '/tall.svg' },
+      { id: 'none', slug: 'none', name: 'No mark', shortDescription: 'None', contactEmail: 'none@example.edu', recruitmentTitle: 'Join' },
+    ];
+    renderInRouter(<DirectoryView session={studentSession} client={{ ...base, listOrganizations: vi.fn().mockResolvedValue({ data: { items: organizations }, source: 'fixture' }) }} />);
+    const results = screen.getByRole('region', { name: 'Organization directory results' });
+    const images = await screen.findAllByAltText(/logo$/i);
+    expect(images).toHaveLength(4);
+    const artwork = [...results.querySelectorAll('.org-identity-art')];
+    expect(artwork).toHaveLength(3);
+    expect(new Set(artwork.map((element) => element.className)).size).toBe(1);
+    expect(artwork[0].className).toContain('[&_img]:object-contain');
+    expect(artwork[1].querySelector('img')).toHaveAttribute('alt', 'Tall mark logo');
+    expect(artwork[2]).toHaveTextContent('NM');
+    expect(screen.getByRole('link', { name: 'Open Wide mark profile' })).toHaveAttribute('href', '/app/organizations/wide');
+    expect(screen.getAllByRole('link', { name: 'View profile' })).toHaveLength(3);
+  });
+
   it('filters the organization directory by name and shows no-results copy', async () => {
     const user = userEvent.setup();
     renderInRouter(<DirectoryView session={studentSession} client={createFixtureWorkflowDataClient()} />);
