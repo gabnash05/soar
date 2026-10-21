@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { PaymentAccessService } = require('../service');
+const { PayMongoCheckoutProvider } = require('../paymongo');
 const { MemoryPaymentRepository } = require('../repository');
 const { FakePayMongoProvider, FakeIdentityFoundation } = require('../testing/fakes');
 const { makeCheckoutPaidEvent, signPayMongoPayload } = require('../testing/paymongo-fixtures');
@@ -26,9 +27,9 @@ function createHarness(options = {}) {
     identity,
     appBaseUrl: options.appBaseUrl ?? 'http://localhost:5173',
     secretPepper: 'pepper_test',
-    webhookSecret: WEBHOOK_SECRET,
-    expectedLivemode: false,
-    signatureToleranceSeconds: 0,
+    webhookSecret: options.webhookSecret === undefined ? WEBHOOK_SECRET : options.webhookSecret,
+    expectedLivemode: options.expectedLivemode ?? false,
+    signatureToleranceSeconds: options.signatureToleranceSeconds ?? 0,
     now: () => options.now || NOW,
     recoverySender: options.recoverySender,
   });
@@ -153,6 +154,81 @@ test('invalid webhook signatures are rejected before state changes', async () =>
   assert.equal(Object.values(snapshot.payments)[0].status, PAYMENT_STATUSES.PENDING);
   assert.equal(Object.values(snapshot.registrationIntents)[0].status, REGISTRATION_STATUSES.CHECKOUT_CREATED);
   assert.equal(registration.intentId, Object.keys(snapshot.registrationIntents)[0]);
+});
+
+test('missing webhook secret fails closed before any payment or registration state changes', async () => {
+  const harness = createHarness({ webhookSecret: '' });
+  const registration = await startRegistration(harness);
+
+  await assertRejectsCode(deliverPaidWebhook(harness, registration), 'missing_webhook_secret');
+
+  const snapshot = harness.repository.snapshot();
+  assert.equal(Object.values(snapshot.payments)[0].status, PAYMENT_STATUSES.PENDING);
+  assert.equal(Object.values(snapshot.registrationIntents)[0].status, REGISTRATION_STATUSES.CHECKOUT_CREATED);
+  assert.equal(Object.keys(snapshot.accounts).length, 0);
+  assert.equal(Object.keys(snapshot.entitlements).length, 0);
+});
+
+test('stale signed webhooks are rejected before any payment or registration state changes', async () => {
+  const harness = createHarness({ signatureToleranceSeconds: 300 });
+  const registration = await startRegistration(harness);
+  const session = harness.provider.sessions[0];
+  const event = makeCheckoutPaidEvent({
+    checkoutSessionId: session.providerCheckoutSessionId,
+    referenceNumber: session.referenceNumber,
+    metadata: { paymentId: session.paymentId, intentId: registration.intentId },
+    paidAt: PAID_AT_SECONDS,
+  });
+  const signed = signPayMongoPayload(event, { secret: WEBHOOK_SECRET, timestamp: PAID_AT_SECONDS - 301 });
+
+  await assertRejectsCode(harness.service.handlePayMongoWebhook(signed), 'stale_signature');
+
+  const snapshot = harness.repository.snapshot();
+  assert.equal(Object.values(snapshot.payments)[0].status, PAYMENT_STATUSES.PENDING);
+  assert.equal(Object.values(snapshot.registrationIntents)[0].status, REGISTRATION_STATUSES.CHECKOUT_CREATED);
+  assert.equal(Object.keys(snapshot.processedEvents).length, 0);
+});
+
+test('live-mode signatures cannot be accepted by the test-mode webhook configuration', async () => {
+  const harness = createHarness();
+  const registration = await startRegistration(harness);
+  const session = harness.provider.sessions[0];
+  const event = makeCheckoutPaidEvent({
+    livemode: true,
+    checkoutSessionId: session.providerCheckoutSessionId,
+    referenceNumber: session.referenceNumber,
+    metadata: { paymentId: session.paymentId, intentId: registration.intentId },
+    paidAt: PAID_AT_SECONDS,
+  });
+  const signed = signPayMongoPayload(event, { secret: WEBHOOK_SECRET, timestamp: PAID_AT_SECONDS, livemode: true });
+
+  await assertRejectsCode(harness.service.handlePayMongoWebhook(signed), 'invalid_signature');
+
+  const snapshot = harness.repository.snapshot();
+  assert.equal(Object.values(snapshot.payments)[0].status, PAYMENT_STATUSES.PENDING);
+  assert.equal(Object.values(snapshot.registrationIntents)[0].status, REGISTRATION_STATUSES.CHECKOUT_CREATED);
+  assert.equal(Object.keys(snapshot.entitlements).length, 0);
+});
+
+test('missing PayMongo API key never falls back to a fake checkout or makes a provider request', async () => {
+  let providerCalls = 0;
+  const provider = new PayMongoCheckoutProvider({
+    secretKey: '',
+    fetchImpl: async () => {
+      providerCalls += 1;
+      throw new Error('provider request should not be made without a key');
+    },
+  });
+  const harness = createHarness({ provider });
+
+  await assertRejectsCode(startRegistration(harness), 'missing_provider_secret');
+
+  const snapshot = harness.repository.snapshot();
+  assert.equal(providerCalls, 0);
+  assert.equal(Object.values(snapshot.payments)[0].status, PAYMENT_STATUSES.FAILED);
+  assert.equal(Object.values(snapshot.registrationIntents)[0].status, REGISTRATION_STATUSES.CHECKOUT_FAILED);
+  assert.equal(Object.keys(snapshot.accounts).length, 0);
+  assert.equal(Object.keys(snapshot.entitlements).length, 0);
 });
 
 test('wrong amount, currency, session, reference or lane metadata is rejected without unlock', async () => {
@@ -414,6 +490,42 @@ test('manual renewal extends from current future expiry and six-calendar-month a
   assert.equal(expiry.toISOString(), '2027-07-31T10:30:00.000Z');
   assert.equal(addCalendarMonthsUtc(new Date('2023-08-31T00:00:00.000Z')).toISOString(), '2024-02-29T00:00:00.000Z');
   assert.equal(addCalendarMonthsUtc(new Date('2024-08-31T00:00:00.000Z')).toISOString(), '2025-02-28T00:00:00.000Z');
+});
+
+test('replayed signed renewal webhook does not extend existing paid access twice', async () => {
+  const seed = {
+    accounts: { uid_1: { uid: 'uid_1', email: 'one@example.edu', displayName: 'One', role: 'student' } },
+    entitlements: {
+      uid_1: {
+        uid: 'uid_1',
+        status: 'active',
+        accessExpiresAt: new Date('2027-01-31T10:30:00.000Z'),
+        history: [],
+      },
+    },
+  };
+  const harness = createHarness({ seed });
+  harness.identity.usersByUid.set('uid_1', { uid: 'uid_1', email: 'one@example.edu' });
+  const renewal = await harness.service.createRenewalCheckout({ uid: 'uid_1' }, { auth: { uid: 'uid_1' } });
+  const session = harness.provider.sessions[0];
+  const event = makeCheckoutPaidEvent({
+    eventId: 'evt_renewal_replay',
+    checkoutSessionId: session.providerCheckoutSessionId,
+    referenceNumber: session.referenceNumber,
+    metadata: { paymentId: renewal.paymentId, uid: 'uid_1', purpose: 'renewal' },
+    paidAt: PAID_AT_SECONDS,
+  });
+  const signed = signPayMongoPayload(event, { secret: WEBHOOK_SECRET, timestamp: PAID_AT_SECONDS });
+
+  const first = await harness.service.handlePayMongoWebhook(signed);
+  const replay = await harness.service.handlePayMongoWebhook(signed);
+
+  assert.equal(first.processed, true);
+  assert.equal(replay.duplicate, true);
+  const snapshot = harness.repository.snapshot();
+  assert.equal(snapshot.entitlements.uid_1.accessExpiresAt.toISOString(), '2027-07-31T10:30:00.000Z');
+  assert.equal(snapshot.entitlements.uid_1.history.length, 1);
+  assert.equal(snapshot.payments[renewal.paymentId].status, PAYMENT_STATUSES.PAID);
 });
 
 test('access status is visible only to the same authenticated uid', async () => {
