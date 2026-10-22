@@ -6,6 +6,7 @@ import { requireBearerToken } from './auth';
 import { getUserSession } from '../identity/session';
 import { requestVerifiedEmailChange, updateDisplayName } from '../identity/accountSettings';
 import { createUnpaidPreviewAccount } from '../identity/previewRegistration';
+import { getAdminPaymentPolicyStatus, getPaymentPolicyStatus, requirePaymentsForCheckout, setPaymentPolicy } from '../identity/paymentPolicy';
 import {
   approveOfficerGrant,
   assignAdminOfficerGrant,
@@ -81,8 +82,13 @@ function asyncRoute(handler: (req: Request, res: Response) => Promise<void>) {
 
 function assertPaymentsEnabled(): void {
   if (process.env.SOAR_DISABLE_PAYMENTS?.trim().toLowerCase() === 'true') {
-    throw new AppError('payments_unavailable', 'Paid registration and payment features are unavailable in this non-production preview.', 503);
+    throw new AppError('payments_unavailable', 'Hosted payment features are disabled by the server deployment setting.', 503);
   }
+}
+
+async function assertCheckoutStartAllowed(): Promise<void> {
+  assertPaymentsEnabled();
+  await requirePaymentsForCheckout();
 }
 
 async function requireAdmin(req: Request) {
@@ -119,6 +125,10 @@ export function createApiApp() {
     res.json(await getMediaDownloadUrl(user, req.query.path));
   }));
 
+  app.get(['/payment-policy', '/api/payment-policy'], asyncRoute(async (_req, res) => {
+    res.set('Cache-Control', 'no-store').json(await getPaymentPolicyStatus());
+  }));
+
   app.get(['/session', '/api/session'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.json(await getUserSession(user));
@@ -141,32 +151,55 @@ export function createApiApp() {
   }));
 
   app.post(['/payments/registration/start', '/api/payments/registration/start'], asyncRoute(async (req, res) => {
-    assertPaymentsEnabled();
-    await sendPaymentResult(res, paymentHandlers().startRegistrationPayment(req));
+    await assertCheckoutStartAllowed();
+    const user = await requireBearerToken(req);
+    await sendPaymentResult(res, paymentHandlers().startAuthenticatedRegistrationPayment(attachAuthToPaymentRequest(req, user)));
   }));
 
-  app.get(['/payments/registration/status', '/api/payments/registration/status'], asyncRoute(async (req, res) => {
+  app.post(['/payments/registration/auth-start', '/api/payments/registration/auth-start'], asyncRoute(async (req, res) => {
+    await assertCheckoutStartAllowed();
+    const user = await requireBearerToken(req);
+    await sendPaymentResult(res, paymentHandlers().startAuthenticatedRegistrationPayment(attachAuthToPaymentRequest(req, user)));
+  }));
+
+  app.get(['/payments/registration/status', '/api/payments/registration/status', '/payments/registration/auth-status', '/api/payments/registration/auth-status'], asyncRoute(async (req, res) => {
     assertPaymentsEnabled();
-    await sendPaymentResult(res, paymentHandlers().getCheckoutStatus(req));
+    const user = await requireBearerToken(req);
+    await sendPaymentResult(res, paymentHandlers().getAuthenticatedCheckoutStatus(attachAuthToPaymentRequest(req, user)));
+  }));
+
+  app.get(['/payments/registration/resume', '/api/payments/registration/resume'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
+    const user = await requireBearerToken(req);
+    await sendPaymentResult(res, paymentHandlers().resumeAuthenticatedRegistration(attachAuthToPaymentRequest(req, user)));
+  }));
+
+  app.post(['/payments/registration/auth-complete', '/api/payments/registration/auth-complete'], asyncRoute(async (req, res) => {
+    assertPaymentsEnabled();
+    const user = await requireBearerToken(req);
+    await sendPaymentResult(res, paymentHandlers().completeAuthenticatedRegistration(attachAuthToPaymentRequest(req, user)));
   }));
 
   app.post(['/payments/registration/complete', '/api/payments/registration/complete'], asyncRoute(async (req, res) => {
     assertPaymentsEnabled();
-    await sendPaymentResult(res, paymentHandlers().registerAccount(req));
+    const user = await requireBearerToken(req);
+    await sendPaymentResult(res, paymentHandlers().completeAuthenticatedRegistration(attachAuthToPaymentRequest(req, user)));
   }));
 
   app.post(['/payments/registration/recover', '/api/payments/registration/recover'], asyncRoute(async (req, res) => {
     assertPaymentsEnabled();
-    await sendPaymentResult(res, paymentHandlers().recoverPaidRegistration(req));
+    await requireBearerToken(req);
+    throw new AppError('registration_recovery_unavailable', 'Sign in with the same Firebase account to resume registration or use password recovery.', 410, 'sign_in');
   }));
 
   app.post(['/payments/registration/recover/accept', '/api/payments/registration/recover/accept'], asyncRoute(async (req, res) => {
     assertPaymentsEnabled();
-    await sendPaymentResult(res, paymentHandlers().acceptPaidRegistrationRecovery(req));
+    await requireBearerToken(req);
+    throw new AppError('registration_recovery_unavailable', 'Sign in with the same Firebase account to resume registration or use password recovery.', 410, 'sign_in');
   }));
 
   app.post(['/payments/renewals/start', '/api/payments/renewals/start'], asyncRoute(async (req, res) => {
-    assertPaymentsEnabled();
+    await assertCheckoutStartAllowed();
     const user = await requireBearerToken(req);
     await sendPaymentResult(res, paymentHandlers().requestManualRenewal(attachAuthToPaymentRequest(req, user)));
   }));
@@ -305,6 +338,16 @@ export function createApiApp() {
   app.delete(['/organizations/:orgId/officer-grants/:uid', '/api/organizations/:orgId/officer-grants/:uid'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
     res.json(await revokeOfficerGrant(user, getParam(req, 'orgId'), getParam(req, 'uid')));
+  }));
+
+  app.get(['/admin/payment-policy', '/api/admin/payment-policy'], asyncRoute(async (req, res) => {
+    await requireAdmin(req);
+    res.set('Cache-Control', 'no-store').json(await getAdminPaymentPolicyStatus());
+  }));
+
+  app.put(['/admin/payment-policy', '/api/admin/payment-policy'], asyncRoute(async (req, res) => {
+    const admin = await requireAdmin(req);
+    res.json(await setPaymentPolicy(req.body, admin.uid));
   }));
 
   app.get(['/admin/organizations', '/api/admin/organizations'], asyncRoute(async (req, res) => {

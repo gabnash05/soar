@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom';
 import { beforeAll, vi } from 'vitest';
+import { AuthProvider } from '../../../context/AuthContext';
+import { createMockGateway } from '../../../test/createMockGateway';
 import type { UserSession } from '../../../lib/contracts';
 import type { Announcement, AnnouncementPage, DateEntry, DateEntryInput, MeetingRequest, OfficerDashboard, OrganizationSummary, WorkflowDataClient, WorkflowMutationResult, WorkflowQueryResult } from '../contracts';
 import { createFixtureWorkflowDataClient } from '../adapters';
@@ -97,7 +99,7 @@ function renderDatedEntrySection(dashboard: OfficerDashboard, client: WorkflowDa
 
 describe('SOAR workflow pages', () => {
   it('keeps landing capability cards equivalent instead of one broken oversized lower card', () => {
-    renderInRouter(<EntryPage />);
+    renderInRouter(<AuthProvider gateway={createMockGateway(null)}><EntryPage /></AuthProvider>);
 
     const capabilities = screen.getByRole('region', { name: /SOAR capabilities/i });
     expect(within(capabilities).getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
@@ -117,12 +119,12 @@ describe('SOAR workflow pages', () => {
   it('labels the landing page only when the fixture build is simulated', () => {
     try {
       vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'true');
-      const { unmount } = renderInRouter(<EntryPage />);
+      const { unmount } = renderInRouter(<AuthProvider gateway={createMockGateway(null)}><EntryPage /></AuthProvider>);
       expect(screen.getByRole('note', { name: 'Sample data' })).toHaveTextContent(/Accounts and workflows are local/i);
       unmount();
 
       vi.stubEnv('VITE_SOAR_USE_FIXTURES', 'false');
-      renderInRouter(<EntryPage />);
+      renderInRouter(<AuthProvider gateway={createMockGateway(null)}><EntryPage /></AuthProvider>);
       expect(screen.queryByRole('note', { name: 'Sample data' })).not.toBeInTheDocument();
     } finally {
       vi.unstubAllEnvs();

@@ -83,6 +83,10 @@ function mapCheckoutStatus(status) {
 
 function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
   async function startRegistrationPayment(request) {
+    return startAuthenticatedRegistrationPayment(request);
+  }
+
+  async function startAuthenticatedRegistrationPayment(request) {
     try {
       const input = bodyOf(request);
       const result = await service.createRegistrationCheckout({
@@ -92,7 +96,7 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
         studentId: input.studentId,
         department: input.department,
         companyName: input.companyName,
-      }, { ip: request && request.ip });
+      }, { auth: request && request.auth, ip: request && request.ip });
       return ok({
         intentId: result.intentId,
         checkoutUrl: result.checkoutUrl,
@@ -100,22 +104,17 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
         amountPhp: amountPhp(),
         expiresAt: result.checkoutExpiresAt,
         providerLabel: 'PayMongo',
-      }, {
-        'Set-Cookie': cookieHeader(buildRegistrationBinding(result.intentId, result.private.registrationSecret), { secure: secureCookies }),
+        resumed: Boolean(result.resumed),
       });
     } catch (error) {
       return problem(error);
     }
   }
 
-  async function getCheckoutStatus(request) {
+  async function getAuthenticatedCheckoutStatus(request) {
     try {
       const intentId = String((queryOf(request).intentId || bodyOf(request).intentId || '')).trim();
-      const binding = readRegistrationBinding(request && request.headers, intentId);
-      if (!binding) {
-        return problem({ name: 'PaymentAccessError', code: 'invalid_registration_binding', message: 'Registration binding cookie is missing or does not match this intent.' });
-      }
-      const status = await service.getRegistrationStatus(binding);
+      const status = await service.getAuthenticatedRegistrationStatus({ intentId }, { auth: request && request.auth });
       const checkoutStatus = mapCheckoutStatus(status);
       return ok({
         intentId: status.intentId,
@@ -124,7 +123,7 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
         message: status.completed
           ? 'Account setup is complete. Sign in to continue.'
           : status.canComplete
-            ? 'Payment confirmed. You can create your SOAR account.'
+            ? 'Payment confirmed. You can complete your SOAR account.'
             : checkoutStatus === 'failed'
               ? 'Checkout could not be completed. Start a new checkout to try again.'
               : checkoutStatus === 'expired'
@@ -132,30 +131,45 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
                 : 'Waiting for provider-confirmed payment.',
         canCreateAccount: status.canComplete,
         completed: status.completed,
+        authFirst: true,
         registrationProfile: status.registrationProfile,
+        checkoutUrl: status.checkoutUrl,
       });
     } catch (error) {
       return problem(error);
     }
   }
 
-  async function registerAccount(request) {
+  async function resumeAuthenticatedRegistration(request) {
     try {
-      const input = bodyOf(request);
-      const intentId = String(input.intentId || '').trim();
-      const binding = readRegistrationBinding(request && request.headers, intentId);
-      if (!binding) {
-        return problem({ name: 'PaymentAccessError', code: 'invalid_registration_binding', message: 'Registration binding cookie is missing or does not match this intent.' });
-      }
-      const result = await service.completePaidRegistration({
-        intentId,
-        registrationSecret: binding.registrationSecret,
-        password: input.password,
-      }, { ip: request && request.ip });
-      return ok(result, { 'Set-Cookie': clearCookieHeader({ secure: secureCookies }) });
+      const registration = await service.getRegistrationResume({ auth: request && request.auth });
+      return ok({ registration: registration ? {
+        intentId: registration.intentId,
+        status: mapCheckoutStatus(registration),
+        canCreateAccount: registration.canComplete,
+        completed: registration.completed,
+      } : null });
     } catch (error) {
       return problem(error);
     }
+  }
+
+  async function completeAuthenticatedRegistration(request) {
+    try {
+      const input = bodyOf(request);
+      const result = await service.completePaidRegistration({ intentId: input.intentId }, { auth: request && request.auth, ip: request && request.ip });
+      return ok(result);
+    } catch (error) {
+      return problem(error);
+    }
+  }
+
+  async function getCheckoutStatus(request) {
+    return getAuthenticatedCheckoutStatus(request);
+  }
+
+  async function registerAccount(request) {
+    return completeAuthenticatedRegistration(request);
   }
 
   async function requestManualRenewal(request) {
@@ -224,6 +238,10 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
 
   return {
     startRegistrationPayment,
+    startAuthenticatedRegistrationPayment,
+    getAuthenticatedCheckoutStatus,
+    resumeAuthenticatedRegistration,
+    completeAuthenticatedRegistration,
     getCheckoutStatus,
     registerAccount,
     requestManualRenewal,

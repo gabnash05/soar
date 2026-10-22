@@ -1,7 +1,7 @@
 # SOAR identity, organization, and access foundation
 
 This document is the backend contract for the identity-foundation lane.
-It is intended for frontend and payment integration work after the paid-access foundation merged.
+It is intended for frontend and payment integration work after the paid-access foundation merged. Its older GCash-specific payment prerequisite below is superseded by the current QR Ph/Admin-policy integration described in `docs/backend/payments.md` and the current `/home/gab/agent-workspace/firstmate/data/soar-payment-activation/integration-handoff.md`; hosted activation remains unperformed.
 
 ## Current implementation status
 
@@ -334,5 +334,5 @@ Before production acceptance:
 - Decide whether to enable Identity Platform blocking functions to reject direct public Firebase Auth signups that bypass paid registration.
 - Store PayMongo secrets outside the repository.
 - Register the PayMongo webhook endpoint.
-- Complete merchant approval and one real PHP10 GCash live test.
+- Separately authorize PayMongo merchant QR Ph verification and any live PHP10 checkout; test mode must use the provider `test_url` simulator and test QR codes must never be scanned or paid.
 - Deploy rules and functions only after explicit production authorization.

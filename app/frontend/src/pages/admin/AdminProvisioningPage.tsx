@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Button, Card, CardBody, CardHeader, ConfirmDialog, Field, LoadingBlock, Select, SubtabNav, SubtabPanel, TextInput, useQueryTab } from '../../components/ui';
 import { CANONICAL_DEPARTMENTS } from '../../lib/departments';
+import { useAuth } from '../../context/AuthContext';
+import { isPaidFlowEnabled } from '../../lib/features';
 import {
   assignAdminOfficer,
   createAdminOrganization,
+  getAdminPaymentPolicy,
+  setAdminPaymentPolicy,
   listAdminOfficerGrants,
   listAdminOrganizations,
   revokeAdminOfficer,
@@ -12,12 +16,14 @@ import {
   type AdminOrganizationOption,
   type AdminStudentOption,
   type CreateAdminOrganizationInput,
+  type AdminPaymentPolicy,
 } from '../../lib/adminApi';
 
 const adminTabs = [
   { id: 'create', label: 'Create organization' },
   { id: 'assign', label: 'Assign officers' },
   { id: 'manage', label: 'Manage organizations' },
+  { id: 'payments', label: 'Payments' },
 ];
 
 function messageFor(error: unknown, fallback: string) {
@@ -167,6 +173,12 @@ function StudentPicker({
 
 export function AdminProvisioningPage() {
   const { activeId, getTabTo } = useQueryTab(adminTabs.map((tab) => tab.id), 'create');
+  const { refreshPaymentPolicy } = useAuth('session');
+  const [paymentPolicy, setPaymentPolicy] = useState<AdminPaymentPolicy | null>(null);
+  const [paymentPolicyLoading, setPaymentPolicyLoading] = useState(true);
+  const [paymentPolicySaving, setPaymentPolicySaving] = useState(false);
+  const [paymentPolicyError, setPaymentPolicyError] = useState<string | null>(null);
+  const [paymentPolicyMessage, setPaymentPolicyMessage] = useState<string | null>(null);
   const [organizations, setOrganizations] = useState<AdminOrganizationOption[]>([]);
   const [organizationsLoading, setOrganizationsLoading] = useState(true);
   const [organizationsError, setOrganizationsError] = useState<string | null>(null);
@@ -221,6 +233,41 @@ export function AdminProvisioningPage() {
   useEffect(() => {
     void loadOrganizations();
   }, [loadOrganizations]);
+
+  const loadPaymentPolicy = useCallback(async () => {
+    setPaymentPolicyLoading(true);
+    setPaymentPolicyError(null);
+    try {
+      setPaymentPolicy(await getAdminPaymentPolicy());
+    } catch (caught) {
+      setPaymentPolicyError(messageFor(caught, 'Payment policy could not be loaded.'));
+    } finally {
+      setPaymentPolicyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPaymentPolicy();
+  }, [loadPaymentPolicy]);
+
+  const savePaymentPolicy = async () => {
+    if (!paymentPolicy) return;
+    setPaymentPolicySaving(true);
+    setPaymentPolicyError(null);
+    setPaymentPolicyMessage(null);
+    try {
+      const updated = await setAdminPaymentPolicy(paymentPolicy.paymentsRequired);
+      setPaymentPolicy(updated);
+      const refreshed = await refreshPaymentPolicy();
+      setPaymentPolicyMessage(refreshed
+        ? 'Payment policy saved. Registration and checkout behavior now follows this server-side setting.'
+        : 'Payment policy was saved, but the public policy read could not be refreshed. Retry before leaving this page.');
+    } catch (caught) {
+      setPaymentPolicyError(messageFor(caught, 'Payment policy could not be saved.'));
+    } finally {
+      setPaymentPolicySaving(false);
+    }
+  };
 
   const loadOfficerGrants = useCallback(async (organizationId: string, pageToken?: string, replace = false) => {
     const generation = ++officerLoadGeneration.current;
@@ -585,6 +632,70 @@ export function AdminProvisioningPage() {
           }}
           onConfirm={handleRevokeOfficer}
         />
+      </SubtabPanel>
+
+      <SubtabPanel baseId="admin-setup" tabId="payments" activeId={activeId}>
+        <Card className="grid gap-4">
+          <CardHeader title="Global payment policy">
+            Control whether payment is required for new registrations and manual renewals. The server enforces this setting; changing it does not fabricate transactions or entitlement history.
+          </CardHeader>
+          <CardBody className="grid gap-4 p-0">
+            {paymentPolicyLoading ? <LoadingBlock label="Loading payment policy" /> : null}
+            {paymentPolicyError ? (
+              <div className="grid gap-2" role="alert">
+                <p className="m-0 text-sm text-[var(--color-orange-deep)]">{paymentPolicyError}</p>
+                <div><Button type="button" variant="secondary" onClick={() => void loadPaymentPolicy()}>Try again</Button></div>
+              </div>
+            ) : null}
+            {paymentPolicy ? (
+              <>
+                <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-off-white)] p-4 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--color-blue-deep)]">
+                  <input
+                    className="mt-1 size-4 accent-[var(--color-navy)]"
+                    type="checkbox"
+                    checked={paymentPolicy.paymentsRequired}
+                    disabled={paymentPolicyLoading || paymentPolicySaving}
+                    onChange={(event) => {
+                      setPaymentPolicy({ ...paymentPolicy, paymentsRequired: event.target.checked });
+                      setPaymentPolicyMessage(null);
+                    }}
+                  />
+                  <span className="grid gap-1">
+                    <strong className="text-[var(--color-navy)]">Require payment for new registrations and renewals</strong>
+                    <span className="text-sm text-[var(--muted-foreground)]">When off, new accounts use explicit unpaid-preview provenance; no PayMongo-paid entitlement is created. When on, account creation requires signed provider payment confirmation.</span>
+                  </span>
+                </label>
+
+                <section className="grid gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] p-4" aria-labelledby="admin-checkout-readiness">
+                  <h2 id="admin-checkout-readiness" className="m-0 font-[var(--font-display)] text-lg font-bold text-[var(--color-navy)]">Server checkout readiness</h2>
+                  {paymentPolicy.checkout.status === 'disabled' ? (
+                    <p className="m-0 text-sm text-[var(--muted-foreground)]">Hosted checkout is hard-disabled by the server deployment setting. This Admin switch cannot override that safety boundary.</p>
+                  ) : paymentPolicy.checkout.status === 'not_configured' ? (
+                    <p className="m-0 text-sm text-[var(--muted-foreground)]">Required server payment configuration, secure-cookie setting, or app return URL is missing or unsafe. Secret values are never shown here. No provider readiness is claimed.</p>
+                  ) : paymentPolicy.checkout.mode === 'test' ? (
+                    <p className="m-0 text-sm text-[var(--muted-foreground)]">Server configuration is set for PayMongo test mode. Merchant QR Ph activation is not verified. Test-mode QR Ph may generate a real/scannable QR: never scan or pay it; use only PayMongo’s response <code>test_url</code> simulator.</p>
+                  ) : (
+                    <p className="m-0 text-sm text-[var(--muted-foreground)]">Server configuration is set for live mode, but the merchant’s QR Ph activation is not verified. This status is not approval to create a live checkout or activate payments.</p>
+                  )}
+                  {!isPaidFlowEnabled() ? <p className="m-0 text-sm font-bold text-[var(--color-orange-deep)]">This frontend build also has its payment UI safety flag off.</p> : null}
+                </section>
+
+                <aside className="grid gap-1 rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] p-4 text-sm text-[var(--color-blue-deep)]" role="note">
+                  <strong>Existing access is not rewritten.</strong>
+                  <span>Changing this toggle does not delete payment history, extend paid access, restore revoked access, or decide grandfathered access for existing accounts. Turning payment requirements on stops active access based only on unpaid-preview provenance; saved provider-confirmed entitlements and revocations remain authoritative.</span>
+                </aside>
+
+                {paymentPolicyMessage ? <p className="m-0 text-sm font-bold text-[var(--color-blue-deep)]" role="status">{paymentPolicyMessage}</p> : null}
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="button" disabled={paymentPolicyLoading || paymentPolicySaving} onClick={() => void savePaymentPolicy()}>
+                    {paymentPolicySaving ? 'Saving payment policy…' : 'Save payment policy'}
+                  </Button>
+                  <span className="text-sm text-[var(--muted-foreground)]">Selected setting: {paymentPolicy.paymentsRequired ? 'payment required' : 'payment not required'}. It takes effect only after saving.</span>
+                </div>
+              </>
+            ) : null}
+          </CardBody>
+        </Card>
       </SubtabPanel>
     </div>
   );

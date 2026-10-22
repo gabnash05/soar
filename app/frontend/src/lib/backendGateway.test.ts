@@ -144,19 +144,66 @@ describe('backend session normalization', () => {
     expect(mocks.updateProfile).not.toHaveBeenCalled();
   });
 
-  it('allows account completion only from the server confirmation flag even while registration status remains pending', async () => {
+  it('refuses legacy unbound registration completion and never falls back to anonymous endpoints', async () => {
     const input = {
       intentId: 'reg_123',
       email: 'ada@example.edu',
-      password: 'StrongPass123',
+      displayName: 'Ada Lovelace',
+      role: 'student' as const,
+      studentId: '2026-0001',
+      department: 'Computer Engineering Department',
+    };
+    mocks.apiFetch.mockResolvedValueOnce({ intentId: input.intentId, status: 'pending', canCreateAccount: true, authFirst: false });
+
+    await expect(createBackendGateway().registerAccount(input)).rejects.toThrow(/not bound to a signed-in Firebase account/i);
+    expect(mocks.apiFetch).toHaveBeenCalledTimes(1);
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/payments/registration/auth-status?intentId=reg_123', { headers: { Authorization: 'Bearer trusted-token' } });
+    expect(mocks.apiFetch.mock.calls.some(([path]) => path === '/payments/registration/complete')).toBe(false);
+    expect(mocks.signIn).not.toHaveBeenCalled();
+    expect(mocks.sendEmailVerification).not.toHaveBeenCalled();
+  });
+
+  it('creates the Auth-first identity in Firebase before requesting a QR Ph checkout without sending the password to the API', async () => {
+    const firebaseUser = { uid: 'firebase-auth-uid', email: 'ada@example.edu', emailVerified: false };
+    mocks.createUser.mockResolvedValueOnce({ user: firebaseUser });
+    mocks.apiFetch.mockResolvedValueOnce({ intentId: 'reg_auth_first', checkoutUrl: 'https://checkout.example.test/cs_1', status: 'pending', amountPhp: 10, expiresAt: '2026-10-24T00:00:00.000Z', providerLabel: 'PayMongo' });
+    const gateway = createBackendGateway();
+
+    await gateway.createRegistrationIdentity({ email: firebaseUser.email, password: 'StrongPass123' });
+    await expect(gateway.startAuthenticatedRegistrationPayment({
+      role: 'student', email: firebaseUser.email, displayName: 'Ada Lovelace', studentId: '2026-0001',
+      department: 'Computer Engineering Department', returnUrl: 'https://soar.example/access/checkout',
+    })).resolves.toMatchObject({ intentId: 'reg_auth_first' });
+
+    expect(mocks.createUser).toHaveBeenCalledWith(expect.anything(), firebaseUser.email, 'StrongPass123');
+    expect(mocks.sendEmailVerification).toHaveBeenCalledWith(firebaseUser);
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/payments/registration/auth-start', expect.objectContaining({
+      method: 'POST',
+      headers: { Authorization: 'Bearer trusted-token' },
+    }));
+    expect(JSON.stringify(mocks.apiFetch.mock.calls)).not.toContain('StrongPass123');
+  });
+
+  it('finishes Auth-first registration under the same Firebase UID without sending the password to the API', async () => {
+    const user = {
+      uid: 'firebase-auth-uid',
+      email: 'ada@example.edu',
+      emailVerified: false,
+      getIdToken: vi.fn(async () => 'fresh-auth-token'),
+    };
+    const authStateReady = vi.fn(async () => {});
+    mocks.getFirebaseRuntime.mockReturnValue({ auth: { currentUser: user, authStateReady } });
+    const input = {
+      intentId: 'reg_auth_first',
+      email: user.email,
       displayName: 'Ada Lovelace',
       role: 'student' as const,
       studentId: '2026-0001',
       department: 'Computer Engineering Department',
     };
     const session = {
-      uid: 'uid_123',
-      email: input.email,
+      uid: user.uid,
+      email: user.email,
       displayName: input.displayName,
       accountKind: 'student',
       emailVerified: false,
@@ -164,18 +211,20 @@ describe('backend session normalization', () => {
       officerGrants: [],
     };
     mocks.apiFetch
-      .mockResolvedValueOnce({ intentId: input.intentId, status: 'pending', canCreateAccount: true })
-      .mockResolvedValueOnce({ uid: 'uid_123', completed: true })
+      .mockResolvedValueOnce({ intentId: input.intentId, status: 'pending', canCreateAccount: true, authFirst: true })
+      .mockResolvedValueOnce({ uid: user.uid, completed: true })
       .mockResolvedValueOnce(session);
 
-    await expect(createBackendGateway().registerAccount(input)).resolves.toMatchObject({ uid: 'uid_123' });
-    expect(mocks.apiFetch).toHaveBeenNthCalledWith(1, '/payments/registration/status?intentId=reg_123');
-    expect(mocks.apiFetch).toHaveBeenNthCalledWith(2, '/payments/registration/complete', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify(input),
-    }));
-    expect(mocks.signIn).toHaveBeenCalledWith(expect.anything(), input.email, input.password);
-    expect(mocks.sendEmailVerification).toHaveBeenCalled();
+    await expect(createBackendGateway().registerAccount(input)).resolves.toMatchObject({ uid: user.uid });
+
+    expect(authStateReady).toHaveBeenCalledTimes(1);
+    expect(mocks.apiFetch).toHaveBeenNthCalledWith(1, '/payments/registration/auth-status?intentId=reg_auth_first', { headers: { Authorization: 'Bearer trusted-token' } });
+    expect(mocks.apiFetch).toHaveBeenNthCalledWith(2, '/payments/registration/auth-complete', {
+      method: 'POST', headers: { Authorization: 'Bearer trusted-token' }, body: JSON.stringify({ intentId: input.intentId }),
+    });
+    expect(mocks.apiFetch).toHaveBeenNthCalledWith(3, '/session', { headers: { Authorization: 'Bearer trusted-token' } });
+    expect(mocks.sendEmailVerification).toHaveBeenCalledWith(user);
+    expect(JSON.stringify(mocks.apiFetch.mock.calls)).not.toContain('password');
   });
 
   it('creates an unpaid preview profile through Firebase Auth and never sends the password to the API', async () => {

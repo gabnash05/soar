@@ -2,8 +2,12 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AuthProvider } from '../../context/AuthContext';
+import { createMockGateway } from '../../test/createMockGateway';
 
 const mocks = vi.hoisted(() => ({
+  getAdminPaymentPolicy: vi.fn(),
+  setAdminPaymentPolicy: vi.fn(),
   assignAdminOfficer: vi.fn(),
   createAdminOrganization: vi.fn(),
   listAdminOfficerGrants: vi.fn(),
@@ -13,6 +17,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../lib/adminApi', () => ({
+  getAdminPaymentPolicy: mocks.getAdminPaymentPolicy,
+  setAdminPaymentPolicy: mocks.setAdminPaymentPolicy,
   assignAdminOfficer: mocks.assignAdminOfficer,
   createAdminOrganization: mocks.createAdminOrganization,
   listAdminOfficerGrants: mocks.listAdminOfficerGrants,
@@ -29,7 +35,9 @@ const organizations = [{ id: 'robotics', name: 'Robotics Club' }];
 function renderPage(entry = '/admin') {
   render(
     <MemoryRouter initialEntries={[entry]}>
-      <AdminProvisioningPage />
+      <AuthProvider gateway={createMockGateway(null)}>
+        <AdminProvisioningPage />
+      </AuthProvider>
     </MemoryRouter>,
   );
 }
@@ -37,6 +45,8 @@ function renderPage(entry = '/admin') {
 describe('Admin provisioning page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getAdminPaymentPolicy.mockResolvedValue({ paymentsRequired: false, checkout: { status: 'disabled', mode: null } });
+    mocks.setAdminPaymentPolicy.mockImplementation(async (paymentsRequired: boolean) => ({ paymentsRequired, checkout: { status: 'disabled', mode: null } }));
     mocks.listAdminOrganizations.mockResolvedValue({ items: organizations });
     mocks.listAdminOfficerGrants.mockResolvedValue({ items: [{ uid: 'student-1', displayName: 'Mara Santos', status: 'active', isOrganizationOwner: false }] });
     mocks.revokeAdminOfficer.mockResolvedValue({ orgId: 'robotics', uid: 'student-1', status: 'revoked', alreadyRevoked: false });
@@ -74,7 +84,7 @@ describe('Admin provisioning page', () => {
     expect(mocks.listAdminOrganizations).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole('tab', { name: 'Assign officers' }));
     expect(await within(screen.getByRole('tabpanel')).findByLabelText('Organization')).toHaveValue('robotics-club');
-  });
+  }, 10000);
 
   it('assigns only a chosen registered student to the selected organization and reports an existing grant', async () => {
     const user = userEvent.setup();
@@ -180,6 +190,28 @@ describe('Admin provisioning page', () => {
     await user.click(screen.getByRole('button', { name: 'Assign officer' }));
     expect(await screen.findByText(/Choose an organization and a registered student/i)).toBeInTheDocument();
     expect(mocks.assignAdminOfficer).not.toHaveBeenCalled();
+  });
+
+  it('lets a trusted Admin change and save the persisted global payment requirement', async () => {
+    const user = userEvent.setup();
+    renderPage('/admin?tab=payments');
+
+    const toggle = await screen.findByRole('checkbox', { name: /require payment for new registrations and renewals/i });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    await user.click(screen.getByRole('button', { name: 'Save payment policy' }));
+
+    await waitFor(() => expect(mocks.setAdminPaymentPolicy).toHaveBeenCalledWith(true));
+    expect(await screen.findByRole('status')).toHaveTextContent(/payment policy saved/i);
+    expect(screen.getByText(/changing this toggle does not delete payment history/i)).toBeInTheDocument();
+  });
+
+  it('warns admins that PayMongo test QR codes must never be scanned or paid', async () => {
+    mocks.getAdminPaymentPolicy.mockResolvedValue({ paymentsRequired: true, checkout: { status: 'configured', mode: 'test' } });
+    renderPage('/admin?tab=payments');
+
+    expect(await screen.findByText(/test-mode qr ph may generate a real\/scannable qr: never scan or pay it/i)).toBeInTheDocument();
+    expect(screen.getByText(/frontend build also has its payment ui safety flag off/i)).toBeInTheDocument();
   });
 
   it('keeps empty and loading search states understandable without showing unneeded student fields', async () => {

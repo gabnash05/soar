@@ -17,8 +17,11 @@ const formatDate = (value?: string) => {
 };
 
 export const AccessSettingsPage = () => {
-  const paidFlowEnabled = isPaidFlowEnabled();
-  const { session, loading, requestManualRenewal, getRenewalStatus, reloadSession, error, clearError, gateway } = useAuth('access-settings');
+  const { paymentPolicy, session, loading, requestManualRenewal, getRenewalStatus, reloadSession, error, clearError, gateway } = useAuth('access-settings');
+  const paymentBuildEnabled = isPaidFlowEnabled();
+  const paidFlowEnabled = paymentPolicy?.paymentsRequired === true
+    && paymentPolicy.checkout.status === 'configured'
+    && paymentBuildEnabled;
   const [searchParams] = useSearchParams();
   const renewalId = searchParams.get('renewalId');
   const checkoutNotice = searchParams.get('checkout');
@@ -34,7 +37,7 @@ export const AccessSettingsPage = () => {
   }, [clearError]);
 
   useEffect(() => {
-    if (!paidFlowEnabled) return;
+    if (!paymentBuildEnabled) return;
     const fixtureStatus = searchParams.get('fixtureStatus');
     if (gateway.mode === 'fixture' && renewalId && fixtureStatus === 'confirmed') {
       markFixtureRenewalConfirmedFromUrl(renewalId, fixtureStatus);
@@ -69,7 +72,7 @@ export const AccessSettingsPage = () => {
       active = false;
       if (timeout) clearTimeout(timeout);
     };
-  }, [gateway.mode, getRenewalStatus, loading, paidFlowEnabled, reloadSession, renewalId, renewalPollCycle, searchParams, session?.uid]);
+  }, [gateway.mode, getRenewalStatus, loading, paymentBuildEnabled, reloadSession, renewalId, renewalPollCycle, searchParams, session?.uid]);
 
   if (!session) return null;
 
@@ -99,11 +102,19 @@ export const AccessSettingsPage = () => {
       <header className="relative min-w-0 overflow-hidden rounded-[18px] border border-white/15 bg-[var(--color-navy)] bg-[image:var(--gradient-brand)] p-[clamp(16px,3vw,24px)] text-white [&_.eyebrow]:text-[var(--color-gold)] [&_p:not(.eyebrow)]:m-0 [&_p:not(.eyebrow)]:max-w-[72ch] [&_p:not(.eyebrow)]:text-white/80">
         <p className="eyebrow mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-gold)]">Payment & access</p>
         <h1 className="mb-1.5 font-[var(--font-display)] text-[clamp(1.9rem,4vw,3rem)] font-bold leading-[1.05] tracking-[-0.035em] text-white max-sm:text-[2.15rem]">{previewAccess ? 'Account access' : 'Six-month access status'}</h1>
-        <p>{previewAccess ? 'This account has access without payment. No transaction or paid entitlement was created.' : paidFlowEnabled ? 'SOAR access costs PHP10 per account for six months. Users renew manually; there is no automatic recurring charge.' : 'Saved access status is shown here. Renewal and payment actions are unavailable.'}</p>
+        <p>{previewAccess
+          ? 'This account has access without payment. No transaction or paid entitlement was created.'
+          : paidFlowEnabled
+            ? 'SOAR access costs PHP10 per account for six months through QR Ph (scan with GCash or another supported bank/e-wallet app). Users renew manually; there is no automatic recurring charge.'
+            : paymentPolicy?.paymentsRequired
+              ? 'Payment is required, but checkout is unavailable in this deployment. Existing access records are unchanged; contact an administrator for next steps.'
+              : paymentPolicy?.paymentsRequired === false
+                ? 'Payment is not required for new accounts right now. This account still follows its saved access record; no paid history or revocations are changed.'
+                : 'Payment settings could not be loaded. Saved access status is shown here; renewal is unavailable.'}</p>
       </header>
 
       {message ? <div className="rounded-[var(--radius-md)] border border-[var(--color-blue-deep)] bg-[var(--color-navy-soft)] px-3.5 py-3 text-[var(--color-navy)]" role="status">{message}</div> : null}
-      {paidFlowEnabled && renewalId ? (
+      {paymentBuildEnabled && renewalId ? (
         <section className="grid gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-white)] p-4" aria-live="polite">
           <StatusChip tone={renewalStatus?.status === 'confirmed' ? 'approved' : renewalStatus?.status === 'failed' ? 'danger' : 'attention'}>
             {renewalStatus?.status || 'checking'}
@@ -136,7 +147,7 @@ export const AccessSettingsPage = () => {
               ? 'You can use role-appropriate SOAR pages while this access remains active.'
               : active
                 ? 'You can use role-appropriate SOAR pages until your six-month access expires.'
-                : paidFlowEnabled ? 'Your saved records are retained. Renew access to return to main workflow pages.' : 'Your saved records are retained; payment is unavailable.'}
+                : paidFlowEnabled ? 'Your saved records are retained. Renew access to return to main workflow pages.' : paymentPolicy?.paymentsRequired === false ? 'Your saved records are retained. Payment is not required right now, but access still follows the saved account access record.' : 'Your saved records are retained; payment is required but checkout is unavailable.'}
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-2.5 max-[820px]:justify-start">

@@ -1,5 +1,5 @@
 import type { BackendGateway } from '../lib/backendGateway';
-import type { CheckoutStatus, PreviewRegistrationInput, RegistrationPaymentIntent, RegistrationRecoveryResult, RenewalCheckoutStatus, RenewalRequest, UserSession } from '../lib/contracts';
+import type { CheckoutStatus, PaymentPolicy, PreviewRegistrationInput, RegistrationPaymentIntent, RegistrationRecoveryResult, RenewalCheckoutStatus, RenewalRequest, UserSession } from '../lib/contracts';
 
 export const makeSession = (overrides: Partial<UserSession> = {}): UserSession => ({
   uid: 'test-uid',
@@ -27,6 +27,13 @@ export const makeSession = (overrides: Partial<UserSession> = {}): UserSession =
 export const createMockGateway = (session: UserSession | null = makeSession()): BackendGateway => ({
   mode: 'fixture',
   label: 'Test gateway',
+  getPaymentPolicy: vi.fn(async (): Promise<PaymentPolicy> => {
+    const paymentsRequired = import.meta.env.VITE_SOAR_PAYMENTS_ENABLED === 'true';
+    return {
+      paymentsRequired,
+      checkout: paymentsRequired ? { status: 'configured', mode: 'test' } : { status: 'disabled', mode: null },
+    };
+  }),
   reloadSession: vi.fn(async () => session),
   signIn: vi.fn(async () => session ?? makeSession()),
   signOut: vi.fn(async () => undefined),
@@ -40,6 +47,17 @@ export const createMockGateway = (session: UserSession | null = makeSession()): 
     providerLabel: 'Test checkout',
     fixture: true,
   })),
+  createRegistrationIdentity: vi.fn(async () => undefined),
+  startAuthenticatedRegistrationPayment: vi.fn(async (): Promise<RegistrationPaymentIntent> => ({
+    intentId: 'test-intent',
+    checkoutUrl: '/access/checkout?intentId=test-intent',
+    status: 'pending',
+    amountPhp: 10,
+    expiresAt: '2026-01-02T00:00:00.000Z',
+    providerLabel: 'Test checkout',
+    fixture: true,
+  })),
+  resumePendingRegistration: vi.fn(async () => null),
   registerPreviewAccount: vi.fn(async (input: PreviewRegistrationInput): Promise<UserSession> => makeSession({
     email: input.email,
     displayName: input.displayName,

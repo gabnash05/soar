@@ -70,6 +70,7 @@ describe('AccessSettingsPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Checking renewal payment' })).toBeInTheDocument();
+    expect(screen.getByText(/through QR Ph \(scan with GCash or another supported bank\/e-wallet app\)/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText(/checkout returned successfully; waiting for the signed provider confirmation/i)).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /check renewal status/i }));
     expect(await screen.findByRole('heading', { name: 'Renewal confirmed' })).toBeInTheDocument();

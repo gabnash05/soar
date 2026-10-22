@@ -9,6 +9,8 @@ import type {
   RegistrationPaymentInput,
   RegistrationPaymentIntent,
   RegistrationRecoveryResult,
+  PaymentPolicy,
+  RegistrationResume,
   RenewalCheckoutStatus,
   RenewalRequest,
   SignInInput,
@@ -30,6 +32,10 @@ interface AuthContextValue {
   gateway: BackendGateway;
   session: UserSession | null;
   loading: boolean;
+  paymentPolicy: PaymentPolicy | null;
+  paymentPolicyLoading: boolean;
+  paymentPolicyError: string | null;
+  refreshPaymentPolicy(): Promise<PaymentPolicy | null>;
   errors: ScopedErrors;
   clearError(scope: AuthErrorScope): void;
   reloadSession(scope: AuthErrorScope): Promise<UserSession | null>;
@@ -37,6 +43,9 @@ interface AuthContextValue {
   signOut(): Promise<void>;
   sendPasswordRecovery(email: string): Promise<void>;
   startRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
+  createRegistrationIdentity(input: { email: string; password: string }): Promise<void>;
+  startAuthenticatedRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
+  resumePendingRegistration(): Promise<RegistrationResume | null>;
   registerPreviewAccount(input: PreviewRegistrationInput): Promise<UserSession>;
   requestPaidRegistrationRecovery(email: string): Promise<RegistrationRecoveryResult>;
   acceptPaidRegistrationRecovery(intentId: string, recoveryCode: string): Promise<void>;
@@ -62,8 +71,12 @@ export const AuthProvider = ({ children, gateway: providedGateway }: { children:
   const gateway = useMemo(() => providedGateway ?? createBackendGateway(), [providedGateway]);
   const [session, setSession] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [paymentPolicy, setPaymentPolicy] = useState<PaymentPolicy | null>(null);
+  const [paymentPolicyLoading, setPaymentPolicyLoading] = useState(true);
+  const [paymentPolicyError, setPaymentPolicyError] = useState<string | null>(null);
   const [errors, setErrors] = useState<ScopedErrors>({});
   const errorVersions = useRef<Partial<Record<AuthErrorScope, number>>>({});
+  const paymentPolicyVersion = useRef(0);
 
   const clearError = useCallback((scope: AuthErrorScope) => {
     errorVersions.current[scope] = (errorVersions.current[scope] ?? 0) + 1;
@@ -121,6 +134,30 @@ export const AuthProvider = ({ children, gateway: providedGateway }: { children:
     };
   }, [gateway]);
 
+  const refreshPaymentPolicy = useCallback(async () => {
+    const version = ++paymentPolicyVersion.current;
+    setPaymentPolicyLoading(true);
+    setPaymentPolicyError(null);
+    try {
+      const next = await gateway.getPaymentPolicy();
+      if (paymentPolicyVersion.current === version) setPaymentPolicy(next);
+      return next;
+    } catch (caught) {
+      if (paymentPolicyVersion.current === version) {
+        setPaymentPolicy(null);
+        setPaymentPolicyError(getMessage(caught));
+      }
+      return null;
+    } finally {
+      if (paymentPolicyVersion.current === version) setPaymentPolicyLoading(false);
+    }
+  }, [gateway]);
+
+  useEffect(() => {
+    void refreshPaymentPolicy();
+    return () => { paymentPolicyVersion.current += 1; };
+  }, [refreshPaymentPolicy]);
+
   const getRenewalStatus = useCallback(
     (renewalId: string) => run('access-settings', () => gateway.getRenewalStatus(renewalId)),
     [gateway, run],
@@ -130,6 +167,10 @@ export const AuthProvider = ({ children, gateway: providedGateway }: { children:
     gateway,
     session,
     loading,
+    paymentPolicy,
+    paymentPolicyLoading,
+    paymentPolicyError,
+    refreshPaymentPolicy,
     errors,
     clearError,
     reloadSession,
@@ -146,6 +187,9 @@ export const AuthProvider = ({ children, gateway: providedGateway }: { children:
       }),
     sendPasswordRecovery: (email) => run('password-recovery', () => gateway.sendPasswordRecovery(email)),
     startRegistrationPayment: (input) => run('registration', () => gateway.startRegistrationPayment(input)),
+    createRegistrationIdentity: (input) => run('registration', () => gateway.createRegistrationIdentity(input)),
+    startAuthenticatedRegistrationPayment: (input) => run('registration', () => gateway.startAuthenticatedRegistrationPayment(input)),
+    resumePendingRegistration: () => run('registration', () => gateway.resumePendingRegistration()),
     registerPreviewAccount: (input) =>
       run('registration', async () => {
         const next = await gateway.registerPreviewAccount(input);

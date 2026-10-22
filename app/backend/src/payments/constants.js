@@ -1,6 +1,7 @@
 'use strict';
 
 const PAYMENT_PROVIDER = 'paymongo';
+const PAYMENT_METHOD = 'qrph';
 const ACCESS_PRICE_MINOR = 1000;
 const ACCESS_CURRENCY = 'PHP';
 const ACCESS_MONTHS = 6;
@@ -35,6 +36,7 @@ const ENTITLEMENT_STATUSES = Object.freeze({
 
 module.exports = {
   PAYMENT_PROVIDER,
+  PAYMENT_METHOD,
   ACCESS_PRICE_MINOR,
   ACCESS_CURRENCY,
   ACCESS_MONTHS,

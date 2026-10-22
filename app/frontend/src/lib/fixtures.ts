@@ -4,6 +4,7 @@ import { isCanonicalDepartment, normalizeDepartmentKey } from './departments';
 import type { BackendGateway } from './backendGateway';
 import {
   type CheckoutStatus,
+  type PaymentPolicy,
   type PreviewRegistrationInput,
   type RegisterAccountInput,
   type RegistrationPaymentInput,
@@ -164,6 +165,7 @@ const getPaymentStatus = (intentId: string): CheckoutStatus => {
       ? 'Demo payment confirmed locally.'
       : 'Waiting for payment confirmation. Account creation stays locked until this is confirmed.',
     canCreateAccount: active,
+    authFirst: true,
     fixture: true,
   };
 };
@@ -172,7 +174,6 @@ const validateRegistration = (input: RegisterAccountInput) => {
   const problems: Record<string, string> = {};
   if (!input.displayName.trim()) problems.displayName = 'Enter your full name.';
   if (!input.email.includes('@')) problems.email = 'Enter a valid email address.';
-  if (input.password.length < 8) problems.password = 'Use at least 8 characters.';
   if (input.role === 'student' && !input.studentId?.trim()) problems.studentId = 'Student ID is required for students and future officers.';
   if (input.role === 'student' && !isCanonicalDepartment(input.department)) problems.department = 'Choose your department from the list.';
   if (Object.keys(problems).length) {
@@ -198,6 +199,16 @@ export const markFixtureRenewalConfirmedFromUrl = (renewalId: string | null, fix
 export const createFixtureGateway = (): BackendGateway => ({
   mode: 'fixture',
   label: 'Demo mode',
+
+  async getPaymentPolicy(): Promise<PaymentPolicy> {
+    const paymentsRequired = import.meta.env.VITE_SOAR_PAYMENTS_ENABLED === 'true';
+    return {
+      paymentsRequired,
+      checkout: paymentsRequired
+        ? { status: 'configured', mode: 'test' }
+        : { status: 'disabled', mode: null },
+    };
+  },
 
   async reloadSession() {
     return readSession();
@@ -240,6 +251,16 @@ export const createFixtureGateway = (): BackendGateway => ({
       providerLabel: 'Demo checkout',
       fixture: true,
     };
+  },
+
+  async createRegistrationIdentity() {},
+
+  async startAuthenticatedRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent> {
+    return this.startRegistrationPayment(input);
+  },
+
+  async resumePendingRegistration() {
+    return null;
   },
 
   async registerPreviewAccount(input: PreviewRegistrationInput) {
