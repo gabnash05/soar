@@ -39,6 +39,11 @@ class FirestorePaymentTransaction {
   }
 
   async getRegistrationIntent(id) { return this.getDoc(REGISTRATION_INTENT_COLLECTION, id); }
+  async findRegistrationIntentsByTargetUid(uid) {
+    const snapshot = await this.transaction.get(collection(this.db, REGISTRATION_INTENT_COLLECTION)
+      .where('targetUid', '==', uid));
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  }
   async saveRegistrationIntent(intent) { this.setDoc(REGISTRATION_INTENT_COLLECTION, intent.id, intent, { merge: false }); }
   async updateRegistrationIntent(id, patch) { this.updateDoc(REGISTRATION_INTENT_COLLECTION, id, patch); }
 

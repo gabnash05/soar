@@ -5,7 +5,7 @@ import { adminAuth, db } from '../firebase';
 import { AppError } from '../errors';
 import { accountPath, COLLECTIONS, entitlementPath } from '../contracts/paths';
 import type { AccountDocument, EntitlementDocument } from '../contracts/schema';
-import { isUnpaidPreviewEnabled } from './previewPolicy';
+import { isUnpaidAccessEnabled } from './paymentPolicy';
 
 export interface AccessState {
   status: 'active' | 'expired' | 'missing' | 'revoked';
@@ -15,12 +15,11 @@ export interface AccessState {
 }
 
 async function getUnpaidPreviewAccess(uid: string): Promise<AccessState | undefined> {
-  if (!isUnpaidPreviewEnabled()) return undefined;
   const accountSnapshot = await db.doc(accountPath(uid)).get();
   if (!accountSnapshot.exists) return undefined;
 
   const account = accountSnapshot.data() as AccountDocument;
-  if (account.accessProvenance !== 'unpaid-preview') return undefined;
+  if (account.accessProvenance !== 'unpaid-preview' || !(await isUnpaidAccessEnabled())) return undefined;
 
   return {
     status: 'active',

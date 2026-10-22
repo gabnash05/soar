@@ -16,6 +16,7 @@ vi.mock('../firebase', () => ({
 }));
 
 import { AppError } from '../errors';
+import { paidRegistrationCompletionSchema, previewRegistrationSchema } from '../contracts/validation';
 import { createUnpaidPreviewAccount } from './previewRegistration';
 
 const user = { uid: 'student-uid', email: 'mara@example.edu', email_verified: false } as unknown as DecodedIdToken;
@@ -107,12 +108,53 @@ describe('unpaid preview registration', () => {
     expect(mocks.accounts.size).toBe(0);
   });
 
-  it('fails closed when the existing unpaid-preview switch is not enabled', async () => {
-    process.env.SOAR_DISABLE_PAYMENTS = 'false';
+  it('allows authenticated paid completion without a password while keeping preview registration password-free and strict', () => {
+    const completion = {
+      email: 'mara@example.edu',
+      displayName: 'Mara Santos',
+      role: 'student',
+      studentId: '2026-0001',
+      department: 'Computer Engineering Department',
+      entitlement: {
+        provider: 'paymongo',
+        providerEventId: 'evt_paid',
+        accessExpiresAt: { toMillis: () => 1_800_000_000_000 },
+        amount: { currency: 'PHP', minor: 1000 },
+        intentId: 'reg_paid',
+      },
+    };
+
+    expect(paidRegistrationCompletionSchema.parse({ ...completion, uid: 'firebase-uid' })).toMatchObject({ uid: 'firebase-uid' });
+    expect(paidRegistrationCompletionSchema.safeParse(completion).success).toBe(false);
+    expect(paidRegistrationCompletionSchema.safeParse({ ...completion, password: 'StrongPass123' }).success).toBe(true);
+    expect(previewRegistrationSchema.safeParse({ ...student, displayName: 'Mara Santos', password: 'StrongPass123' }).success).toBe(false);
+  });
+
+  it('fails closed when the saved policy requires payment even if the deployment also disables checkout', async () => {
+    process.env.SOAR_DISABLE_PAYMENTS = 'true';
+    mocks.accounts.set('systemSettings/paymentPolicy', { paymentsRequired: true });
 
     await expect(createUnpaidPreviewAccount(user, student)).rejects.toMatchObject({ code: 'preview_registration_unavailable', status: 503 });
     expect(mocks.getUser).not.toHaveBeenCalled();
-    expect(mocks.accounts.size).toBe(0);
+    expect(mocks.accounts.has('accounts/student-uid')).toBe(false);
+  });
+
+  it('allows explicit unpaid registration when the persisted Admin policy does not require payment', async () => {
+    process.env.SOAR_DISABLE_PAYMENTS = 'false';
+    mocks.accounts.set('systemSettings/paymentPolicy', { paymentsRequired: false });
+
+    await expect(createUnpaidPreviewAccount(user, student)).resolves.toMatchObject({ created: true, access: { provenance: 'unpaid-preview' } });
+    expect(mocks.accounts.get('accounts/student-uid')).toMatchObject({ accessProvenance: 'unpaid-preview' });
+    expect(mocks.accounts.has('entitlements/student-uid')).toBe(false);
+  });
+
+  it('fails closed when the saved policy requires payment regardless of the deployment checkout setting', async () => {
+    process.env.SOAR_DISABLE_PAYMENTS = 'false';
+    mocks.accounts.set('systemSettings/paymentPolicy', { paymentsRequired: true });
+
+    await expect(createUnpaidPreviewAccount(user, student)).rejects.toMatchObject({ code: 'preview_registration_unavailable', status: 503 });
+    expect(mocks.getUser).not.toHaveBeenCalled();
+    expect(mocks.accounts.has('accounts/student-uid')).toBe(false);
   });
 
   it('rejects a Firebase identity whose verified token email no longer matches its account', async () => {

@@ -7,6 +7,7 @@ import type { CheckoutStatus } from '../../lib/contracts';
 import { isCanonicalDepartment } from '../../lib/departments';
 import { isPaidFlowEnabled } from '../../lib/features';
 import { markFixturePaymentConfirmedFromUrl } from '../../lib/fixtures';
+import { navigateToHostedCheckout } from '../../lib/redirects';
 import { readRegistrationDraft } from './RegistrationIntentPage';
 
 export const CheckoutStatusPage = () => {
@@ -95,11 +96,11 @@ export const CheckoutStatusPage = () => {
       setLocalError('Department selection is missing or invalid. Start registration again and choose from the department list.');
       return;
     }
-    if (password.length < 8) {
+    if (!status?.authFirst && password.length < 8) {
       setLocalError('Use at least 8 characters for your password.');
       return;
     }
-    if (password !== confirmPassword) {
+    if (!status?.authFirst && password !== confirmPassword) {
       setLocalError('Passwords do not match.');
       return;
     }
@@ -113,7 +114,7 @@ export const CheckoutStatusPage = () => {
         studentId: registrationProfile.studentId,
         department: registrationProfile.department,
         companyName: registrationProfile.companyName,
-        password,
+        ...(!status?.authFirst ? { password } : {}),
       });
       setPassword('');
       setConfirmPassword('');
@@ -237,7 +238,17 @@ export const CheckoutStatusPage = () => {
           {gateway.mode === 'fixture' ? <div className="rounded-[var(--radius-md)] bg-[var(--color-orange-soft)] px-3.5 py-3 text-sm text-[var(--color-navy)]">Demo payment confirmation is simulated locally.</div> : null}
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 font-bold text-[var(--color-blue-deep)] max-sm:flex-col max-sm:items-stretch"><Link to="/register">Start over</Link><Link to="/login">Sign in instead</Link></div>
 
-          {!status?.canCreateAccount && !status?.completed ? (
+          {status?.status === 'pending' && status.checkoutUrl ? (
+            <Button type="button" variant="secondary" onClick={() => navigateToHostedCheckout(status.checkoutUrl!)}>
+              Continue to hosted checkout
+            </Button>
+          ) : null}
+          {status?.authFirst && !status.completed ? (
+            <p className="mt-6 border-t border-[var(--color-border)] pt-5 text-sm text-[var(--muted-foreground)]">
+              This registration is tied to your SOAR sign-in. To resume on another device, sign in with the same email and password; use <Link to="/recovery">password recovery</Link> if needed.
+            </p>
+          ) : null}
+          {!status?.authFirst && !status?.canCreateAccount && !status?.completed ? (
             <section className="mt-6 grid gap-3 border-t border-[var(--color-border)] pt-5">
               <h2>Paid, but unable to continue?</h2>
               <p className="m-0 text-sm text-[var(--muted-foreground)]">Request a recovery code to restore this browser’s secure registration session. A code is accepted only for a payment-confirmed registration.</p>
@@ -263,8 +274,8 @@ export const CheckoutStatusPage = () => {
         </div>
 
         <form onSubmit={handleCreate} className="grid content-start gap-3.5" aria-disabled={!status?.canCreateAccount || status.completed}>
-          <h2>Create account</h2>
-          <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">This step is enabled only after provider-confirmed payment. Email verification is still required before the main app.</p>
+          <h2>{status?.authFirst ? 'Finish account setup' : 'Create account'}</h2>
+          <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">{status?.authFirst ? 'This profile and all SOAR access are saved only after provider-confirmed payment. The same sign-in used to start checkout is required.' : 'This step is enabled only after provider-confirmed payment. Email verification is still required before the main app.'}</p>
           <dl className="mt-[18px] grid gap-px overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-border)] p-0 [&_div]:grid [&_div]:grid-cols-[minmax(120px,0.45fr)_minmax(0,1fr)] [&_div]:gap-3 [&_div]:bg-[var(--color-white)] [&_div]:p-3 max-[820px]:[&_div]:grid-cols-1 max-[820px]:[&_div]:gap-0.5 [&_dt]:text-[13px] [&_dt]:text-[var(--muted-foreground)] [&_dd]:m-0 [&_dd]:[overflow-wrap:anywhere] [&_dd]:font-bold [&_dd]:text-[var(--color-navy)] mt-0">
             <div><dt>Name</dt><dd>{registrationProfile?.displayName || 'Unavailable'}</dd></div>
             <div><dt>Email</dt><dd>{registrationProfile?.email || 'Unavailable'}</dd></div>
@@ -272,14 +283,18 @@ export const CheckoutStatusPage = () => {
             {registrationProfile?.studentId ? <div><dt>Student ID</dt><dd>{registrationProfile.studentId}</dd></div> : null}
             {registrationProfile?.role === 'student' ? <div><dt>Department</dt><dd>{registrationProfile.department || 'Missing department selection'}</dd></div> : null}
           </dl>
-          <Field id="password" label="Password" hint="Use at least 8 characters.">
-            <TextInput id="password" type="password" autoComplete="new-password" required disabled={!status?.canCreateAccount || status.completed || submitting} value={password} onChange={(event) => setPassword(event.target.value)} />
-          </Field>
-          <Field id="confirmPassword" label="Confirm password">
-            <TextInput id="confirmPassword" type="password" autoComplete="new-password" required disabled={!status?.canCreateAccount || status.completed || submitting} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
-          </Field>
+          {!status?.authFirst ? (
+            <>
+              <Field id="password" label="Password" hint="Use at least 8 characters.">
+                <TextInput id="password" type="password" autoComplete="new-password" required disabled={!status?.canCreateAccount || status.completed || submitting} value={password} onChange={(event) => setPassword(event.target.value)} />
+              </Field>
+              <Field id="confirmPassword" label="Confirm password">
+                <TextInput id="confirmPassword" type="password" autoComplete="new-password" required disabled={!status?.canCreateAccount || status.completed || submitting} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+              </Field>
+            </>
+          ) : null}
           <Button type="submit" disabled={!status?.canCreateAccount || status.completed || submitting}>
-            {submitting ? 'Creating account…' : 'Create account and send verification'}
+            {submitting ? 'Creating account…' : status?.authFirst ? 'Finish account setup' : 'Create account and send verification'}
           </Button>
         </form>
       </Card>

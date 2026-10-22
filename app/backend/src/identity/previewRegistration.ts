@@ -5,7 +5,7 @@ import { normalizeDepartmentKey, previewRegistrationSchema } from '../contracts/
 import type { AccountDocument } from '../contracts/schema';
 import { AppError } from '../errors';
 import { adminAuth, db } from '../firebase';
-import { isUnpaidPreviewEnabled } from './previewPolicy';
+import { isUnpaidAccessEnabled } from './paymentPolicy';
 
 export interface PreviewRegistrationResult {
   uid: string;
@@ -29,8 +29,8 @@ function samePreviewProfile(existing: AccountDocument, input: ReturnType<typeof 
 }
 
 export async function createUnpaidPreviewAccount(user: DecodedIdToken, rawInput: unknown): Promise<PreviewRegistrationResult> {
-  if (!isUnpaidPreviewEnabled()) {
-    throw new AppError('preview_registration_unavailable', 'Free account creation is available only in the unpaid preview.', 503);
+  if (!(await isUnpaidAccessEnabled())) {
+    throw new AppError('preview_registration_unavailable', 'Free account creation is unavailable while SOAR requires payment.', 503);
   }
   if (user.soarAdmin === true) {
     throw new AppError('public_registration_forbidden', 'This account cannot use public registration.', 403);

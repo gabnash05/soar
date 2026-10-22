@@ -46,13 +46,23 @@ describe('access policy', () => {
     await expect(getAccessState('unmarked-user')).resolves.toEqual({ status: 'missing' });
   });
 
-  it('does not grant preview access when the preview switch is off', async () => {
+  it('does not grant unpaid-preview access when the persisted global policy requires payment', async () => {
     process.env.SOAR_DISABLE_PAYMENTS = 'false';
     mocks.records.set('accounts/preview-user', { uid: 'preview-user', accessProvenance: 'unpaid-preview' });
+    mocks.records.set('systemSettings/paymentPolicy', { paymentsRequired: true });
 
     await expect(getAccessState('preview-user')).resolves.toEqual({ status: 'missing' });
-    expect(mocks.get).toHaveBeenCalledTimes(1);
     expect(mocks.get).toHaveBeenCalledWith('entitlements/preview-user');
+    expect(mocks.get).toHaveBeenCalledWith('accounts/preview-user');
+    expect(mocks.get).toHaveBeenCalledWith('systemSettings/paymentPolicy');
+  });
+
+  it('honors an explicit Admin choice for unpaid-preview access independently of the deployment default', async () => {
+    process.env.SOAR_DISABLE_PAYMENTS = 'false';
+    mocks.records.set('accounts/preview-user', { uid: 'preview-user', accessProvenance: 'unpaid-preview' });
+    mocks.records.set('systemSettings/paymentPolicy', { paymentsRequired: false });
+
+    await expect(getAccessState('preview-user')).resolves.toMatchObject({ status: 'active', provenance: 'unpaid-preview' });
   });
 
   it('keeps a verified paid entitlement authoritative over preview provenance', async () => {

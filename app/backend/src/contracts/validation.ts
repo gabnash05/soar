@@ -76,7 +76,8 @@ export const previewRegistrationSchema = z.object({
 
 export const paidRegistrationCompletionSchema = z.object({
   email: emailSchema,
-  password: passwordSchema,
+  uid: uidSchema.optional(),
+  password: passwordSchema.optional(),
   displayName: displayNameSchema,
   role: z.enum(ACCOUNT_ROLES),
   studentId: studentIdSchema.optional(),
@@ -96,6 +97,10 @@ export const paidRegistrationCompletionSchema = z.object({
     intentId: trimmedString.min(2).max(256)
   })
 }).superRefine((value, ctx) => {
+  if (!value.uid && !value.password) {
+    ctx.addIssue({ code: 'custom', path: ['password'], message: 'password is required when no authenticated uid is supplied.' });
+  }
+
   if (value.role === 'student' && !value.studentId) {
     ctx.addIssue({ code: 'custom', path: ['studentId'], message: 'studentId is required for student accounts.' });
   }

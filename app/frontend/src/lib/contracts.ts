@@ -18,6 +18,14 @@ export interface OrganizationGrant {
 
 export type AccessProvenance = 'provider-confirmed-payment' | 'unpaid-preview';
 
+export interface PaymentPolicy {
+  paymentsRequired: boolean;
+  checkout: {
+    status: 'disabled' | 'not_configured' | 'configured';
+    mode: 'test' | 'live' | null;
+  };
+}
+
 export interface AccessEntitlement {
   status: AccessStatus;
   provenance?: AccessProvenance;
@@ -76,6 +84,7 @@ export interface RegistrationPaymentIntent {
   expiresAt: string;
   providerLabel: string;
   fixture?: boolean;
+  resumed?: boolean;
 }
 
 export type RegistrationProfile = Pick<RegistrationPaymentInput, 'role' | 'email' | 'displayName' | 'studentId' | 'department' | 'companyName'>;
@@ -88,6 +97,8 @@ export interface CheckoutStatus {
   message: string;
   canCreateAccount: boolean;
   completed?: boolean;
+  authFirst?: boolean;
+  checkoutUrl?: string | null;
   registrationProfile?: RegistrationProfile | null;
   fixture?: boolean;
 }
@@ -97,10 +108,17 @@ export interface RegistrationRecoveryResult {
   delivery: 'sent' | 'not_configured';
 }
 
+export interface RegistrationResume {
+  intentId: string;
+  status: AccessStatus;
+  canCreateAccount: boolean;
+  completed: boolean;
+}
+
 export interface RegisterAccountInput {
   intentId: string;
   email: string;
-  password: string;
+  password?: string;
   displayName: string;
   role: RegistrationRoleIntent;
   studentId?: string;

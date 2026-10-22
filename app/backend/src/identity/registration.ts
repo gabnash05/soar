@@ -62,6 +62,18 @@ async function claimProviderEvent(input: PaidRegistrationCompletionInput): Promi
 }
 
 async function getOrCreateAuthUser(input: PaidRegistrationCompletionInput): Promise<UserRecord> {
+  if (input.uid) {
+    const user = await adminAuth.getUser(input.uid);
+    if (!user.email || user.email.toLowerCase() !== input.email.toLowerCase()) {
+      throw new AppError('account_conflict', 'The authenticated account email does not match this paid registration.', 409, 'contact_support');
+    }
+    return user;
+  }
+
+  if (!input.password) {
+    throw new AppError('weak_password', 'Password is required for this paid registration.', 400);
+  }
+
   try {
     return await adminAuth.getUserByEmail(input.email);
   } catch (error) {

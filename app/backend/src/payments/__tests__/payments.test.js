@@ -107,6 +107,58 @@ test('registration stays locked until a valid signed PayMongo paid webhook confi
   assert.equal(JSON.stringify(snapshot).includes('StrongPass123'), false, 'password must never be persisted');
 });
 
+test('authenticated registration resumes by uid and only creates profile and entitlement after a signed payment', async () => {
+  const harness = createHarness();
+  const uid = 'firebase-auth-uid';
+  const email = 'same-uid@example.edu';
+  const authUser = { uid, email, emailVerified: false };
+  harness.identity.usersByUid.set(uid, authUser);
+  harness.identity.usersByEmail.set(email, authUser);
+  const profile = {
+    role: 'student',
+    fullName: 'Ada Lovelace',
+    email,
+    studentId: '2026-0001',
+    department: 'Computer Engineering Department',
+  };
+  const registration = await harness.service.createRegistrationCheckout(profile, { auth: { uid, email }, ip: '203.0.113.10' });
+  assert.equal(registration.status, REGISTRATION_STATUSES.CHECKOUT_CREATED);
+  assert.equal(registration.private, undefined, 'Auth-first checkout must not require a pre-auth cookie secret');
+
+  let snapshot = harness.repository.snapshot();
+  assert.equal(Object.values(snapshot.registrationIntents)[0].targetUid, uid);
+  assert.equal(Object.values(snapshot.registrationIntents)[0].authFirst, true);
+  assert.equal(Object.values(snapshot.accounts).length, 0);
+  assert.equal(Object.values(snapshot.entitlements).length, 0);
+
+  const resumedStart = await harness.service.createRegistrationCheckout(profile, { auth: { uid, email }, ip: '203.0.113.10' });
+  assert.equal(resumedStart.intentId, registration.intentId);
+  assert.equal(resumedStart.resumed, true);
+  assert.equal(harness.provider.sessions.length, 1, 'retry reuses the existing open session');
+  await assertRejectsCode(harness.service.getAuthenticatedRegistrationStatus({ intentId: registration.intentId }, { auth: { uid: 'other-uid', email } }), 'unauthorized_registration');
+  await assertRejectsCode(harness.service.completePaidRegistration({ intentId: registration.intentId }, { auth: { uid: 'other-uid', email } }), 'unauthorized_registration');
+  await assertRejectsCode(harness.service.completePaidRegistration({ intentId: registration.intentId }, { auth: { uid, email } }), 'registration_not_paid');
+
+  const beforePaymentResume = await harness.service.getRegistrationResume({ auth: { uid, email } });
+  assert.equal(beforePaymentResume.intentId, registration.intentId);
+  assert.equal(beforePaymentResume.canComplete, false);
+  await deliverPaidWebhook(harness, registration);
+
+  const paidResume = await harness.service.getRegistrationResume({ auth: { uid, email } });
+  assert.equal(paidResume.canComplete, true);
+  const completion = await harness.service.completePaidRegistration({ intentId: registration.intentId }, { auth: { uid, email } });
+  assert.equal(completion.uid, uid);
+  assert.equal(completion.completed, true);
+  assert.equal(harness.identity.createCalls[0].uid, uid);
+  assert.equal(Object.hasOwn(harness.identity.createCalls[0], 'password'), false);
+
+  snapshot = harness.repository.snapshot();
+  assert.deepEqual(Object.keys(snapshot.accounts), [uid]);
+  assert.deepEqual(Object.keys(snapshot.entitlements), [uid]);
+  assert.equal(snapshot.accounts[uid].email, email);
+  assert.equal(snapshot.entitlements[uid].history.length, 1);
+});
+
 test('hosted registration return URLs target the configured app route, never a fixture or an unmounted path', async () => {
   const harness = createHarness({ appBaseUrl: 'https://soar-a711e.web.app' });
   const registration = await startRegistration(harness);
@@ -208,6 +260,66 @@ test('live-mode signatures cannot be accepted by the test-mode webhook configura
   assert.equal(Object.values(snapshot.payments)[0].status, PAYMENT_STATUSES.PENDING);
   assert.equal(Object.values(snapshot.registrationIntents)[0].status, REGISTRATION_STATUSES.CHECKOUT_CREATED);
   assert.equal(Object.keys(snapshot.entitlements).length, 0);
+});
+
+test('new hosted checkout sessions request QR Ph only', async () => {
+  let requestUrl;
+  let requestInit;
+  const provider = new PayMongoCheckoutProvider({
+    secretKey: 'sk_test_unit',
+    fetchImpl: async (url, init) => {
+      requestUrl = url;
+      requestInit = init;
+      return {
+        ok: true,
+        status: 201,
+        text: async () => JSON.stringify({ data: { id: 'cs_qrph_unit', attributes: { checkout_url: 'https://checkout.paymongo.test/cs_qrph_unit', livemode: false } } }),
+      };
+    },
+  });
+
+  const session = await provider.createCheckoutSession({
+    paymentId: 'pay_unit',
+    referenceNumber: 'SOAR-pay_unit',
+    billingName: 'Ada Lovelace',
+    billingEmail: 'ada@example.edu',
+    successUrl: 'https://soar.example/access/checkout',
+    cancelUrl: 'https://soar.example/access/checkout?checkout=cancelled',
+  });
+
+  assert.equal(requestUrl, 'https://api.paymongo.com/v2/checkout_sessions');
+  assert.deepEqual(JSON.parse(requestInit.body).data.attributes.payment_method_types, ['qrph']);
+  assert.equal(requestInit.headers['Idempotency-Key'], 'pay_unit');
+  assert.equal(session.providerCheckoutSessionId, 'cs_qrph_unit');
+});
+
+test('signed paid validation requires QR Ph for new sessions and preserves legacy GCash records', async () => {
+  const qrphHarness = createHarness();
+  const qrphRegistration = await startRegistration(qrphHarness);
+  const qrphResult = await deliverPaidWebhook(qrphHarness, qrphRegistration, { sourceType: 'qrph' });
+  assert.equal(qrphResult.processed, true);
+  assert.equal(Object.values(qrphHarness.repository.snapshot().payments)[0].paymentMethod, 'qrph');
+  assert.equal(Object.values(qrphHarness.repository.snapshot().payments)[0].status, PAYMENT_STATUSES.PAID);
+
+  const legacyHarness = createHarness();
+  const legacyRegistration = await startRegistration(legacyHarness);
+  const legacyPayment = [...legacyHarness.repository.store.payments.values()][0];
+  delete legacyPayment.paymentMethod; // Records created before the method switch are GCash sessions.
+  const legacyResult = await deliverPaidWebhook(legacyHarness, legacyRegistration, { sourceType: 'gcash' });
+  assert.equal(legacyResult.processed, true);
+  assert.equal(Object.values(legacyHarness.repository.snapshot().payments)[0].status, PAYMENT_STATUSES.PAID);
+
+  for (const [sourceType, expectedCode] of [['gcash', 'payment_method_mismatch'], ['card', 'payment_method_mismatch'], [null, 'payment_method_missing']]) {
+    const harness = createHarness();
+    const registration = await startRegistration(harness);
+    const rejected = await deliverPaidWebhook(harness, registration, { sourceType });
+    assert.equal(rejected.rejected, true);
+    assert.equal(rejected.code, expectedCode);
+    const snapshot = harness.repository.snapshot();
+    assert.equal(Object.values(snapshot.payments)[0].status, PAYMENT_STATUSES.INVALID);
+    assert.equal(Object.keys(snapshot.accounts).length, 0);
+    assert.equal(Object.keys(snapshot.entitlements).length, 0);
+  }
 });
 
 test('missing PayMongo API key never falls back to a fake checkout or makes a provider request', async () => {
@@ -475,7 +587,7 @@ test('renewal requires same authenticated uid and malicious metadata cannot bind
 test('manual renewal extends from current future expiry and six-calendar-month arithmetic is explicit', async () => {
   const currentExpiry = new Date('2027-01-31T10:30:00.000Z');
   const seed = {
-    accounts: { uid_1: { uid: 'uid_1', email: 'one@example.edu', displayName: 'One', role: 'student' } },
+    accounts: { uid_1: { uid: 'uid_1', email: 'one@example.edu', displayName: 'One', role: 'student', accessProvenance: 'unpaid-preview' } },
     entitlements: { uid_1: { uid: 'uid_1', status: 'active', accessExpiresAt: currentExpiry, createdAt: new Date('2026-01-31T10:30:00.000Z') } },
   };
   const harness = createHarness({ seed });
@@ -486,8 +598,10 @@ test('manual renewal extends from current future expiry and six-calendar-month a
   const signed = signPayMongoPayload(event, { secret: WEBHOOK_SECRET, timestamp: PAID_AT_SECONDS });
   await harness.service.handlePayMongoWebhook(signed);
 
-  const expiry = Object.values(harness.repository.snapshot().entitlements)[0].accessExpiresAt;
+  const snapshot = harness.repository.snapshot();
+  const expiry = Object.values(snapshot.entitlements)[0].accessExpiresAt;
   assert.equal(expiry.toISOString(), '2027-07-31T10:30:00.000Z');
+  assert.equal(snapshot.accounts.uid_1.accessProvenance, 'provider-confirmed-payment');
   assert.equal(addCalendarMonthsUtc(new Date('2023-08-31T00:00:00.000Z')).toISOString(), '2024-02-29T00:00:00.000Z');
   assert.equal(addCalendarMonthsUtc(new Date('2024-08-31T00:00:00.000Z')).toISOString(), '2025-02-28T00:00:00.000Z');
 });

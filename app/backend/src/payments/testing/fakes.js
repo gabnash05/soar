@@ -43,7 +43,7 @@ class FakeIdentityFoundation {
   }
 
   async createPaidAccountFromConfirmedRegistration(input) {
-    this.createCalls.push({ ...input, password: '[redacted]' });
+    this.createCalls.push({ ...input, ...(input.password ? { password: '[redacted]' } : {}) });
     if (this.failCreate) {
       const error = new Error('identity helper failed');
       error.code = 'identity_helper_failed';
@@ -55,16 +55,27 @@ class FakeIdentityFoundation {
 
     const email = String(input.email || '').toLowerCase();
     const existing = this.usersByEmail.get(email);
-    if (existing) {
-      const error = new Error('email already exists');
-      error.code = 'email_already_exists';
-      throw error;
+    let authUser;
+    if (input.uid) {
+      authUser = this.usersByUid.get(input.uid);
+      if (!authUser || String(authUser.email || '').toLowerCase() !== email || (existing && existing.uid !== input.uid)) {
+        const error = new Error('authenticated user does not match registration');
+        error.code = 'account_conflict';
+        throw error;
+      }
+    } else {
+      if (existing) {
+        const error = new Error('email already exists');
+        error.code = 'email_already_exists';
+        throw error;
+      }
+      const uid = `uid_${this.usersByUid.size + 1}`;
+      authUser = { uid, email, displayName: input.displayName, emailVerified: false };
+      this.usersByUid.set(uid, authUser);
+      this.usersByEmail.set(email, authUser);
     }
 
-    const uid = `uid_${this.usersByUid.size + 1}`;
-    const authUser = { uid, email, displayName: input.displayName, emailVerified: false };
-    this.usersByUid.set(uid, authUser);
-    this.usersByEmail.set(email, authUser);
+    const uid = authUser.uid;
     this.completedByProviderEvent.set(providerEventId, uid);
 
     await this.repository.runTransaction(async (tx) => {

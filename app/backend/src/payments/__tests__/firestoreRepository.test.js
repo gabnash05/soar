@@ -84,6 +84,7 @@ test('Firestore payment repository persists and resolves registration, payment, 
   const intent = {
     id: 'reg_1',
     emailHash: 'hashed-email',
+    targetUid: 'firebase-uid-1',
     status: 'paid',
     paymentIds: ['pay_1'],
   };
@@ -104,11 +105,13 @@ test('Firestore payment repository persists and resolves registration, payment, 
     intent: await transaction.getRegistrationIntent('reg_1'),
     payment: await transaction.getPaymentByCheckoutSession('cs_1'),
     paidIncomplete: await transaction.findPaidIncompleteRegistrationByEmailHash('hashed-email', 'cs_1'),
+    byTargetUid: await transaction.findRegistrationIntentsByTargetUid('firebase-uid-1'),
   }));
 
   assert.equal(stored.intent.id, 'reg_1');
   assert.equal(stored.payment.id, 'pay_1');
   assert.equal(stored.paidIncomplete.id, 'reg_1');
+  assert.deepEqual(stored.byTargetUid.map((registration) => registration.id), ['reg_1']);
   assert.equal(db.documents.has(`${collections.REGISTRATION_INTENT_COLLECTION}/reg_1`), true);
   assert.equal(db.documents.has(`${collections.CHECKOUT_SESSION_INDEX_COLLECTION}/cs_1`), true);
 });

@@ -1,3 +1,4 @@
+import type { PaymentPolicy } from './contracts';
 import { apiFetch, authHeaders } from './apiClient';
 
 export interface AdminOrganizationOption {
@@ -21,6 +22,20 @@ export interface AdminStudentOption {
 export interface AdminPage<T> {
   items: T[];
   nextPageToken?: string;
+}
+
+export type AdminPaymentPolicy = PaymentPolicy & { updatedByUid?: string };
+
+export async function getAdminPaymentPolicy(): Promise<AdminPaymentPolicy> {
+  return apiFetch('/admin/payment-policy', { headers: await authHeaders() });
+}
+
+export async function setAdminPaymentPolicy(paymentsRequired: boolean): Promise<AdminPaymentPolicy> {
+  return apiFetch('/admin/payment-policy', {
+    method: 'PUT',
+    headers: await authHeaders(),
+    body: JSON.stringify({ paymentsRequired }),
+  });
 }
 
 export interface CreateAdminOrganizationInput {

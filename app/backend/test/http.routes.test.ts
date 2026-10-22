@@ -6,6 +6,10 @@ const mocks = vi.hoisted(() => ({
   requireBearerToken: vi.fn(),
   getUserSession: vi.fn(),
   createUnpaidPreviewAccount: vi.fn(),
+  getPaymentPolicyStatus: vi.fn(),
+  getAdminPaymentPolicyStatus: vi.fn(),
+  setPaymentPolicy: vi.fn(),
+  requirePaymentsForCheckout: vi.fn(),
   updateDisplayName: vi.fn(),
   requestVerifiedEmailChange: vi.fn(),
   approveOfficerGrant: vi.fn(),
@@ -67,6 +71,12 @@ vi.mock('../src/http/auth', () => ({
 
 vi.mock('../src/identity/session', () => ({ getUserSession: mocks.getUserSession }));
 vi.mock('../src/identity/previewRegistration', () => ({ createUnpaidPreviewAccount: mocks.createUnpaidPreviewAccount }));
+vi.mock('../src/identity/paymentPolicy', () => ({
+  getPaymentPolicyStatus: mocks.getPaymentPolicyStatus,
+  getAdminPaymentPolicyStatus: mocks.getAdminPaymentPolicyStatus,
+  setPaymentPolicy: mocks.setPaymentPolicy,
+  requirePaymentsForCheckout: mocks.requirePaymentsForCheckout,
+}));
 vi.mock('../src/identity/accountSettings', () => ({
   updateDisplayName: mocks.updateDisplayName,
   requestVerifiedEmailChange: mocks.requestVerifiedEmailChange,
@@ -131,9 +141,17 @@ describe('SOAR HTTP route contracts', () => {
     vi.clearAllMocks();
     mocks.requireBearerToken.mockResolvedValue({ uid: 'user1', email_verified: true });
     mocks.createUnpaidPreviewAccount.mockResolvedValue({ uid: 'user1', created: true, access: { status: 'active', provenance: 'unpaid-preview' } });
+    mocks.getPaymentPolicyStatus.mockResolvedValue({ paymentsRequired: true, checkout: { status: 'configured', mode: 'test' } });
+    mocks.getAdminPaymentPolicyStatus.mockResolvedValue({ paymentsRequired: true, checkout: { status: 'configured', mode: 'test' } });
+    mocks.setPaymentPolicy.mockImplementation(async (input: unknown, uid: string) => ({ ...(input as object), checkout: { status: 'configured', mode: 'test' }, updatedByUid: uid }));
+    mocks.requirePaymentsForCheckout.mockResolvedValue(undefined);
     mocks.paymentHandlers.mockReturnValue({
       paymongoWebhook: vi.fn(async () => ({ status: 200, body: { received: true } })),
       startRegistrationPayment: vi.fn(async () => ({ status: 200, body: { intentId: 'intent1' } })),
+      startAuthenticatedRegistrationPayment: vi.fn(async () => ({ status: 201, body: { intentId: 'intent1', status: 'pending' } })),
+      getAuthenticatedCheckoutStatus: vi.fn(async () => ({ status: 200, body: { intentId: 'intent1', status: 'pending', authFirst: true } })),
+      resumeAuthenticatedRegistration: vi.fn(async () => ({ status: 200, body: { registration: { intentId: 'intent1', status: 'pending' } } })),
+      completeAuthenticatedRegistration: vi.fn(async () => ({ status: 200, body: { uid: 'user1', completed: true } })),
       getCheckoutStatus: vi.fn(async () => ({ status: 200, body: { intentId: 'intent1', status: 'pending' } })),
       registerAccount: vi.fn(async () => ({ status: 201, body: { uid: 'user1' } })),
       recoverPaidRegistration: vi.fn(async () => ({ status: 200, body: { recovered: true } })),
@@ -157,6 +175,64 @@ describe('SOAR HTTP route contracts', () => {
         await expect(response.json()).resolves.toMatchObject({ ok: true, service: 'soar-backend' });
       }
     });
+  });
+
+  it('publishes only the non-secret payment policy and protects Admin policy writes', async () => {
+    const policy = { paymentsRequired: false, checkout: { status: 'disabled', mode: null } };
+    mocks.getPaymentPolicyStatus.mockResolvedValue(policy);
+    await withApiServer(async (baseUrl) => {
+      const publicPolicy = await fetch(`${baseUrl}/api/payment-policy`);
+      expect(publicPolicy.status).toBe(200);
+      await expect(publicPolicy.json()).resolves.toEqual(policy);
+
+      const forbidden = await fetch(`${baseUrl}/api/admin/payment-policy`, {
+        method: 'PUT',
+        headers: { authorization: 'Bearer ordinary-user', 'content-type': 'application/json' },
+        body: JSON.stringify({ paymentsRequired: false }),
+      });
+      expect(forbidden.status).toBe(403);
+    });
+    expect(mocks.setPaymentPolicy).not.toHaveBeenCalled();
+
+    const admin = { uid: 'trusted-admin', email_verified: true, soarAdmin: true };
+    mocks.requireBearerToken.mockResolvedValue(admin);
+    mocks.getAdminPaymentPolicyStatus.mockResolvedValue({ ...policy, updatedByUid: 'trusted-admin' });
+    mocks.setPaymentPolicy.mockResolvedValue({ ...policy, paymentsRequired: true, updatedByUid: admin.uid });
+    await withApiServer(async (baseUrl) => {
+      const read = await fetch(`${baseUrl}/admin/payment-policy`, { headers: { authorization: 'Bearer admin-token' } });
+      expect(read.status).toBe(200);
+      await expect(read.json()).resolves.toMatchObject({ paymentsRequired: false, updatedByUid: 'trusted-admin' });
+
+      const written = await fetch(`${baseUrl}/api/admin/payment-policy`, {
+        method: 'PUT',
+        headers: { authorization: 'Bearer admin-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ paymentsRequired: true }),
+      });
+      expect(written.status).toBe(200);
+      await expect(written.json()).resolves.toMatchObject({ paymentsRequired: true, updatedByUid: 'trusted-admin' });
+    });
+    expect(mocks.setPaymentPolicy).toHaveBeenCalledWith({ paymentsRequired: true }, admin.uid);
+  });
+
+  it('does not create checkout when the global server policy rejects it', async () => {
+    const previous = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'false';
+    mocks.requirePaymentsForCheckout.mockRejectedValueOnce(new AppError('payments_not_required', 'Payment is not required.', 409));
+    try {
+      await withApiServer(async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/payments/registration/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(response.status).toBe(409);
+        await expect(response.json()).resolves.toMatchObject({ code: 'payments_not_required' });
+      });
+      expect(mocks.paymentHandlers).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previous;
+    }
   });
 
   it('allows credentialed browser requests only from the configured app origin', async () => {
@@ -229,6 +305,46 @@ describe('SOAR HTTP route contracts', () => {
         await expect(webhook.json()).resolves.toMatchObject({ code: 'payments_unavailable' });
       });
       expect(mocks.paymentHandlers).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previous;
+    }
+  });
+
+  it('protects authenticated registration start, resume, status, and completion with the same bearer UID', async () => {
+    const previous = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'false';
+    const user = { uid: 'same-uid', email: 'ada@example.edu', email_verified: false };
+    mocks.requireBearerToken.mockResolvedValue(user);
+    mocks.attachAuthToPaymentRequest.mockImplementation((req: any, tokenUser: typeof user) => Object.assign(req, { auth: { uid: tokenUser.uid, email: tokenUser.email } }));
+    try {
+      await withApiServer(async (baseUrl) => {
+        const headers = { authorization: 'Bearer firebase-id-token', 'content-type': 'application/json' };
+        const started = await fetch(`${baseUrl}/api/payments/registration/auth-start`, {
+          method: 'POST', headers,
+          body: JSON.stringify({ role: 'student', email: user.email, displayName: 'Ada Lovelace', studentId: '2026-0001', department: 'Computer Engineering Department' }),
+        });
+        expect(started.status).toBe(201);
+
+        const status = await fetch(`${baseUrl}/payments/registration/auth-status?intentId=intent1`, { headers });
+        expect(status.status).toBe(200);
+        await expect(status.json()).resolves.toMatchObject({ authFirst: true });
+
+        const resumed = await fetch(`${baseUrl}/api/payments/registration/resume`, { headers });
+        expect(resumed.status).toBe(200);
+
+        const completed = await fetch(`${baseUrl}/payments/registration/auth-complete`, {
+          method: 'POST', headers, body: JSON.stringify({ intentId: 'intent1' }),
+        });
+        expect(completed.status).toBe(200);
+
+        const handlers = mocks.paymentHandlers.mock.results[0].value;
+        expect(handlers.startAuthenticatedRegistrationPayment).toHaveBeenCalledWith(expect.objectContaining({ auth: { uid: user.uid, email: user.email } }));
+        expect(handlers.getAuthenticatedCheckoutStatus).toHaveBeenCalledWith(expect.objectContaining({ auth: { uid: user.uid, email: user.email } }));
+        expect(handlers.resumeAuthenticatedRegistration).toHaveBeenCalledWith(expect.objectContaining({ auth: { uid: user.uid, email: user.email } }));
+        expect(handlers.completeAuthenticatedRegistration).toHaveBeenCalledWith(expect.objectContaining({ auth: { uid: user.uid, email: user.email } }));
+      });
+      expect(mocks.requireBearerToken).toHaveBeenCalledTimes(4);
     } finally {
       if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
       else process.env.SOAR_DISABLE_PAYMENTS = previous;

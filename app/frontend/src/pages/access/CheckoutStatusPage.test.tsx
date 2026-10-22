@@ -82,6 +82,32 @@ describe('CheckoutStatusPage', () => {
     }));
   });
 
+  it('finishes an Auth-first registration only after the authenticated status confirms payment', async () => {
+    const gateway = createMockGateway(null);
+    vi.mocked(gateway.getCheckoutStatus).mockResolvedValue(status({
+      authFirst: true,
+      canCreateAccount: true,
+      registrationProfile: paidProfile,
+      message: 'Payment confirmed. You can finish your SOAR account.',
+    }));
+    const user = userEvent.setup();
+    renderCheckout(gateway);
+
+    expect(await screen.findByText('Mara Santos')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Finish account setup' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Finish account setup' }));
+
+    expect(await screen.findByText('Verification step')).toBeInTheDocument();
+    expect(gateway.registerAccount).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: 'test-intent',
+      email: paidProfile.email,
+      displayName: paidProfile.displayName,
+      department: paidProfile.department,
+    }));
+    expect(vi.mocked(gateway.registerAccount).mock.calls[0][0]).not.toHaveProperty('password');
+  });
+
   it('renders a failed checkout as recoverable rather than unlocking account creation', async () => {
     const gateway = createMockGateway();
     vi.mocked(gateway.getCheckoutStatus).mockResolvedValue(status({

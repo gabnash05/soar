@@ -24,6 +24,11 @@ class MemoryPaymentTransaction {
   }
 
   async getRegistrationIntent(id) { return clone(this.store.registrationIntents.get(id)); }
+  async findRegistrationIntentsByTargetUid(uid) {
+    return [...this.store.registrationIntents.values()]
+      .filter((intent) => intent.targetUid === uid)
+      .map(clone);
+  }
   async saveRegistrationIntent(intent) { this.store.registrationIntents.set(intent.id, clone(intent)); }
   async updateRegistrationIntent(id, patch) {
     const existing = this.store.registrationIntents.get(id);

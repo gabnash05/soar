@@ -14,11 +14,13 @@ import {
   type EmailChangeInput,
   type NameChangeInput,
   type NameChangeResult,
+  type PaymentPolicy,
   type PreviewRegistrationInput,
   type RegisterAccountInput,
   type RegistrationPaymentInput,
   type RegistrationPaymentIntent,
   type RegistrationRecoveryResult,
+  type RegistrationResume,
   type RenewalCheckoutStatus,
   type RenewalRequest,
   type RenewalRequestInput,
@@ -52,11 +54,15 @@ export async function reauthenticateCurrentUser(password: string, expectedUid: s
 export interface BackendGateway {
   readonly mode: 'production' | 'fixture';
   readonly label: string;
+  getPaymentPolicy(): Promise<PaymentPolicy>;
   reloadSession(): Promise<UserSession | null>;
   signIn(input: SignInInput): Promise<UserSession>;
   signOut(): Promise<void>;
   sendPasswordRecovery(email: string): Promise<void>;
   startRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
+  createRegistrationIdentity(input: { email: string; password: string }): Promise<void>;
+  startAuthenticatedRegistrationPayment(input: RegistrationPaymentInput): Promise<RegistrationPaymentIntent>;
+  resumePendingRegistration(): Promise<RegistrationResume | null>;
   registerPreviewAccount(input: PreviewRegistrationInput): Promise<UserSession>;
   getCheckoutStatus(intentId: string): Promise<CheckoutStatus>;
   requestPaidRegistrationRecovery(email: string): Promise<RegistrationRecoveryResult>;
@@ -109,9 +115,20 @@ const mapSession = (session: RawUserSession): UserSession => ({
   officerGrants: session.officerGrants ?? [],
 });
 
+const getCurrentAuthUser = async () => {
+  if (!getFirebaseConfigStatus().configured) return null;
+  const auth = getFirebaseRuntime().auth;
+  if (typeof auth.authStateReady === 'function') await auth.authStateReady();
+  return auth.currentUser;
+};
+
 const createProductionGateway = (): BackendGateway => ({
   mode: 'production',
   label: 'Configured services',
+
+  async getPaymentPolicy() {
+    return apiFetch<PaymentPolicy>('/payment-policy');
+  },
 
   async reloadSession() {
     const firebaseStatus = getFirebaseConfigStatus();
@@ -154,6 +171,40 @@ const createProductionGateway = (): BackendGateway => ({
     });
   },
 
+  async createRegistrationIdentity(input) {
+    const email = input.email.trim();
+    let credential: Awaited<ReturnType<typeof createUserWithEmailAndPassword>>;
+    try {
+      credential = await createUserWithEmailAndPassword(getFirebaseRuntime().auth, email, input.password);
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+      if (code !== 'auth/email-already-in-use') throw error;
+      credential = await signInWithEmailAndPassword(getFirebaseRuntime().auth, email, input.password);
+    }
+
+    if (credential.user.email?.trim().toLowerCase() !== email.toLowerCase()) {
+      throw new UserFacingError('The signed-in email does not match this registration. Sign in with the registration email to continue.');
+    }
+    if (!credential.user.emailVerified) await sendEmailVerification(credential.user);
+  },
+
+  async startAuthenticatedRegistrationPayment(input) {
+    return apiFetch<RegistrationPaymentIntent>('/payments/registration/auth-start', {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify(input),
+    });
+  },
+
+  async resumePendingRegistration() {
+    const result = await apiFetch<{ registration: RegistrationResume | null }>('/payments/registration/resume', {
+      headers: await authHeaders(),
+    });
+    return result.registration;
+  },
+
   async registerPreviewAccount(input: PreviewRegistrationInput) {
     const { auth } = getFirebaseRuntime();
     let credential: Awaited<ReturnType<typeof createUserWithEmailAndPassword>>;
@@ -186,6 +237,16 @@ const createProductionGateway = (): BackendGateway => ({
   },
 
   async getCheckoutStatus(intentId) {
+    const user = await getCurrentAuthUser();
+    if (user?.uid && user.email) {
+      try {
+        return await apiFetch<CheckoutStatus>(`/payments/registration/auth-status?intentId=${encodeURIComponent(intentId)}`, {
+          headers: await authHeaders(),
+        });
+      } catch (error) {
+        if (!(error instanceof Error) || (error as Error & { code?: string }).code !== 'unauthorized_registration') throw error;
+      }
+    }
     return apiFetch<CheckoutStatus>(`/payments/registration/status?intentId=${encodeURIComponent(intentId)}`);
   },
 
@@ -209,12 +270,30 @@ const createProductionGateway = (): BackendGateway => ({
       throw new UserFacingError('Payment is not confirmed yet. Account creation remains locked.');
     }
 
+    if (checkout.authFirst) {
+      const user = await getCurrentAuthUser();
+      if (!user?.uid || user.email?.trim().toLowerCase() !== input.email.trim().toLowerCase()) {
+        throw new UserFacingError('Sign in with the same email used to start this registration before continuing.');
+      }
+      await apiFetch('/payments/registration/auth-complete', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({ intentId: input.intentId }),
+      });
+      await reload(user);
+      await user.getIdToken(true);
+      if (!user.emailVerified) await sendEmailVerification(user);
+      const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
+      return mapSession({ ...session, emailVerified: user.emailVerified });
+    }
+
     await apiFetch<{ uid: string; completed: boolean; accessExpiresAt?: string }>('/payments/registration/complete', {
       method: 'POST',
       body: JSON.stringify(input),
     });
 
     const { auth } = getFirebaseRuntime();
+    if (!input.password) throw new UserFacingError('Enter a password to finish creating your account.');
     const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
     await sendEmailVerification(credential.user);
     const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });

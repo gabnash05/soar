@@ -13,7 +13,7 @@ interface PaymentHandlerResult {
 }
 
 interface PaymentRequest extends Request {
-  auth?: { uid: string };
+  auth?: { uid: string; email?: string };
   rawBody?: Buffer;
 }
 
@@ -74,7 +74,7 @@ function getPaymentHandlers() {
 
 export function attachAuthToPaymentRequest(req: Request, user: DecodedIdToken): PaymentRequest {
   const paymentRequest = req as PaymentRequest;
-  paymentRequest.auth = { uid: user.uid };
+  paymentRequest.auth = { uid: user.uid, email: typeof user.email === 'string' ? user.email : undefined };
   return paymentRequest;
 }
 
