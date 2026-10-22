@@ -78,7 +78,7 @@ export interface PreviewRegistrationInput {
 
 export interface RegistrationPaymentIntent {
   intentId: string;
-  checkoutUrl: string;
+  checkoutUrl: string | null;
   status: Exclude<AccessStatus, 'active' | 'expired' | 'missing'>;
   amountPhp: 10;
   expiresAt: string;
@@ -118,7 +118,6 @@ export interface RegistrationResume {
 export interface RegisterAccountInput {
   intentId: string;
   email: string;
-  password?: string;
   displayName: string;
   role: RegistrationRoleIntent;
   studentId?: string;

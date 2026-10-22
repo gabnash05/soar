@@ -132,7 +132,7 @@ export const RegistrationIntentPage = () => {
       await createRegistrationIdentity({ email: input.email, password });
       const intent = await startAuthenticatedRegistrationPayment(input);
       writeRegistrationDraft({ ...input, intentId: intent.intentId });
-      if (intent.resumed) navigate(`/access/checkout?intentId=${encodeURIComponent(intent.intentId)}`, { replace: true });
+      if (intent.resumed || !intent.checkoutUrl) navigate(`/access/checkout?intentId=${encodeURIComponent(intent.intentId)}`, { replace: true });
       else navigateToHostedCheckout(intent.checkoutUrl);
     } catch {
       // AuthContext exposes the safe operation-scoped error; keep the entered registration details.

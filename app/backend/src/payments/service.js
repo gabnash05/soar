@@ -147,19 +147,23 @@ function appReturnUrl(appBaseUrl, path) {
 }
 
 function publicIntentStatus(intent, payment, now) {
+  const canComplete = Boolean(intent && [REGISTRATION_STATUSES.PAID, REGISTRATION_STATUSES.COMPLETING].includes(intent.status));
+  const completed = Boolean(intent && intent.status === REGISTRATION_STATUSES.COMPLETED);
   return {
     intentId: intent && intent.id,
     status: intent ? intent.status : 'missing',
     paymentStatus: payment ? payment.status : null,
-    canComplete: Boolean(intent && [REGISTRATION_STATUSES.PAID, REGISTRATION_STATUSES.COMPLETING].includes(intent.status)),
-    completed: Boolean(intent && intent.status === REGISTRATION_STATUSES.COMPLETED),
+    canComplete,
+    completed,
     registrationProfile: intent && intent.profile || null,
     amountMinor: ACCESS_PRICE_MINOR,
     currency: ACCESS_CURRENCY,
     checkoutExpiresAt: dateToIso(intent && intent.expiresAt),
     paidAt: dateToIso(intent && intent.paidAt),
     accessExpiresAt: dateToIso(intent && intent.accessExpiresAt),
-    checkoutUrl: intent && intent.checkoutUrl || null,
+    checkoutUrl: intent && intent.status === REGISTRATION_STATUSES.CHECKOUT_CREATED && !canComplete && !completed
+      ? intent.checkoutUrl || null
+      : null,
     locked: !(intent && (intent.status === REGISTRATION_STATUSES.PAID || intent.status === REGISTRATION_STATUSES.COMPLETED)),
     serverTime: dateToIso(now),
   };
@@ -207,44 +211,41 @@ class PaymentAccessService {
   async createRegistrationCheckout(input, context = {}) {
     const now = this.now();
     const profile = sanitizeRegistrationProfile(input || {});
+    const authUid = String(context.auth && context.auth.uid || '').trim();
+    if (!authUid || typeof (context.auth && context.auth.email) !== 'string') {
+      fail('unauthorized_registration', 'Registration checkout requires a signed-in Firebase account.');
+    }
+    const authEmail = validateEmail(context.auth.email);
+    if (authEmail !== profile.email) fail('unauthorized_registration', 'Registration email must match the authenticated account.');
+    const authUser = this.identity.getUser ? await this.identity.getUser(authUid) : null;
+    if (!authUser || authUser.uid !== authUid || normalizeEmail(authUser.email) !== profile.email) {
+      fail('unauthorized_registration', 'Registration requires the matching authenticated Firebase account.');
+    }
+
     await this.checkRateLimit(`registration-email:${emailHash(profile.email, this.secretPepper)}`, DEFAULT_RATE_LIMITS.checkoutPerEmailPerHour, 60 * 60 * 1000);
     await this.checkRateLimit(context.ip ? `registration-ip:${context.ip}` : null, DEFAULT_RATE_LIMITS.checkoutPerIpPerHour, 60 * 60 * 1000);
 
-    const authUid = context.auth && String(context.auth.uid || '').trim();
-    let resumedIntent;
-    if (authUid) {
-      const authEmail = validateEmail(context.auth.email);
-      if (authEmail !== profile.email) fail('unauthorized_registration', 'Registration email must match the authenticated account.');
-      const authUser = this.identity.getUser ? await this.identity.getUser(authUid) : null;
-      if (!authUser || authUser.uid !== authUid || normalizeEmail(authUser.email) !== profile.email) {
-        fail('unauthorized_registration', 'Registration requires the matching authenticated Firebase account.');
-      }
-      const account = await this.repository.runTransaction(async (tx) => tx.getAccount(authUid));
-      if (account) fail('email_already_registered', 'This email already has a SOAR account. Sign in and renew access instead.');
-      const intents = await this.repository.runTransaction(async (tx) => tx.findRegistrationIntentsByTargetUid(authUid));
-      resumedIntent = intents
-        .filter((intent) => intent.authFirst && intent.email === profile.email && (
-          [REGISTRATION_STATUSES.PAID, REGISTRATION_STATUSES.COMPLETING].includes(intent.status)
-          || (intent.status === REGISTRATION_STATUSES.CHECKOUT_CREATED && toDate(intent.expiresAt) > now)
-        ))
-        .sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt))[0];
-      if (resumedIntent) {
-        return {
-          intentId: resumedIntent.id,
-          checkoutUrl: resumedIntent.checkoutUrl,
-          checkoutExpiresAt: dateToIso(resumedIntent.expiresAt),
-          resumed: true,
-          status: resumedIntent.status,
-        };
-      }
-    } else {
-      const existingUser = this.identity.getUserByEmail ? await this.identity.getUserByEmail(profile.email) : null;
-      if (existingUser) fail('email_already_registered', 'This email already has a SOAR account. Sign in and renew access instead.');
+    const account = await this.repository.runTransaction(async (tx) => tx.getAccount(authUid));
+    if (account) fail('email_already_registered', 'This email already has a SOAR account. Sign in and renew access instead.');
+    const intents = await this.repository.runTransaction(async (tx) => tx.findRegistrationIntentsByTargetUid(authUid));
+    const resumedIntent = intents
+      .filter((intent) => intent.authFirst && intent.email === profile.email && (
+        [REGISTRATION_STATUSES.PAID, REGISTRATION_STATUSES.COMPLETING].includes(intent.status)
+        || (intent.status === REGISTRATION_STATUSES.CHECKOUT_CREATED && toDate(intent.expiresAt) > now)
+      ))
+      .sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt))[0];
+    if (resumedIntent) {
+      return {
+        intentId: resumedIntent.id,
+        checkoutUrl: resumedIntent.status === REGISTRATION_STATUSES.CHECKOUT_CREATED ? resumedIntent.checkoutUrl : null,
+        checkoutExpiresAt: dateToIso(resumedIntent.expiresAt),
+        resumed: true,
+        status: resumedIntent.status,
+      };
     }
 
     const intentId = `reg_${randomToken(18)}`;
-    const registrationSecret = authUid ? null : randomToken(32);
-    const targetUid = authUid || `uid_${randomToken(18)}`;
+    const targetUid = authUid;
     const paymentId = `pay_${randomToken(18)}`;
     const expiresAt = addMillis(now, this.registrationTtlMs);
     const hashedEmail = emailHash(profile.email, this.secretPepper);
@@ -257,10 +258,10 @@ class PaymentAccessService {
       status: REGISTRATION_STATUSES.CHECKOUT_CREATED,
       purpose: PAYMENT_PURPOSES.REGISTRATION,
       targetUid,
-      authFirst: Boolean(authUid),
+      authFirst: true,
       email: profile.email,
       emailHash: hashedEmail,
-      secretHash: registrationSecret ? hashSecret(registrationSecret, this.secretPepper) : null,
+      secretHash: null,
       profile,
       paymentIds: [paymentId],
       paidPaymentId: null,
@@ -351,7 +352,6 @@ class PaymentAccessService {
       currency: ACCESS_CURRENCY,
       checkoutExpiresAt: expiresAt.toISOString(),
       status: REGISTRATION_STATUSES.CHECKOUT_CREATED,
-      ...(registrationSecret ? { private: { registrationSecret } } : {}),
     };
   }
 
@@ -611,19 +611,14 @@ class PaymentAccessService {
 
   async completePaidRegistration(input, context = {}) {
     const now = this.now();
-    await this.checkRateLimit(context.ip ? `complete-ip:${context.ip}` : null, DEFAULT_RATE_LIMITS.completionPerIpPerHour, 60 * 60 * 1000);
+    const authUid = requireString(context.auth && context.auth.uid, 'unauthorized_registration', 'Registration completion requires a signed-in Firebase account.');
+    const authEmail = normalizeEmail(context.auth && context.auth.email);
+    if (!authEmail) fail('unauthorized_registration', 'Registration completion requires the authenticated account email.');
     const intentId = requireString(input && input.intentId, 'missing_intent_id', 'Registration intent id is required.');
-    const registrationSecret = String((input && input.registrationSecret) || '');
-    const password = String((input && input.password) || '');
+    await this.checkRateLimit(context.ip ? `complete-ip:${context.ip}` : null, DEFAULT_RATE_LIMITS.completionPerIpPerHour, 60 * 60 * 1000);
     const authorizeIntent = (intent) => {
-      if (intent.authFirst) {
-        if (!context.auth || context.auth.uid !== intent.targetUid || normalizeEmail(context.auth.email) !== intent.email) {
-          fail('unauthorized_registration', 'Registration completion requires the same authenticated account used to start checkout.');
-        }
-      } else {
-        if (!registrationSecret) fail('missing_registration_secret', 'Registration secret is required.');
-        if (!verifySecret({ secret: registrationSecret, expectedHash: intent.secretHash, pepper: this.secretPepper })) fail('invalid_registration_secret', 'Registration intent secret is invalid.');
-        if (password.length < 8) fail('weak_password', 'Password must be at least 8 characters.');
+      if (!intent.authFirst || intent.targetUid !== authUid || intent.email !== authEmail) {
+        fail('unauthorized_registration', 'Registration completion requires the same authenticated account used to start checkout.');
       }
     };
 
@@ -662,7 +657,7 @@ class PaymentAccessService {
         accessExpiresAt,
         helperInput: {
           email: intent.profile.email,
-          ...(intent.authFirst ? { uid: intent.targetUid } : { password }),
+          uid: intent.targetUid,
           displayName: intent.profile.fullName,
           role: intent.profile.role,
           studentId: intent.profile.studentId,
@@ -703,7 +698,7 @@ class PaymentAccessService {
 
     const createdUid = created && created.uid;
     if (!createdUid) fail('identity_helper_malformed', 'Identity helper did not return a uid.');
-    if (completionInput.intent.authFirst && createdUid !== completionInput.intent.targetUid) {
+    if (createdUid !== completionInput.intent.targetUid) {
       fail('identity_uid_mismatch', 'Paid registration identity did not match the authenticated Firebase account.');
     }
 
@@ -765,14 +760,15 @@ class PaymentAccessService {
     return this.getAuthenticatedRegistrationStatus({ intentId: intent.id }, context);
   }
 
-  async recordCheckoutCancelled(input) {
+  async recordCheckoutCancelled(input, context = {}) {
     const now = this.now();
     const intentId = requireString(input && input.intentId, 'missing_intent_id', 'Registration intent id is required.');
-    const registrationSecret = requireString(input && input.registrationSecret, 'missing_registration_secret', 'Registration secret is required.');
+    const authUid = requireString(context.auth && context.auth.uid, 'unauthorized_registration', 'Checkout cancellation requires the authenticated account.');
+    const authEmail = normalizeEmail(context.auth && context.auth.email);
     return this.repository.runTransaction(async (tx) => {
       const intent = await tx.getRegistrationIntent(intentId);
       if (!intent) fail('registration_intent_not_found', 'Registration intent was not found.');
-      if (!verifySecret({ secret: registrationSecret, expectedHash: intent.secretHash, pepper: this.secretPepper })) fail('invalid_registration_secret', 'Registration intent secret is invalid.');
+      if (!intent.authFirst || intent.targetUid !== authUid || intent.email !== authEmail) fail('unauthorized_registration', 'Checkout cancellation requires the account bound to this intent.');
       const payment = intent.latestPaymentId ? await tx.getPayment(intent.latestPaymentId) : null;
       if (payment && payment.status !== PAYMENT_STATUSES.PAID) await tx.updatePayment(payment.id, { status: PAYMENT_STATUSES.CANCELLED, cancelledAt: now, updatedAt: now });
       if (intent.status !== REGISTRATION_STATUSES.COMPLETED && intent.status !== REGISTRATION_STATUSES.PAID) await tx.updateRegistrationIntent(intent.id, { status: REGISTRATION_STATUSES.CANCELLED, cancelledAt: now, updatedAt: now });

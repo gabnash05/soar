@@ -144,38 +144,23 @@ describe('backend session normalization', () => {
     expect(mocks.updateProfile).not.toHaveBeenCalled();
   });
 
-  it('allows account completion only from the server confirmation flag even while registration status remains pending', async () => {
+  it('refuses legacy unbound registration completion and never falls back to anonymous endpoints', async () => {
     const input = {
       intentId: 'reg_123',
       email: 'ada@example.edu',
-      password: 'StrongPass123',
       displayName: 'Ada Lovelace',
       role: 'student' as const,
       studentId: '2026-0001',
       department: 'Computer Engineering Department',
     };
-    const session = {
-      uid: 'uid_123',
-      email: input.email,
-      displayName: input.displayName,
-      accountKind: 'student',
-      emailVerified: false,
-      access: { status: 'active', annualFeePhp: 10, renewalAvailable: false },
-      officerGrants: [],
-    };
-    mocks.apiFetch
-      .mockResolvedValueOnce({ intentId: input.intentId, status: 'pending', canCreateAccount: true })
-      .mockResolvedValueOnce({ uid: 'uid_123', completed: true })
-      .mockResolvedValueOnce(session);
+    mocks.apiFetch.mockResolvedValueOnce({ intentId: input.intentId, status: 'pending', canCreateAccount: true, authFirst: false });
 
-    await expect(createBackendGateway().registerAccount(input)).resolves.toMatchObject({ uid: 'uid_123' });
-    expect(mocks.apiFetch).toHaveBeenNthCalledWith(1, '/payments/registration/status?intentId=reg_123');
-    expect(mocks.apiFetch).toHaveBeenNthCalledWith(2, '/payments/registration/complete', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify(input),
-    }));
-    expect(mocks.signIn).toHaveBeenCalledWith(expect.anything(), input.email, input.password);
-    expect(mocks.sendEmailVerification).toHaveBeenCalled();
+    await expect(createBackendGateway().registerAccount(input)).rejects.toThrow(/not bound to a signed-in Firebase account/i);
+    expect(mocks.apiFetch).toHaveBeenCalledTimes(1);
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/payments/registration/auth-status?intentId=reg_123', { headers: { Authorization: 'Bearer trusted-token' } });
+    expect(mocks.apiFetch.mock.calls.some(([path]) => path === '/payments/registration/complete')).toBe(false);
+    expect(mocks.signIn).not.toHaveBeenCalled();
+    expect(mocks.sendEmailVerification).not.toHaveBeenCalled();
   });
 
   it('creates the Auth-first identity in Firebase before requesting a QR Ph checkout without sending the password to the API', async () => {
@@ -232,7 +217,7 @@ describe('backend session normalization', () => {
 
     await expect(createBackendGateway().registerAccount(input)).resolves.toMatchObject({ uid: user.uid });
 
-    expect(authStateReady).toHaveBeenCalledTimes(2);
+    expect(authStateReady).toHaveBeenCalledTimes(1);
     expect(mocks.apiFetch).toHaveBeenNthCalledWith(1, '/payments/registration/auth-status?intentId=reg_auth_first', { headers: { Authorization: 'Bearer trusted-token' } });
     expect(mocks.apiFetch).toHaveBeenNthCalledWith(2, '/payments/registration/auth-complete', {
       method: 'POST', headers: { Authorization: 'Bearer trusted-token' }, body: JSON.stringify({ intentId: input.intentId }),

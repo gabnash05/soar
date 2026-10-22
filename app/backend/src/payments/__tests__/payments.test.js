@@ -9,7 +9,7 @@ const { MemoryPaymentRepository } = require('../repository');
 const { FakePayMongoProvider, FakeIdentityFoundation } = require('../testing/fakes');
 const { makeCheckoutPaidEvent, signPayMongoPayload } = require('../testing/paymongo-fixtures');
 const { PAYMENT_STATUSES, REGISTRATION_STATUSES, ACCESS_PRICE_MINOR, ACCESS_CURRENCY } = require('../constants');
-const { createPaymentsHttpHandlers } = require('../http');
+const { createPaymentsHttpHandlers, readRegistrationBinding } = require('../http');
 const { addCalendarMonthsUtc } = require('../time');
 const { loadPaymentConfigFromEnv } = require('../config');
 
@@ -37,15 +37,33 @@ function createHarness(options = {}) {
 }
 
 async function startRegistration(harness, input = {}) {
-  return harness.service.createRegistrationCheckout({
+  const profile = {
     role: 'student',
     fullName: 'Ada Lovelace',
     email: 'ada@example.edu',
     studentId: '2026-0001',
     department: 'Computer   Engineering   Department',
     ...input,
-  }, { ip: '203.0.113.10' });
+  };
+  const email = profile.email.toLowerCase();
+  const uid = `firebase-${email.replace(/[^a-z0-9]+/g, '-')}`;
+  const authUser = { uid, email, emailVerified: false };
+  const auth = { uid, email };
+  harness.identity.usersByUid.set(uid, authUser);
+  harness.identity.usersByEmail.set(email, authUser);
+  const result = await harness.service.createRegistrationCheckout(profile, { auth, ip: '203.0.113.10' });
+  return { ...result, auth };
 }
+
+const getRegistrationStatus = (harness, registration) => harness.service.getAuthenticatedRegistrationStatus(
+  { intentId: registration.intentId },
+  { auth: registration.auth },
+);
+
+const completeRegistration = (harness, registration) => harness.service.completePaidRegistration(
+  { intentId: registration.intentId },
+  { auth: registration.auth },
+);
 
 async function deliverPaidWebhook(harness, registration, overrides = {}) {
   const session = harness.provider.sessions[harness.provider.sessions.length - 1];
@@ -77,21 +95,46 @@ test('checkout creation fails closed when the deployment frontend origin is not 
   assert.equal(Object.keys(harness.repository.snapshot().payments).length, 0);
 });
 
+test('anonymous or email-mismatched registration checkout is rejected before provider or identity side effects', async () => {
+  const harness = createHarness();
+  const profile = {
+    role: 'student',
+    fullName: 'Ada Lovelace',
+    email: 'ada@example.edu',
+    studentId: '2026-0001',
+    department: 'Computer Engineering Department',
+  };
+
+  await assertRejectsCode(harness.service.createRegistrationCheckout(profile, { ip: '203.0.113.10' }), 'unauthorized_registration');
+  const uid = 'firebase-ada';
+  const authUser = { uid, email: profile.email, emailVerified: false };
+  harness.identity.usersByUid.set(uid, authUser);
+  harness.identity.usersByEmail.set(profile.email, authUser);
+  await assertRejectsCode(harness.service.createRegistrationCheckout(profile, { auth: { uid: 'different-firebase-uid', email: profile.email } }), 'unauthorized_registration');
+  await assertRejectsCode(harness.service.createRegistrationCheckout(profile, { auth: { uid, email: 'other@example.edu' } }), 'unauthorized_registration');
+
+  assert.equal(harness.provider.sessions.length, 0);
+  assert.equal(harness.identity.createCalls.length, 0);
+  assert.equal(Object.keys(harness.repository.snapshot().registrationIntents).length, 0);
+  assert.equal(Object.keys(harness.repository.snapshot().payments).length, 0);
+});
+
 test('registration stays locked until a valid signed PayMongo paid webhook confirms amount, currency, session and reference', async () => {
   const harness = createHarness();
   const registration = await startRegistration(harness);
 
-  let status = await harness.service.getRegistrationStatus({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret });
+  let status = await getRegistrationStatus(harness, registration);
   assert.equal(status.canComplete, false);
-  await assertRejectsCode(harness.service.completePaidRegistration({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret, password: 'StrongPass123' }), 'registration_not_paid');
+  await assertRejectsCode(completeRegistration(harness, registration), 'registration_not_paid');
 
   const result = await deliverPaidWebhook(harness, registration);
   assert.equal(result.processed, true);
 
-  status = await harness.service.getRegistrationStatus({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret });
+  status = await getRegistrationStatus(harness, registration);
   assert.equal(status.canComplete, true);
+  assert.equal(status.checkoutUrl, null);
 
-  const completion = await harness.service.completePaidRegistration({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret, password: 'StrongPass123' });
+  const completion = await completeRegistration(harness, registration);
   assert.equal(completion.completed, true);
 
   const snapshot = harness.repository.snapshot();
@@ -146,6 +189,8 @@ test('authenticated registration resumes by uid and only creates profile and ent
 
   const paidResume = await harness.service.getRegistrationResume({ auth: { uid, email } });
   assert.equal(paidResume.canComplete, true);
+  const paidStatus = await harness.service.getAuthenticatedRegistrationStatus({ intentId: registration.intentId }, { auth: { uid, email } });
+  assert.equal(paidStatus.checkoutUrl, null);
   const completion = await harness.service.completePaidRegistration({ intentId: registration.intentId }, { auth: { uid, email } });
   assert.equal(completion.uid, uid);
   assert.equal(completion.completed, true);
@@ -171,25 +216,28 @@ test('hosted registration return URLs target the configured app route, never a f
 
 test('registration department is student-only bounded profile data', async () => {
   const harness = createHarness();
+  const sponsorEmail = 'sponsor@example.edu';
+  const sponsorUid = 'firebase-sponsor';
+  const sponsorUser = { uid: sponsorUid, email: sponsorEmail, emailVerified: false };
+  harness.identity.usersByUid.set(sponsorUid, sponsorUser);
+  harness.identity.usersByEmail.set(sponsorEmail, sponsorUser);
   await assertRejectsCode(harness.service.createRegistrationCheckout({
     role: 'sponsor',
     fullName: 'Sponsor User',
-    email: 'sponsor@example.edu',
+    email: sponsorEmail,
     companyName: 'Sponsor Co',
     department: 'Architecture Department'
-  }), 'department_not_allowed');
-  await assertRejectsCode(harness.service.createRegistrationCheckout({
-    role: 'student',
-    fullName: 'Ada Lovelace',
+  }, { auth: { uid: sponsorUid, email: sponsorEmail } }), 'department_not_allowed');
+  await assertRejectsCode(startRegistration(harness, {
     email: 'ada2@example.edu',
     studentId: '2026-0002',
     department: '<script>alert(1)</script>'
   }), 'invalid_department');
-  await assertRejectsCode(harness.service.createRegistrationCheckout({
-    role: 'student',
+  await assertRejectsCode(startRegistration(harness, {
     fullName: 'No Department',
     email: 'missing-department@example.edu',
-    studentId: '2026-0003'
+    studentId: '2026-0003',
+    department: undefined
   }), 'missing_department');
 });
 
@@ -406,24 +454,26 @@ test('out-of-order failed events do not unlock, while the later signed paid even
 
   const ignored = await harness.service.handlePayMongoWebhook(failedSigned);
   assert.equal(ignored.reason, 'unhandled_event_type');
-  let status = await harness.service.getRegistrationStatus({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret });
+  let status = await getRegistrationStatus(harness, registration);
   assert.equal(status.canComplete, false);
 
   await deliverPaidWebhook(harness, registration, { eventId: 'evt_paid_after_failed' });
-  status = await harness.service.getRegistrationStatus({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret });
+  status = await getRegistrationStatus(harness, registration);
   assert.equal(status.canComplete, true);
 });
 
-test('registration intent binding rejects theft and safely handles reuse after completion', async () => {
+test('registration status and completion reject a different Firebase UID and safely handle same-UID reuse', async () => {
   const harness = createHarness();
   const registration = await startRegistration(harness);
   await deliverPaidWebhook(harness, registration);
 
-  await assertRejectsCode(harness.service.getRegistrationStatus({ intentId: registration.intentId, registrationSecret: 'stolen' }), 'invalid_registration_secret');
-  await assertRejectsCode(harness.service.completePaidRegistration({ intentId: registration.intentId, registrationSecret: 'stolen', password: 'StrongPass123' }), 'invalid_registration_secret');
+  const otherAuth = { uid: 'different-firebase-uid', email: registration.auth.email };
+  await assertRejectsCode(harness.service.getAuthenticatedRegistrationStatus({ intentId: registration.intentId }, { auth: otherAuth }), 'unauthorized_registration');
+  await assertRejectsCode(harness.service.completePaidRegistration({ intentId: registration.intentId }, { auth: otherAuth }), 'unauthorized_registration');
+  assert.equal(harness.identity.createCalls.length, 0);
 
-  const first = await harness.service.completePaidRegistration({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret, password: 'StrongPass123' });
-  const second = await harness.service.completePaidRegistration({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret, password: 'DifferentStrong123' });
+  const first = await completeRegistration(harness, registration);
+  const second = await completeRegistration(harness, registration);
   assert.equal(first.uid, second.uid);
   assert.equal(second.alreadyCompleted, true);
   assert.equal(Object.keys(harness.repository.snapshot().accounts).length, 1);
@@ -435,8 +485,8 @@ test('concurrent registration completion creates exactly one account and entitle
   await deliverPaidWebhook(harness, registration);
 
   const results = await Promise.all([
-    harness.service.completePaidRegistration({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret, password: 'StrongPass123' }),
-    harness.service.completePaidRegistration({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret, password: 'StrongPass123' }),
+    completeRegistration(harness, registration),
+    completeRegistration(harness, registration),
   ]);
 
   assert.equal(results[0].uid, results[1].uid);
@@ -449,29 +499,29 @@ test('concurrent registration completion creates exactly one account and entitle
 test('pending, cancelled and expired registrations remain locked while records are preserved', async () => {
   const pendingHarness = createHarness();
   const pending = await startRegistration(pendingHarness);
-  await assertRejectsCode(pendingHarness.service.completePaidRegistration({ intentId: pending.intentId, registrationSecret: pending.private.registrationSecret, password: 'StrongPass123' }), 'registration_not_paid');
+  await assertRejectsCode(completeRegistration(pendingHarness, pending), 'registration_not_paid');
 
   const cancelledHarness = createHarness();
   const cancelled = await startRegistration(cancelledHarness);
-  const cancelledStatus = await cancelledHarness.service.recordCheckoutCancelled({ intentId: cancelled.intentId, registrationSecret: cancelled.private.registrationSecret });
+  const cancelledStatus = await cancelledHarness.service.recordCheckoutCancelled({ intentId: cancelled.intentId }, { auth: cancelled.auth });
   assert.equal(cancelledStatus.status, REGISTRATION_STATUSES.CANCELLED);
-  await assertRejectsCode(cancelledHarness.service.completePaidRegistration({ intentId: cancelled.intentId, registrationSecret: cancelled.private.registrationSecret, password: 'StrongPass123' }), 'registration_not_paid');
+  await assertRejectsCode(completeRegistration(cancelledHarness, cancelled), 'registration_not_paid');
   assert.equal(Object.keys(cancelledHarness.repository.snapshot().payments).length, 1);
 
   const expiredHarness = createHarness();
   const expired = await startRegistration(expiredHarness);
   const expiredStatus = await expiredHarness.service.expireRegistrationIntent({ intentId: expired.intentId });
   assert.equal(expiredStatus.status, REGISTRATION_STATUSES.EXPIRED);
-  await assertRejectsCode(expiredHarness.service.completePaidRegistration({ intentId: expired.intentId, registrationSecret: expired.private.registrationSecret, password: 'StrongPass123' }), 'registration_not_paid');
+  await assertRejectsCode(completeRegistration(expiredHarness, expired), 'registration_not_paid');
   assert.equal(Object.keys(expiredHarness.repository.snapshot().registrationIntents).length, 1);
 });
 
 test('paid webhook after browser cancellation safely recovers the unfinished registration', async () => {
   const harness = createHarness();
   const registration = await startRegistration(harness);
-  await harness.service.recordCheckoutCancelled({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret });
+  await harness.service.recordCheckoutCancelled({ intentId: registration.intentId }, { auth: registration.auth });
   await deliverPaidWebhook(harness, registration);
-  const status = await harness.service.getRegistrationStatus({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret });
+  const status = await getRegistrationStatus(harness, registration);
   assert.equal(status.canComplete, true);
 });
 
@@ -484,52 +534,11 @@ test('provider checkout failures are recorded as failed and never create account
   assert.equal(Object.keys(snapshot.accounts).length, 0);
 });
 
-test('paid-but-unfinished registration recovery preserves the original browser until a one-time code is accepted', async () => {
-  const sent = [];
-  const harness = createHarness({ recoverySender: { sendPaidRegistrationRecovery: async (message) => sent.push(message) } });
-  const registration = await startRegistration(harness);
-  await deliverPaidWebhook(harness, registration);
 
-  const recovery = await harness.service.requestPaidRegistrationRecovery({ email: 'ADA@example.edu' });
-  assert.equal(recovery.accepted, true);
-  assert.equal(recovery.delivery, 'sent');
-  assert.equal(sent.length, 1);
-  assert.equal(sent[0].intentId, registration.intentId);
-  assert.notEqual(sent[0].recoverySecret, registration.private.registrationSecret);
 
-  const originalBrowserStatus = await harness.service.getRegistrationStatus({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret });
-  assert.equal(originalBrowserStatus.canComplete, true);
-  assert.equal(originalBrowserStatus.registrationProfile.department, 'Computer Engineering Department');
 
-  const accepted = await harness.service.acceptPaidRegistrationRecovery({ intentId: registration.intentId, recoverySecret: sent[0].recoverySecret });
-  await assertRejectsCode(harness.service.acceptPaidRegistrationRecovery({ intentId: registration.intentId, recoverySecret: sent[0].recoverySecret }), 'invalid_recovery_code');
-  await assertRejectsCode(harness.service.getRegistrationStatus({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret }), 'invalid_registration_secret');
-  const completion = await harness.service.completePaidRegistration({ intentId: registration.intentId, registrationSecret: accepted.private.registrationSecret, password: 'StrongPass123' });
-  assert.equal(completion.completed, true);
-});
 
-test('recovery requests do not reveal whether an email matches a paid unfinished registration', async () => {
-  const sent = [];
-  const harness = createHarness({ recoverySender: { sendPaidRegistrationRecovery: async (message) => sent.push(message) } });
-  const registration = await startRegistration(harness);
-  await deliverPaidWebhook(harness, registration);
 
-  const paidEmailResult = await harness.service.requestPaidRegistrationRecovery({ email: 'ada@example.edu' });
-  const unrelatedEmailResult = await harness.service.requestPaidRegistrationRecovery({ email: 'nobody@example.edu' });
-  assert.deepEqual(paidEmailResult, { accepted: true, delivery: 'sent' });
-  assert.deepEqual(unrelatedEmailResult, paidEmailResult);
-  assert.equal(sent.length, 1);
-});
-
-test('recovery without a configured sender does not invalidate the original registration binding', async () => {
-  const harness = createHarness();
-  const registration = await startRegistration(harness);
-  await deliverPaidWebhook(harness, registration);
-  const result = await harness.service.requestPaidRegistrationRecovery({ email: 'ada@example.edu' });
-  assert.deepEqual(result, { accepted: true, delivery: 'not_configured' });
-  const status = await harness.service.getRegistrationStatus({ intentId: registration.intentId, registrationSecret: registration.private.registrationSecret });
-  assert.equal(status.canComplete, true);
-});
 
 test('renewal requires same authenticated uid and malicious metadata cannot bind payment to another account', async () => {
   const seed = {
@@ -653,77 +662,56 @@ test('access status is visible only to the same authenticated uid', async () => 
   await assertRejectsCode(harness.service.getAccessStatus({ uid: 'uid_1' }, { auth: { uid: 'uid_2' } }), 'unauthorized_status');
 });
 
-test('recovery acceptance rotates a one-time code into a Secure HttpOnly registration binding cookie', async () => {
-  const sent = [];
-  const harness = createHarness({ recoverySender: { sendPaidRegistrationRecovery: async (message) => sent.push(message) } });
-  const registration = await startRegistration(harness);
-  await deliverPaidWebhook(harness, registration);
-  await harness.service.requestPaidRegistrationRecovery({ email: 'ada@example.edu' });
-  const handlers = createPaymentsHttpHandlers(harness.service, { secureCookies: true });
-
-  const rejected = await handlers.acceptPaidRegistrationRecovery({ body: { intentId: registration.intentId, recoveryCode: 'wrong-code' } });
-  assert.equal(rejected.status, 400);
-  const accepted = await handlers.acceptPaidRegistrationRecovery({ body: { intentId: registration.intentId, recoveryCode: sent[0].recoverySecret } });
-  assert.equal(accepted.status, 200);
-  assert.deepEqual(accepted.body, { accepted: true });
-  assert.match(accepted.headers['Set-Cookie'], /HttpOnly/);
-  assert.match(accepted.headers['Set-Cookie'], /Secure/);
-  assert.match(accepted.headers['Set-Cookie'], /SameSite=Lax/);
-  assert.equal(JSON.stringify(accepted.body).includes(sent[0].recoverySecret), false);
-
-  const recoveredStatus = await handlers.getCheckoutStatus({ headers: { cookie: accepted.headers['Set-Cookie'] }, query: { intentId: registration.intentId } });
-  assert.equal(recoveredStatus.status, 200);
-  assert.equal(recoveredStatus.body.canCreateAccount, true);
-  assert.equal(recoveredStatus.body.registrationProfile.email, 'ada@example.edu');
-  const oldCookieStatus = await handlers.getCheckoutStatus({ headers: { cookie: `__Host-soar_reg=${encodeURIComponent(`${registration.intentId}.${registration.private.registrationSecret}`)}` }, query: { intentId: registration.intentId } });
-  assert.equal(oldCookieStatus.status, 400);
+test('dormant HttpOnly registration binding remains scoped to its exact intent', () => {
+  const cookie = '__Host-soar_reg=intent-one.secret-value; Path=/; HttpOnly; Secure; SameSite=Lax';
+  assert.deepEqual(readRegistrationBinding({ cookie }, 'intent-one'), { intentId: 'intent-one', registrationSecret: 'secret-value' });
+  assert.equal(readRegistrationBinding({ cookie }, 'intent-two'), null);
 });
 
-test('HTTP handler contract uses an HttpOnly registration binding cookie and never returns the secret in JSON', async () => {
+test('HTTP registration handlers require and retain the same Firebase UID without using cookies or passwords', async () => {
   const harness = createHarness();
-  const handlers = createPaymentsHttpHandlers(harness.service, { secureCookies: false });
+  const handlers = createPaymentsHttpHandlers(harness.service, { secureCookies: true });
+  const auth = { uid: 'firebase-ada', email: 'ada@example.edu' };
+  const authUser = { ...auth, emailVerified: false };
+  harness.identity.usersByUid.set(auth.uid, authUser);
+  harness.identity.usersByEmail.set(auth.email, authUser);
+  const body = { role: 'student', email: auth.email, displayName: 'Ada Lovelace', studentId: '2026-0001', department: 'Computer Engineering Department' };
 
-  const adminRoleAttempt = await handlers.startRegistrationPayment({
-    ip: '203.0.113.10',
-    body: { role: 'admin', email: 'admin@example.edu', displayName: 'Admin Account' },
-  });
-  assert.equal(adminRoleAttempt.status, 400);
-  assert.equal(adminRoleAttempt.body.code, 'invalid_role');
+  const anonymous = await handlers.startRegistrationPayment({ ip: '203.0.113.10', body });
+  assert.equal(anonymous.status, 403);
+  assert.equal(anonymous.body.code, 'unauthorized_registration');
+  assert.equal(harness.provider.sessions.length, 0);
+  assert.equal(Object.keys(harness.repository.snapshot().payments).length, 0);
 
-  const started = await handlers.startRegistrationPayment({
-    ip: '203.0.113.10',
-    body: { role: 'student', email: 'ada@example.edu', displayName: 'Ada Lovelace', studentId: '2026-0001', department: 'Computer Engineering Department' },
-  });
+  const started = await handlers.startRegistrationPayment({ auth, ip: '203.0.113.10', body });
   assert.equal(started.status, 200);
   assert.equal(started.body.amountPhp, 10);
   assert.equal(started.body.providerLabel, 'PayMongo');
+  assert.equal(started.headers['Set-Cookie'], undefined);
   assert.match(harness.provider.sessions[0].successUrl, /^http:\/\/localhost:5173\/access\/checkout\?intentId=/);
   assert.match(harness.provider.sessions[0].cancelUrl, /checkout=cancelled/);
-  assert.equal(JSON.stringify(started.body).includes('secret'), false);
-  assert.match(started.headers['Set-Cookie'], /HttpOnly/);
-  assert.match(started.headers['Set-Cookie'], /SameSite=Lax/);
 
-  const unpaidStatus = await handlers.getCheckoutStatus({ headers: { cookie: started.headers['Set-Cookie'] }, query: { intentId: started.body.intentId } });
-  assert.equal(unpaidStatus.status, 200);
-  assert.equal(unpaidStatus.body.canCreateAccount, false);
-
-  await deliverPaidWebhook(harness, { intentId: started.body.intentId }, { amount: 999, eventId: 'evt_http_wrong_amount' });
-  const failedStatus = await handlers.getCheckoutStatus({ headers: { cookie: started.headers['Set-Cookie'] }, query: { intentId: started.body.intentId } });
-  assert.equal(failedStatus.body.status, 'failed');
-  assert.equal(failedStatus.body.canCreateAccount, false);
+  const unauthenticated = await handlers.getCheckoutStatus({ query: { intentId: started.body.intentId } });
+  assert.equal(unauthenticated.status, 403);
+  const pending = await handlers.getCheckoutStatus({ auth, query: { intentId: started.body.intentId } });
+  assert.equal(pending.status, 200);
+  assert.equal(pending.body.canCreateAccount, false);
+  assert.equal(pending.body.authFirst, true);
 
   await deliverPaidWebhook(harness, { intentId: started.body.intentId }, { eventId: 'evt_http_valid_paid', metadata: { intentId: started.body.intentId } });
-  const paidStatus = await handlers.getCheckoutStatus({ headers: { cookie: started.headers['Set-Cookie'] }, query: { intentId: started.body.intentId } });
+  const paidStatus = await handlers.getCheckoutStatus({ auth, query: { intentId: started.body.intentId } });
   assert.equal(paidStatus.body.canCreateAccount, true);
   assert.equal(paidStatus.body.status, 'pending');
+  assert.equal(paidStatus.body.checkoutUrl, null);
   assert.equal(paidStatus.body.registrationProfile.department, 'Computer Engineering Department');
 
-  const completed = await handlers.registerAccount({
-    ip: '203.0.113.10',
-    headers: { cookie: started.headers['Set-Cookie'] },
-    body: { intentId: started.body.intentId, password: 'StrongPass123' },
-  });
+  const wrongUid = await handlers.registerAccount({ auth: { uid: 'different-uid', email: auth.email }, body: { intentId: started.body.intentId } });
+  assert.equal(wrongUid.status, 403);
+  assert.equal(harness.identity.createCalls.length, 0);
+  const completed = await handlers.registerAccount({ auth, body: { intentId: started.body.intentId, password: 'ignored-and-not-forwarded' } });
   assert.equal(completed.status, 200);
+  assert.equal(completed.body.uid, auth.uid);
   assert.equal(completed.body.completed, true);
-  assert.match(completed.headers['Set-Cookie'], /Max-Age=0/);
+  assert.equal(completed.headers['Set-Cookie'], undefined);
+  assert.equal(Object.keys(harness.repository.snapshot().accounts)[0], auth.uid);
 });

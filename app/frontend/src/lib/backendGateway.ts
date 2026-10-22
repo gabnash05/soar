@@ -167,6 +167,7 @@ const createProductionGateway = (): BackendGateway => ({
   async startRegistrationPayment(input) {
     return apiFetch<RegistrationPaymentIntent>('/payments/registration/start', {
       method: 'POST',
+      headers: await authHeaders(),
       body: JSON.stringify(input),
     });
   },
@@ -237,17 +238,9 @@ const createProductionGateway = (): BackendGateway => ({
   },
 
   async getCheckoutStatus(intentId) {
-    const user = await getCurrentAuthUser();
-    if (user?.uid && user.email) {
-      try {
-        return await apiFetch<CheckoutStatus>(`/payments/registration/auth-status?intentId=${encodeURIComponent(intentId)}`, {
-          headers: await authHeaders(),
-        });
-      } catch (error) {
-        if (!(error instanceof Error) || (error as Error & { code?: string }).code !== 'unauthorized_registration') throw error;
-      }
-    }
-    return apiFetch<CheckoutStatus>(`/payments/registration/status?intentId=${encodeURIComponent(intentId)}`);
+    return apiFetch<CheckoutStatus>(`/payments/registration/auth-status?intentId=${encodeURIComponent(intentId)}`, {
+      headers: await authHeaders(),
+    });
   },
 
   async requestPaidRegistrationRecovery(email) {
@@ -270,35 +263,23 @@ const createProductionGateway = (): BackendGateway => ({
       throw new UserFacingError('Payment is not confirmed yet. Account creation remains locked.');
     }
 
-    if (checkout.authFirst) {
-      const user = await getCurrentAuthUser();
-      if (!user?.uid || user.email?.trim().toLowerCase() !== input.email.trim().toLowerCase()) {
-        throw new UserFacingError('Sign in with the same email used to start this registration before continuing.');
-      }
-      await apiFetch('/payments/registration/auth-complete', {
-        method: 'POST',
-        headers: await authHeaders(),
-        body: JSON.stringify({ intentId: input.intentId }),
-      });
-      await reload(user);
-      await user.getIdToken(true);
-      if (!user.emailVerified) await sendEmailVerification(user);
-      const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
-      return mapSession({ ...session, emailVerified: user.emailVerified });
+    if (!checkout.authFirst) {
+      throw new UserFacingError('This registration is not bound to a signed-in Firebase account. Start again while signed in; no account will be created from an anonymous checkout.');
     }
-
-    await apiFetch<{ uid: string; completed: boolean; accessExpiresAt?: string }>('/payments/registration/complete', {
+    const user = await getCurrentAuthUser();
+    if (!user?.uid || user.email?.trim().toLowerCase() !== input.email.trim().toLowerCase()) {
+      throw new UserFacingError('Sign in with the same email used to start this registration before continuing.');
+    }
+    await apiFetch('/payments/registration/auth-complete', {
       method: 'POST',
-      body: JSON.stringify(input),
+      headers: await authHeaders(),
+      body: JSON.stringify({ intentId: input.intentId }),
     });
-
-    const { auth } = getFirebaseRuntime();
-    if (!input.password) throw new UserFacingError('Enter a password to finish creating your account.');
-    const credential = await signInWithEmailAndPassword(auth, input.email, input.password);
-    await sendEmailVerification(credential.user);
+    await reload(user);
+    await user.getIdToken(true);
+    if (!user.emailVerified) await sendEmailVerification(user);
     const session = await apiFetch<RawUserSession>('/session', { headers: await authHeaders() });
-
-    return mapSession({ ...session, emailVerified: credential.user.emailVerified });
+    return mapSession({ ...session, emailVerified: user.emailVerified });
   },
 
   async resendEmailVerification() {

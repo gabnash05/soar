@@ -126,7 +126,7 @@ describe('unpaid preview registration', () => {
 
     expect(paidRegistrationCompletionSchema.parse({ ...completion, uid: 'firebase-uid' })).toMatchObject({ uid: 'firebase-uid' });
     expect(paidRegistrationCompletionSchema.safeParse(completion).success).toBe(false);
-    expect(paidRegistrationCompletionSchema.safeParse({ ...completion, password: 'StrongPass123' }).success).toBe(true);
+    expect(paidRegistrationCompletionSchema.safeParse({ ...completion, uid: 'firebase-uid', password: 'StrongPass123' }).success).toBe(false);
     expect(previewRegistrationSchema.safeParse({ ...student, displayName: 'Mara Santos', password: 'StrongPass123' }).success).toBe(false);
   });
 

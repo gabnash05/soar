@@ -174,7 +174,6 @@ const validateRegistration = (input: RegisterAccountInput) => {
   const problems: Record<string, string> = {};
   if (!input.displayName.trim()) problems.displayName = 'Enter your full name.';
   if (!input.email.includes('@')) problems.email = 'Enter a valid email address.';
-  if (input.password && input.password.length < 8) problems.password = 'Use at least 8 characters.';
   if (input.role === 'student' && !input.studentId?.trim()) problems.studentId = 'Student ID is required for students and future officers.';
   if (input.role === 'student' && !isCanonicalDepartment(input.department)) problems.department = 'Choose your department from the list.';
   if (Object.keys(problems).length) {

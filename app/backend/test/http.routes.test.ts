@@ -351,6 +351,30 @@ describe('SOAR HTTP route contracts', () => {
     }
   });
 
+  it('requires Firebase authentication on every legacy registration alias before invoking payment handlers', async () => {
+    const previous = process.env.SOAR_DISABLE_PAYMENTS;
+    process.env.SOAR_DISABLE_PAYMENTS = 'false';
+    const handlers = mocks.paymentHandlers();
+    mocks.requireBearerToken.mockRejectedValue(new AppError('unauthenticated', 'Sign in is required.', 401));
+    try {
+      await withApiServer(async (baseUrl) => {
+        const headers = { 'content-type': 'application/json' };
+        const start = await fetch(`${baseUrl}/api/payments/registration/start`, { method: 'POST', headers, body: JSON.stringify({ email: 'ada@example.edu' }) });
+        const complete = await fetch(`${baseUrl}/payments/registration/complete`, { method: 'POST', headers, body: JSON.stringify({ intentId: 'intent1' }) });
+        const status = await fetch(`${baseUrl}/payments/registration/status?intentId=intent1`);
+        expect(start.status).toBe(401);
+        expect(complete.status).toBe(401);
+        expect(status.status).toBe(401);
+      });
+      expect(handlers.startAuthenticatedRegistrationPayment).not.toHaveBeenCalled();
+      expect(handlers.completeAuthenticatedRegistration).not.toHaveBeenCalled();
+      expect(handlers.getAuthenticatedCheckoutStatus).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
+      else process.env.SOAR_DISABLE_PAYMENTS = previous;
+    }
+  });
+
   it('returns authenticated session payloads through the /api prefix', async () => {
     mocks.getUserSession.mockResolvedValue({ uid: 'user1', email: 'user@example.test', access: { status: 'active' } });
 
@@ -694,7 +718,7 @@ describe('SOAR HTTP route contracts', () => {
         expect(access.status).toBe(200);
         await expect(access.json()).resolves.toMatchObject({ status: 'active' });
       });
-      expect(handlers.startRegistrationPayment).not.toHaveBeenCalled();
+      expect(handlers.startAuthenticatedRegistrationPayment).not.toHaveBeenCalled();
       expect(handlers.acceptPaidRegistrationRecovery).not.toHaveBeenCalled();
       expect(handlers.getRenewalStatus).not.toHaveBeenCalled();
       expect(handlers.getAccessStatus).toHaveBeenCalled();
@@ -704,17 +728,17 @@ describe('SOAR HTTP route contracts', () => {
     }
   });
 
-  it('mounts paid-registration recovery and same-user renewal status routes under /api', async () => {
+  it('retires anonymous payment recovery and preserves same-user renewal status routes under /api', async () => {
     const handlers = mocks.paymentHandlers();
 
     await withApiServer(async (baseUrl) => {
-      const accepted = await fetch(`${baseUrl}/api/payments/registration/recover/accept`, {
+      const recovery = await fetch(`${baseUrl}/api/payments/registration/recover/accept`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
         body: JSON.stringify({ intentId: 'intent1', recoveryCode: 'one-time-code' }),
       });
-      expect(accepted.status).toBe(200);
-      await expect(accepted.json()).resolves.toEqual({ accepted: true });
+      expect(recovery.status).toBe(410);
+      await expect(recovery.json()).resolves.toMatchObject({ code: 'registration_recovery_unavailable' });
 
       const renewal = await fetch(`${baseUrl}/api/payments/renewals/status?renewalId=renewal1`, {
         headers: { authorization: 'Bearer test-token' },
@@ -723,7 +747,7 @@ describe('SOAR HTTP route contracts', () => {
       await expect(renewal.json()).resolves.toMatchObject({ renewalId: 'renewal1', status: 'pending' });
     });
 
-    expect(handlers.acceptPaidRegistrationRecovery).toHaveBeenCalled();
+    expect(handlers.acceptPaidRegistrationRecovery).not.toHaveBeenCalled();
     expect(mocks.requireBearerToken).toHaveBeenCalled();
     expect(handlers.getRenewalStatus).toHaveBeenCalled();
   });

@@ -83,29 +83,7 @@ function mapCheckoutStatus(status) {
 
 function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
   async function startRegistrationPayment(request) {
-    try {
-      const input = bodyOf(request);
-      const result = await service.createRegistrationCheckout({
-        role: input.role,
-        email: input.email,
-        fullName: input.displayName || input.fullName,
-        studentId: input.studentId,
-        department: input.department,
-        companyName: input.companyName,
-      }, { ip: request && request.ip });
-      return ok({
-        intentId: result.intentId,
-        checkoutUrl: result.checkoutUrl,
-        status: 'pending',
-        amountPhp: amountPhp(),
-        expiresAt: result.checkoutExpiresAt,
-        providerLabel: 'PayMongo',
-      }, {
-        'Set-Cookie': cookieHeader(buildRegistrationBinding(result.intentId, result.private.registrationSecret), { secure: secureCookies }),
-      });
-    } catch (error) {
-      return problem(error);
-    }
+    return startAuthenticatedRegistrationPayment(request);
   }
 
   async function startAuthenticatedRegistrationPayment(request) {
@@ -187,55 +165,11 @@ function createPaymentsHttpHandlers(service, { secureCookies = true } = {}) {
   }
 
   async function getCheckoutStatus(request) {
-    try {
-      const intentId = String((queryOf(request).intentId || bodyOf(request).intentId || '')).trim();
-      const binding = readRegistrationBinding(request && request.headers, intentId);
-      if (!binding) {
-        return problem({ name: 'PaymentAccessError', code: 'invalid_registration_binding', message: 'Registration binding cookie is missing or does not match this intent.' });
-      }
-      const status = await service.getRegistrationStatus(binding);
-      const checkoutStatus = mapCheckoutStatus(status);
-      return ok({
-        intentId: status.intentId,
-        status: checkoutStatus,
-        amountPhp: amountPhp(),
-        message: status.completed
-          ? 'Account setup is complete. Sign in to continue.'
-          : status.canComplete
-            ? 'Payment confirmed. You can create your SOAR account.'
-            : checkoutStatus === 'failed'
-              ? 'Checkout could not be completed. Start a new checkout to try again.'
-              : checkoutStatus === 'expired'
-                ? 'This checkout has expired. Start a new checkout to continue.'
-                : 'Waiting for provider-confirmed payment.',
-        canCreateAccount: status.canComplete,
-        completed: status.completed,
-        authFirst: false,
-        registrationProfile: status.registrationProfile,
-        checkoutUrl: status.checkoutUrl,
-      });
-    } catch (error) {
-      return problem(error);
-    }
+    return getAuthenticatedCheckoutStatus(request);
   }
 
   async function registerAccount(request) {
-    try {
-      const input = bodyOf(request);
-      const intentId = String(input.intentId || '').trim();
-      const binding = readRegistrationBinding(request && request.headers, intentId);
-      if (!binding) {
-        return problem({ name: 'PaymentAccessError', code: 'invalid_registration_binding', message: 'Registration binding cookie is missing or does not match this intent.' });
-      }
-      const result = await service.completePaidRegistration({
-        intentId,
-        registrationSecret: binding.registrationSecret,
-        password: input.password,
-      }, { ip: request && request.ip });
-      return ok(result, { 'Set-Cookie': clearCookieHeader({ secure: secureCookies }) });
-    } catch (error) {
-      return problem(error);
-    }
+    return completeAuthenticatedRegistration(request);
   }
 
   async function requestManualRenewal(request) {

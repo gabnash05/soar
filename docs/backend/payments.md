@@ -15,10 +15,10 @@ Implemented under `app/backend/src/payments/**`:
 - Idempotent provider-event recording, duplicate/replay handling, and transactional state changes.
 - Registration completion that calls the identity foundation helper after payment confirmation.
 - Manual renewal checkout and entitlement extension.
-- Paid-but-unfinished registration recovery code/binding logic; the optional `RecoverySender` remains unwired, so no email delivery is claimed.
+- Same-UID pending/paid registration resume. Legacy cookie/email-code recovery helpers remain dormant; `RecoverySender` is unwired, so no email delivery is claimed.
 - Same-UID authenticated registration start/status/resume/completion; account/profile and provider-confirmed entitlement creation remain gated on a valid signed paid event.
 - Persisted Admin-only global payment policy with non-secret readiness status and server-side enforcement for unpaid registration, paid checkout starts and renewal starts.
-- Unit/mock tests for QR Ph-only sessions, method/amount/currency, signature/mode, duplicate/concurrent/out-of-order webhooks, UID binding, theft/reuse, renewal, failure/cancel/expiry, provider failure, recovery behavior and six-month calendar expiry arithmetic.
+- Unit/mock tests for authenticated same-UID starts/completion, anonymous/mismatched-UID side-effect denial, QR Ph-only sessions, method/amount/currency, signature/mode, duplicate/concurrent/out-of-order webhooks, renewal, failure/cancel/expiry, provider failure and six-month calendar expiry arithmetic.
 
 No production deploy, live payment, merchant activation, or shared Firebase manifest edit is included in this PR.
 
@@ -43,7 +43,7 @@ The provider path is PayMongo Hosted Checkout Sessions v2 with QR Ph only for ne
 
 The identity lane owns Firebase Auth lifecycle, account documents, organization ownership/grants, shared TypeScript build/contracts, Firebase rules/config, and CI/build manifests.
 
-The paid-access lane owns checkout/registration intents, provider verification, provider-event idempotency, six-month entitlement calculations, recovery of paid unfinished registrations, and renewal payment confirmation.
+The paid-access lane owns authenticated checkout/registration intents, provider verification, provider-event idempotency, six-month entitlement calculations, same-UID resume for paid unfinished registrations, and renewal payment confirmation.
 
 Payment completion calls the identity helper shape agreed in `data/soar-identity-foundation/payment-coordination.md`:
 
@@ -65,7 +65,7 @@ createPaidAccountFromConfirmedRegistration(input: {
 }): Promise<{ uid: string }>;
 ```
 
-Current implementation uses the existing TypeScript Firebase/Express API and Firebase Admin identity helper. The new same-UID registration route passes the authenticated UID to `createPaidAccountFromConfirmedRegistration` only after webhook verification; the legacy pre-auth route may still create Auth after paid completion. Payment code adapts expiry dates to Firestore `Timestamp` before writing identity-owned records.
+Current implementation uses the existing TypeScript Firebase/Express API and Firebase Admin identity helper. Every mounted registration path requires the bearer-authenticated UID, and `createPaidAccountFromConfirmedRegistration` accepts only that existing UID after webhook verification; it cannot create a Firebase Auth identity. Payment code adapts expiry dates to Firestore `Timestamp` before writing identity-owned records.
 
 ## Firestore collections used by payment code
 
@@ -73,7 +73,7 @@ Payment-owned collections:
 
 - `systemSettings/paymentPolicy`: singleton global payment requirement boolean and Admin audit metadata; user clients have no direct Firestore read/write grant. The API exposes only the non-secret policy/readiness response and trusted Admin writes.
 
-- `paymentRegistrationIntents/{intentId}`: pre-account checkout/registration state. Stores `secretHash`, never the plaintext browser binding secret or password.
+- `paymentRegistrationIntents/{intentId}`: pre-account checkout/registration state. Legacy intents may contain a `secretHash`; new same-UID intents do not set one. Plaintext binding secrets and passwords are never stored.
 - `payments/{paymentId}`: provider checkout/payment records for registration and renewal.
 - `paymentCheckoutSessions/{providerCheckoutSessionId}`: checkout-session to internal payment index.
 - `paymentProviderEvents/{providerEventId}`: webhook idempotency records.
@@ -86,18 +86,13 @@ Shared identity collections read/written through approved boundaries:
 
 ## Frontend HTTP contract
 
-The frontend contract remains in `app/frontend/src/lib/contracts.ts`. The browser does **not** receive or store provider secrets or a payment completion token. New UI flow uses the authenticated same-UID routes described below; the cookie-bound routes that follow remain as the legacy pre-auth compatibility path.
+The frontend contract remains in `app/frontend/src/lib/contracts.ts`. The browser does **not** receive or store provider secrets or a payment completion token. All frontend registration operations use the authenticated same-UID routes described below; old endpoint names remain authenticated aliases only.
 
-The old anonymous/pre-auth registration binding remains an **HttpOnly SameSite=Lax cookie** set by the legacy checkout route. The current frontend flow uses the authenticated same-UID routes below and does not depend on that cross-site cookie. Do not weaken or remove the legacy cookie safeguards.
+All mounted registration start/status/completion routes require a Firebase bearer token and bind the intent to that same UID and email. The old `__Host-soar_reg` parser and its `Path=/`, `HttpOnly`, `SameSite=Lax`, `Secure` safeguards remain only as dormant compatibility code; no mounted route sets or accepts the cookie, and no anonymous checkout or cookie-only Auth-user creation is reachable.
 
-- Cookie name: `__Host-soar_reg`
-- Contents: opaque backend registration binding for one intent.
-- Scope: `Path=/`, `HttpOnly`, `SameSite=Lax`, `Secure` in deployed HTTPS environments.
-- Purpose: lets `getCheckoutStatus` and `registerAccount` prove that the browser completing account creation is the same browser that started checkout, without adding a token field to frontend TypeScript contracts or putting secrets into redirect URLs.
+### `POST /api/payments/registration/start` and `/api/payments/registration/auth-start`
 
-### Legacy `POST /api/payments/registration/start`
-
-Frontend method: `startRegistrationPayment(input)`. New UI should use the authenticated same-UID route instead.
+Frontend methods use Firebase Auth first and send the signed-in user’s bearer token. The legacy path name is retained only as an authenticated alias to the same-UID handler.
 
 Request body:
 
@@ -117,8 +112,7 @@ Rules:
 
 - `role` is `student` or `sponsor`. Officers are student accounts with organization grants, not an account role.
 - Students require `studentId` and one supported canonical `department` label; sponsors may include `companyName` and must not include `department`.
-- Password is not accepted here and must not be sent before provider payment confirmation.
-- Backend checks for existing account/email through the identity adapter.
+- Password is sent only to Firebase Auth before checkout; the API accepts no password field. The authenticated Firebase UID/email must match the registration email, and the server refuses an existing SOAR profile.
 - Any client `returnUrl` value is ignored. The backend builds success and cancel URLs from its configured `SOAR_APP_BASE_URL` and the shipped `/access/checkout?intentId=...` route. `SOAR_APP_BASE_URL` is required for checkout; the code fails closed when it is missing or non-HTTPS outside localhost development instead of redirecting to a baked-in host.
 
 Response body matches `RegistrationPaymentIntent`:
@@ -134,13 +128,11 @@ Response body matches `RegistrationPaymentIntent`:
 }
 ```
 
-Response header sets `__Host-soar_reg` for the legacy anonymous flow only.
+No registration-binding cookie is set. Anonymous calls are rejected before checkout-provider or identity-creation side effects.
 
-### `GET /api/payments/registration/status?intentId=reg_...`
+### `GET /api/payments/registration/status?intentId=reg_...` and `/api/payments/registration/auth-status`
 
-Frontend method: `getCheckoutStatus(intentId)`.
-
-Legacy route requires the matching `__Host-soar_reg` cookie. Browser redirects from PayMongo are not trusted; this endpoint reports only server-side provider-confirmed state. The new same-UID route is `GET /api/payments/registration/auth-status?intentId=...`.
+Frontend method: `getCheckoutStatus(intentId)`. Both mounted aliases require bearer authentication and return only the intent bound to that same UID. Browser redirects from PayMongo are not trusted; this endpoint reports only server-side provider-confirmed state.
 
 Response body matches `CheckoutStatus`:
 
@@ -154,32 +146,23 @@ Response body matches `CheckoutStatus`:
 }
 ```
 
-When the signed PayMongo webhook confirms payment, `canCreateAccount` becomes `true` and `message` changes. `status` remains `pending` until the account exists because frontend `AccessStatus` has no separate `paid_unfinished` value. The response also includes a password-free server-locked `registrationProfile`, so a recovered browser can resume without trusting editable client fields. The frontend must use only `canCreateAccount` from this cookie-bound endpoint as its completion gate; `pending` is not contradictory and browser redirects are never payment evidence.
+When the signed PayMongo webhook confirms payment, `canCreateAccount` becomes `true` and `message` changes. `status` remains `pending` until the account exists because frontend `AccessStatus` has no separate `paid_unfinished` value. The response also includes a server-locked `registrationProfile`, so the same signed-in user can resume without trusting editable client fields. The frontend must use only `canCreateAccount` from this authenticated endpoint as its completion gate; `pending` is not contradictory and browser redirects are never payment evidence. Once `canCreateAccount` is true, the response suppresses `checkoutUrl` so a confirmed payment cannot prompt a second charge.
 
-### `POST /api/payments/registration/complete`
+### `POST /api/payments/registration/complete` and `/api/payments/registration/auth-complete`
 
-Frontend method: `registerAccount(input)`.
-
-Request body follows current `RegisterAccountInput` but the backend only needs `intentId` and `password` because the profile was locked into the paid registration intent before checkout:
+Frontend method: `registerAccount(input)`. Both mounted aliases require bearer authentication and complete only the intent bound to that Firebase UID/email. The request body is only:
 
 ```json
 {
-  "intentId": "reg_...",
-  "email": "ada@example.edu",
-  "password": "user-entered-at-completion-only",
-  "displayName": "Ada Lovelace",
-  "role": "student",
-  "studentId": "2026-0001"
+  "intentId": "reg_..."
 }
 ```
 
 Rules:
 
-- Legacy route requires matching `__Host-soar_reg` cookie. The new same-UID completion route is `POST /api/payments/registration/auth-complete` and accepts only the bound intent id.
-- Fails unless PayMongo webhook already marked the intent paid.
-- Calls `createPaidAccountFromConfirmedRegistration` exactly once/idempotently through identity foundation.
-- Password is passed only to identity helper and never persisted or logged by payment code.
-- On success the backend clears `__Host-soar_reg`.
+- Fails unless a signed PayMongo webhook already marked the intent paid and the bearer UID/email matches the checkout-bound identity.
+- Calls `createPaidAccountFromConfirmedRegistration` with that existing UID only; the identity helper cannot create a new Firebase Auth user or accept a password.
+- No cookie is set or cleared by these aliases.
 
 Response:
 
@@ -191,30 +174,9 @@ Response:
 }
 ```
 
-### `POST /api/payments/registration/recover`
+### `POST /api/payments/registration/recover` and `/recover/accept`
 
-Used for safe recovery when payment succeeded but account creation was not finished in the original browser/session.
-
-Request:
-
-```json
-{
-  "email": "ada@example.edu",
-  "checkoutSessionId": "cs_optional_paymongo_session"
-}
-```
-
-Response is intentionally non-enumerating when delivery is configured: `{ "accepted": true, "delivery": "sent" }` is returned whether or not a paid registration matched, and sender failures do not expose match state. If a paid unfinished intent exists, the backend creates a one-time recovery code and uses a configured recovery sender to deliver the intent id and code. The original browser binding remains valid until the code is accepted. If no sender is configured, the result is `{ "accepted": true, "delivery": "not_configured" }` without changing that binding; production needs email delivery from the identity/notifications lane before relying on cross-browser recovery.
-
-### `POST /api/payments/registration/recover/accept`
-
-Request:
-
-```json
-{ "intentId": "reg_...", "recoveryCode": "one-time-code-from-email" }
-```
-
-The backend accepts only an unexpired code for a payment-confirmed registration, rotates it into a fresh registration binding, and sets the same `__Host-soar_reg` HttpOnly cookie. The response is `{ "accepted": true }`; neither recovery nor registration binding secrets are returned in JSON or placed in a URL. Codes expire after 24 hours and are one-use.
+The old email-code/cookie recovery endpoints are retired and return `410 registration_recovery_unavailable` after bearer authentication. Recovery email delivery remains unwired. Users resume a pending paid registration by signing in with the same Firebase account through `/payments/registration/resume`; password recovery uses Firebase Auth. Dormant cookie parsing/building safeguards remain in source for historical compatibility, but no stored account/payment/entitlement data is deleted.
 
 ### `POST /api/payments/renewals/start`
 
@@ -366,12 +328,14 @@ Covered by mock/unit tests:
 - wrong amount/currency/session/reference/payment-id/lane/intent-metadata rejection,
 - duplicate and concurrent webhook deliveries,
 - out-of-order failed-before-paid delivery,
-- registration intent theft/reuse,
+- anonymous and mismatched-UID registration denial before provider or identity side effects,
+- same-UID registration status/completion binding and idempotent completion,
 - pending/cancelled/expired locked states with records preserved,
-- cancellation followed by valid paid webhook recovery,
+- cancellation followed by valid paid webhook confirmation,
+- no actionable checkout URL after paid confirmation permits completion,
 - provider checkout failure recording,
-- paid unfinished registration recovery,
-- exactly one account/entitlement from completion through identity-helper idempotency,
+- same-UID resume for paid unfinished registration,
+- exactly one profile/entitlement from completion through identity-helper idempotency,
 - unauthorized renewal and malicious cross-account renewal metadata,
 - manual six-month renewal expiry arithmetic,
 - authenticated access-status visibility,

@@ -51,13 +51,29 @@ describe('CheckoutStatusPage', () => {
     renderCheckout(gateway);
 
     expect(await screen.findByRole('heading', { name: 'Payment still pending' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /create account and send verification/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Finish account setup' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /check payment status/i }));
     expect(await screen.findByRole('heading', { name: 'Payment confirmed' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /create account and send verification/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Finish account setup' })).toBeEnabled();
   });
 
-  it('uses the server-locked registration profile and permits completion when the verified status flag is true', async () => {
+  it('does not show a checkout link after signed payment confirmation permits completion', async () => {
+    const gateway = createMockGateway(null);
+    vi.mocked(gateway.getCheckoutStatus).mockResolvedValue(status({
+      authFirst: true,
+      canCreateAccount: true,
+      checkoutUrl: 'https://checkout.example.test/should-not-be-used',
+      registrationProfile: paidProfile,
+      message: 'Payment confirmed. You can finish your SOAR account.',
+    }));
+    renderCheckout(gateway);
+
+    expect(await screen.findByRole('heading', { name: 'Payment confirmed' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Finish account setup' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /continue to hosted checkout/i })).not.toBeInTheDocument();
+  });
+
+  it('uses the server-locked registration profile and completes without a password-only fallback', async () => {
     const gateway = createMockGateway(null);
     vi.mocked(gateway.getCheckoutStatus).mockResolvedValue(status({
       canCreateAccount: true,
@@ -68,37 +84,10 @@ describe('CheckoutStatusPage', () => {
     renderCheckout(gateway);
 
     expect(await screen.findByText('Mara Santos')).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Password'), 'StrongPass123');
-    await user.type(screen.getByLabelText('Confirm password'), 'StrongPass123');
-    await user.click(screen.getByRole('button', { name: /create account and send verification/i }));
-
-    await screen.findByText('Verification step');
-    expect(gateway.registerAccount).toHaveBeenCalledWith(expect.objectContaining({
-      intentId: 'test-intent',
-      email: paidProfile.email,
-      displayName: paidProfile.displayName,
-      department: paidProfile.department,
-      password: 'StrongPass123',
-    }));
-  });
-
-  it('finishes an Auth-first registration only after the authenticated status confirms payment', async () => {
-    const gateway = createMockGateway(null);
-    vi.mocked(gateway.getCheckoutStatus).mockResolvedValue(status({
-      authFirst: true,
-      canCreateAccount: true,
-      registrationProfile: paidProfile,
-      message: 'Payment confirmed. You can finish your SOAR account.',
-    }));
-    const user = userEvent.setup();
-    renderCheckout(gateway);
-
-    expect(await screen.findByText('Mara Santos')).toBeInTheDocument();
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Finish account setup' })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'Finish account setup' }));
 
-    expect(await screen.findByText('Verification step')).toBeInTheDocument();
+    await screen.findByText('Verification step');
     expect(gateway.registerAccount).toHaveBeenCalledWith(expect.objectContaining({
       intentId: 'test-intent',
       email: paidProfile.email,
@@ -117,8 +106,8 @@ describe('CheckoutStatusPage', () => {
     renderCheckout(gateway);
 
     expect(await screen.findByRole('heading', { name: 'Checkout not confirmed' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /create account and send verification/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /email recovery instructions/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Finish account setup' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /email recovery instructions/i })).not.toBeInTheDocument();
   });
 
   it('can retry a temporary status read failure without replacing the preserved registration details', async () => {
@@ -135,26 +124,15 @@ describe('CheckoutStatusPage', () => {
     expect(gateway.getCheckoutStatus).toHaveBeenCalledTimes(2);
   });
 
-  it('accepts a one-time recovery code, then reloads only server-confirmed status and profile', async () => {
-    const gateway = createMockGateway(null);
-    vi.mocked(gateway.getCheckoutStatus)
-      .mockRejectedValueOnce(new Error('Registration binding cookie is missing.'))
-      .mockResolvedValue(status({ canCreateAccount: true, registrationProfile: paidProfile, message: 'Payment confirmed.' }));
-    vi.mocked(gateway.requestPaidRegistrationRecovery).mockResolvedValue({ accepted: true, delivery: 'sent' });
-    const user = userEvent.setup();
+  it('does not render anonymous password creation or retired email-code recovery for legacy status shapes', async () => {
+    const gateway = createMockGateway();
+    vi.mocked(gateway.getCheckoutStatus).mockResolvedValue(status({ authFirst: false, status: 'failed' }));
     renderCheckout(gateway);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/binding cookie is missing/i);
-    await user.type(screen.getByLabelText('Registration email'), paidProfile.email);
-    await user.click(screen.getByRole('button', { name: /email recovery instructions/i }));
-    expect(await screen.findByRole('status')).toHaveTextContent(/instructions sent to you/i);
-
-    await user.type(screen.getByLabelText('Recovery code'), 'one-time-code');
-    await user.click(screen.getByRole('button', { name: /restore secure session/i }));
-    expect(await screen.findByText('Mara Santos')).toBeInTheDocument();
-    expect(gateway.acceptPaidRegistrationRecovery).toHaveBeenCalledWith('test-intent', 'one-time-code');
-    expect(gateway.getCheckoutStatus).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole('button', { name: /create account and send verification/i })).toBeEnabled();
+    expect(await screen.findByRole('heading', { name: 'Checkout not confirmed' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Registration email')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Recovery code')).not.toBeInTheDocument();
   });
 
   it('does not treat a hosted checkout success redirect as payment evidence', async () => {
@@ -166,6 +144,6 @@ describe('CheckoutStatusPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Payment still pending' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent(/redirect alone does not confirm payment/i);
-    expect(screen.getByRole('button', { name: /create account and send verification/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Finish account setup' })).toBeDisabled();
   });
 });

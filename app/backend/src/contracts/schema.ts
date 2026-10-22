@@ -173,8 +173,7 @@ export interface OfficerGrantDocument {
 
 export interface PaidRegistrationCompletionInput {
   email: string;
-  uid?: string;
-  password?: string;
+  uid: string;
   displayName: string;
   role: PublicAccountRole;
   studentId?: string;
