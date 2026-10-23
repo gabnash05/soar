@@ -12,6 +12,8 @@ export const ANNOUNCEMENT_MEDIA_MAX_AGGREGATE_BYTES = 30 * 1024 * 1024;
 
 export const MEETING_DOCUMENT_CONTENT_TYPES = ['application/pdf'] as const;
 export const MEETING_DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
+const MEETING_DOCUMENT_FILE_NAME_MAX_LENGTH = 128;
+const MEETING_DOCUMENT_FILE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._ -]*\.pdf$/i;
 
 export interface ImageUploadTarget {
   storagePath: string;
@@ -93,6 +95,11 @@ export const validateMeetingDocumentFile = (file: File): void => {
 
   if (file.size > MEETING_DOCUMENT_MAX_BYTES) {
     throw new UserFacingError('Attach a PDF smaller than 10 MB.');
+  }
+
+  const fileName = file.name.trim();
+  if (fileName.length > MEETING_DOCUMENT_FILE_NAME_MAX_LENGTH || !MEETING_DOCUMENT_FILE_NAME_PATTERN.test(fileName)) {
+    throw new UserFacingError('Use a PDF file name of up to 128 characters, starting with a letter or number; letters, numbers, spaces, periods, hyphens, and underscores are allowed.');
   }
 };
 

@@ -672,13 +672,29 @@ describe('SOAR workflow pages', () => {
   it('does not present an unconfirmed meeting submission as saved', async () => {
     const user = userEvent.setup();
     const base = createFixtureWorkflowDataClient();
+    const savedRequest: MeetingRequest = {
+      id: 'meeting-lost-response',
+      organizationId: 'robotics',
+      organizationName: 'Computer Engineering Department',
+      dateEntryId: 'date-robotics-interview',
+      meetingTitle: 'Computer Engineering consultation window',
+      requesterUid: studentSession.uid,
+      requesterName: studentSession.displayName,
+      requestedDate: '2026-11-12',
+      requestedTime: '14:00',
+      status: 'Pending',
+      updatedAt: '2026-10-23T00:00:00.000Z',
+    };
+    const listMyMeetingRequests = vi.fn()
+      .mockResolvedValueOnce({ data: [], source: 'fixture' as const })
+      .mockResolvedValueOnce({ data: [savedRequest], source: 'fixture' as const });
     const requestMeeting = vi.fn().mockResolvedValue({
       ok: true,
       persisted: 'unconfirmed' as const,
       source: 'production' as const,
       message: 'Internal persistence details must not appear.',
     });
-    const client: WorkflowDataClient = { ...base, requestMeeting };
+    const client: WorkflowDataClient = { ...base, listMyMeetingRequests, requestMeeting };
     renderInRouter(<MeetingsView session={studentSession} client={client} />);
 
     await screen.findAllByText(/Computer Engineering consultation window/i);
@@ -686,10 +702,16 @@ describe('SOAR workflow pages', () => {
     await user.click(screen.getByRole('button', { name: /Send request as Pending/i }));
 
     expect(await screen.findByText(/We could not confirm that your meeting request was saved/i)).toBeInTheDocument();
+    expect(screen.getByText(/Close this form and check My requests before trying again/i)).toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: /Request a meeting\/interview/i })).toBeInTheDocument();
     expect(screen.queryByText(/Internal persistence details/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Meeting request created as Pending/i)).not.toBeInTheDocument();
     expect(requestMeeting).toHaveBeenCalledTimes(1);
+    expect(listMyMeetingRequests).toHaveBeenCalledTimes(2);
+    await user.click(screen.getByRole('button', { name: /Close Request a meeting\/interview/i }));
+    await user.click(screen.getByRole('tab', { name: /My requests/i }));
+    const requestsTable = await screen.findByRole('region', { name: 'My meeting request statuses' });
+    expect(within(requestsTable).getByText('2026-11-12, 14:00')).toBeInTheDocument();
   });
 
   it('contains the requests table on direct mobile-tab entry without modal state', async () => {
@@ -1772,6 +1794,21 @@ describe('SOAR workflow pages', () => {
     await user.click(screen.getByRole('button', { name: /^Publish announcement$/i }));
     expect(await screen.findByText(/Two image update for the build team/i)).toBeInTheDocument();
     expect(await screen.findByAltText('robot-a.png')).toBeInTheDocument();
+  });
+
+  it('rejects PDF names the meeting API cannot accept before enabling submission', async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const base = createFixtureWorkflowDataClient();
+    const requestMeeting = vi.fn(base.requestMeeting);
+    renderInRouter(<MeetingsView session={studentSession} client={{ ...base, requestMeeting }} />);
+
+    await screen.findAllByText(/Computer Engineering consultation window/i);
+    await user.click(screen.getByRole('button', { name: /^Request meeting$/i }));
+    await user.upload(screen.getByLabelText(/Formal request document/i), new File(['%PDF-1.7'], 'request (1).pdf', { type: 'application/pdf' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Use a PDF file name of up to 128 characters/i);
+    expect(screen.getByRole('button', { name: /Send request as Pending/i })).toBeDisabled();
+    expect(requestMeeting).not.toHaveBeenCalled();
   });
 
   it('accepts optional private PDF meeting documents and rejects unsupported files', async () => {

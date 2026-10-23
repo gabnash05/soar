@@ -59,6 +59,7 @@ const validationMessages: Record<string, string> = {
   password: 'Use a password with at least 8 characters.',
   studentId: 'Enter your student ID.',
   department: 'Choose a supported department.',
+  fileName: 'Use a PDF file name of up to 128 characters, starting with a letter or number; letters, numbers, spaces, periods, hyphens, and underscores are allowed.',
 };
 
 /** Marks a static, application-authored message as safe to show to the user. */

@@ -10,11 +10,21 @@ vi.mock('./apiClient', () => ({ assertApiBase, authHeaders }));
 vi.mock('./firebase', () => ({ getFirebaseRuntime }));
 vi.mock('@firebase/storage', () => ({ getDownloadURL: vi.fn(), ref: vi.fn(), uploadBytes: vi.fn() }));
 
-import { storageDownloadUrl, uploadMeetingDocumentToTarget, uploadToStorageTarget } from './storageUploads';
+import { MEETING_DOCUMENT_MAX_BYTES, storageDownloadUrl, uploadMeetingDocumentToTarget, uploadToStorageTarget, validateMeetingDocumentFile } from './storageUploads';
 
 beforeEach(() => {
   vi.stubEnv('VITE_SOAR_STORAGE_PROVIDER', 'supabase');
   vi.stubGlobal('fetch', vi.fn());
+});
+
+describe('meeting PDF filename validation', () => {
+  it('matches the backend simple-PDF filename contract without relaxing MIME or size limits', () => {
+    expect(() => validateMeetingDocumentFile(new File(['pdf'], 'formal-request.pdf', { type: 'application/pdf' }))).not.toThrow();
+    expect(() => validateMeetingDocumentFile(new File(['pdf'], 'request (1).pdf', { type: 'application/pdf' }))).toThrow(/PDF file name of up to 128 characters/i);
+    expect(() => validateMeetingDocumentFile(new File(['pdf'], `${'a'.repeat(125)}.pdf`, { type: 'application/pdf' }))).toThrow(/PDF file name of up to 128 characters/i);
+    expect(() => validateMeetingDocumentFile(new File(['text'], 'request.pdf', { type: 'text/plain' }))).toThrow(/Attach a PDF document/i);
+    expect(() => validateMeetingDocumentFile(new File([new Uint8Array(MEETING_DOCUMENT_MAX_BYTES + 1)], 'large.pdf', { type: 'application/pdf' }))).toThrow(/smaller than 10 MB/i);
+  });
 });
 
 describe('Supabase private-storage browser adapter', () => {

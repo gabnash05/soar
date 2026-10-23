@@ -45,6 +45,8 @@ describe('safeErrorMessage', () => {
     });
 
     expect(safeErrorMessage(error)).toBe('Enter a name between 2 and 120 characters.');
+    expect(safeErrorMessage(new ValidationProblemError('private JSON', { fileName: 'Internal path and stack' })))
+      .toBe('Use a PDF file name of up to 128 characters, starting with a letter or number; letters, numbers, spaces, periods, hyphens, and underscores are allowed.');
     expect(safeErrorMessage(new ValidationProblemError('private JSON', { displayName: 'Internal path and stack' })))
       .not.toMatch(/private|Internal|stack|<script>/);
   });
