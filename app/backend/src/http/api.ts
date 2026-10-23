@@ -6,6 +6,7 @@ import { requireBearerToken } from './auth';
 import { getUserSession } from '../identity/session';
 import { requestVerifiedEmailChange, updateDisplayName } from '../identity/accountSettings';
 import { createUnpaidPreviewAccount } from '../identity/previewRegistration';
+import { deleteOrganizationCascade } from '../organizations/cascade';
 import { getAdminPaymentPolicyStatus, getPaymentPolicyStatus, requirePaymentsForCheckout, setPaymentPolicy } from '../identity/paymentPolicy';
 import {
   approveOfficerGrant,
@@ -364,6 +365,12 @@ export function createApiApp() {
   app.post(['/admin/organizations', '/api/admin/organizations'], asyncRoute(async (req, res) => {
     const admin = await requireAdmin(req);
     res.status(201).json(await assignInitialOrganizationOwner(req.body, admin.uid));
+  }));
+
+  app.delete(['/admin/organizations/:orgId', '/api/admin/organizations/:orgId'], asyncRoute(async (req, res) => {
+    const admin = await requireAdmin(req);
+    const result = await deleteOrganizationCascade(getParam(req, 'orgId'), admin.uid);
+    res.status(result.status === 'complete' ? 200 : 202).json(result);
   }));
 
   app.get(['/admin/organizations/:orgId/officer-grants', '/api/admin/organizations/:orgId/officer-grants'], asyncRoute(async (req, res) => {

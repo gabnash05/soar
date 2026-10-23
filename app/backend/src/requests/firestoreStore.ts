@@ -35,7 +35,7 @@ export class FirestoreRequestStore implements RequestStore {
     return snap.exists ? snap.data() as CalendarEntryDocument : undefined;
   }
 
-  async createApplicationIfAbsent(applicationId: string, application: ApplicationDocument): Promise<'created' | 'exists' | 'closed' | 'organization_missing'> {
+  async createApplicationIfAbsent(applicationId: string, application: ApplicationDocument): Promise<'created' | 'exists' | 'closed' | 'organization_missing' | 'organization_deleting'> {
     const applicationRef = this.db.collection(COLLECTIONS.applications).doc(applicationId);
     const organizationRef = this.db.doc(organizationPath(application.orgId));
     const existingApplicationQuery = this.db.collection(COLLECTIONS.applications)
@@ -50,6 +50,7 @@ export class FirestoreRequestStore implements RequestStore {
         tx.get(existingApplicationQuery)
       ]);
       if (!organizationSnap.exists) return 'organization_missing' as const;
+      if (organizationSnap.data()?.deletionStatus === 'deleting') return 'organization_deleting' as const;
       if (organizationSnap.data()?.applicationsOpen === false) return 'closed' as const;
       if (applicationSnap.exists || !existingApplications.empty) return 'exists' as const;
       tx.create(applicationRef, application);
@@ -104,10 +105,13 @@ export class FirestoreRequestStore implements RequestStore {
     });
   }
 
-  async createMeetingIfAbsent(meetingRequestId: string, meeting: MeetingRequestDocument): Promise<'created' | 'exists'> {
+  async createMeetingIfAbsent(meetingRequestId: string, meeting: MeetingRequestDocument): Promise<'created' | 'exists' | 'organization_missing' | 'organization_deleting'> {
     const ref = this.db.collection(COLLECTIONS.meetingRequests).doc(meetingRequestId);
+    const organizationRef = this.db.doc(organizationPath(meeting.orgId));
     return this.db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
+      const [snap, organization] = await Promise.all([tx.get(ref), tx.get(organizationRef)]);
+      if (!organization.exists) return 'organization_missing' as const;
+      if (organization.data()?.deletionStatus === 'deleting') return 'organization_deleting' as const;
       if (snap.exists) return 'exists' as const;
       tx.create(ref, meeting);
       return 'created' as const;

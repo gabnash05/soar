@@ -193,6 +193,12 @@ async function loadOrganization(deps: RequestServiceDeps, orgId: string): Promis
   return organization;
 }
 
+function assertOrganizationWritable(organization: OrganizationDocument): void {
+  if (organization.deletionStatus === 'deleting') {
+    throw new AppError('organization_deleting', 'This organization is being deleted and cannot accept new requests or files.', 409);
+  }
+}
+
 async function assertCanManageOrganization(deps: RequestServiceDeps, user: DecodedIdToken, orgId: string): Promise<OrganizationDocument> {
   const organization = await loadOrganization(deps, orgId);
   if (organization.ownerUid === user.uid) {
@@ -237,6 +243,7 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
         throw new AppError('student_required', 'Only student accounts can confirm external application submissions.', 403);
       }
 
+      assertOrganizationWritable(organization);
       if (organization.applicationsOpen === false) {
         throw new AppError('applications_closed', 'Applications are closed for this organization.', 409);
       }
@@ -266,6 +273,9 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       const result = await deps.store.createApplicationIfAbsent(applicationId, application);
       if (result === 'organization_missing') {
         throw new AppError('organization_missing', 'The organization was not found.', 404);
+      }
+      if (result === 'organization_deleting') {
+        throw new AppError('organization_deleting', 'This organization is being deleted and cannot accept new applications.', 409);
       }
       if (result === 'closed') {
         throw new AppError('applications_closed', 'Applications are closed for this organization.', 409);
@@ -312,9 +322,11 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       const input = meetingDocumentTargetSchema.parse(rawInput);
       await loadOrganization(deps, input.organizationId);
       const availability = assertAvailabilityEntry(await deps.store.getCalendarEntry(input.dateEntryId), input.organizationId);
+      assertOrganizationWritable(await loadOrganization(deps, input.organizationId));
       const meetingRequestId = meetingRequestIdFor(input, user.uid);
       const storagePath = meetingRequestDocumentStoragePath(input.organizationId, meetingRequestId, sanitizeStorageFileName(input.fileName));
       const uploadTarget = await createSignedObjectUploadTarget(storagePath);
+      assertOrganizationWritable(await loadOrganization(deps, input.organizationId));
       return {
         meetingRequestId,
         organizationId: input.organizationId,
@@ -343,6 +355,7 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       if (account.role !== 'student' && account.role !== 'sponsor') {
         throw new AppError('requester_role_not_supported', 'Only student and sponsor accounts can request meetings.', 403);
       }
+      assertOrganizationWritable(organization);
       const availability = assertAvailabilityEntry(entry, input.organizationId);
       const now = deps.now();
       const meetingRequestId = meetingRequestIdFor(input, user.uid);
@@ -374,6 +387,12 @@ export function createRequestService(deps: RequestServiceDeps = defaultDeps()) {
       };
 
       const result = await deps.store.createMeetingIfAbsent(meetingRequestId, meeting);
+      if (result === 'organization_missing') {
+        throw new AppError('organization_missing', 'The organization was not found.', 404);
+      }
+      if (result === 'organization_deleting') {
+        throw new AppError('organization_deleting', 'This organization is being deleted and cannot accept new requests.', 409);
+      }
       if (result === 'exists') {
         throw new AppError('duplicate_meeting_request', 'You already requested that exact meeting date and time.', 409);
       }

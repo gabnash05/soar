@@ -232,6 +232,7 @@ describe('announcement comment ownership service behavior', () => {
   beforeEach(() => {
     seedComments();
     storageMocks.createSignedObjectDownloadUrl.mockReset();
+    storageMocks.createSignedObjectUploadTarget.mockReset().mockResolvedValue(undefined);
     storageMocks.isSupabaseStorageEnabled.mockReturnValue(false);
   });
 
@@ -532,6 +533,34 @@ describe('announcement comment ownership service behavior', () => {
     fakeDb.docs.set('organizations/org3', { orgId: 'org3', name: 'Civil Engineering Department', ownerUid: 'owner', department: 'Civil Engineering Department', departmentKey: 'civil engineering department', createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
     fakeDb.docs.set('organizations/org3/officerGrants/officer', { uid: 'officer', status: 'revoked', createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
     await expect(getStudentDepartmentCounts(user('officer'), 'org3')).rejects.toMatchObject({ code: 'organization_management_required' });
+  });
+
+  it('blocks new organization profile, announcement, discussion, and calendar writes after deletion begins', async () => {
+    const { addAnnouncementComment, createDateEntry, setAnnouncementLike, updateAnnouncement, updateOrganizationProfile } = await import('../service');
+    fakeDb.docs.set('organizations/org1', { ...fakeDb.docs.get('organizations/org1'), deletionStatus: 'deleting' });
+
+    await expect(updateOrganizationProfile(user('officer'), 'org1', { applicationsOpen: false })).rejects.toMatchObject({ code: 'organization_deleting' });
+    await expect(updateAnnouncement(user('officer'), 'org1', 'post1', { body: 'Cannot race deletion.' })).rejects.toMatchObject({ code: 'organization_deleting' });
+    await expect(addAnnouncementComment(user('student1'), 'post1', { body: 'Cannot add a new comment.' })).rejects.toMatchObject({ code: 'organization_deleting' });
+    await expect(setAnnouncementLike(user('student1'), 'post1', true)).rejects.toMatchObject({ code: 'organization_deleting' });
+    await expect(createDateEntry(user('officer'), 'org1', { kind: 'event', title: 'Blocked', date: '2026-12-20', details: 'Cannot create a dated entry.' })).rejects.toMatchObject({ code: 'organization_deleting' });
+    expect(fakeDb.docs.has('announcements/post1/comments/generated-1')).toBe(false);
+    expect(fakeDb.docs.has('announcements/post1/likes/student1')).toBe(false);
+    expect([...fakeDb.docs.keys()].filter((path) => path.startsWith('calendarEntries/'))).toEqual([]);
+  });
+
+  it('does not return a newly minted image target if deletion starts during target creation', async () => {
+    const { createLogoImageTarget } = await import('../service');
+    storageMocks.createSignedObjectUploadTarget.mockImplementationOnce(async () => {
+      const organization = fakeDb.docs.get('organizations/org1');
+      if (organization) organization.deletionStatus = 'deleting';
+      return undefined;
+    });
+
+    await expect(createLogoImageTarget(user('officer'), 'org1', {
+      fileName: 'new-logo.png', contentType: 'image/png', sizeBytes: 12
+    })).rejects.toMatchObject({ code: 'organization_deleting' });
+    expect(storageMocks.createSignedObjectUploadTarget).toHaveBeenCalledTimes(1);
   });
 
   it('deletes own comments once and keeps the stored count aligned with actual comments', async () => {

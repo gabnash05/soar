@@ -1,7 +1,7 @@
 import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 import { FirestoreRequestStore } from './firestoreStore';
-import type { ApplicationDocument } from './contracts';
+import type { ApplicationDocument, MeetingRequestDocument } from './contracts';
 
 type StoredDocument = Record<string, unknown>;
 type QueryFilter = readonly [string, unknown];
@@ -139,5 +139,31 @@ describe('Firestore application uniqueness transaction', () => {
 
     expect(result).toBe('closed');
     expect(database.documents.has('applications/application-stable-id')).toBe(false);
+  });
+
+  it('prevents application and meeting writes after organization deletion freezes new requests', async () => {
+    const database = new FakeFirestore();
+    database.documents.set('organizations/org-1', { orgId: 'org-1', deletionStatus: 'deleting' });
+    const store = storeFor(database);
+    const meeting: MeetingRequestDocument = {
+      meetingRequestId: 'meeting-request-1',
+      requesterUid: 'student-1',
+      requesterName: 'Student One',
+      requesterRole: 'student',
+      orgId: 'org-1',
+      organizationName: 'Organization One',
+      dateEntryId: 'date-entry-1',
+      meetingTitle: 'Interview',
+      requestedDate: '2026-10-20',
+      requestedTime: '10:00',
+      status: 'Pending',
+      createdAt: now,
+      updatedAt: now
+    };
+
+    await expect(store.createApplicationIfAbsent('application-stable-id', application())).resolves.toBe('organization_deleting');
+    await expect(store.createMeetingIfAbsent(meeting.meetingRequestId, meeting)).resolves.toBe('organization_deleting');
+    expect(database.documents.has('applications/application-stable-id')).toBe(false);
+    expect(database.documents.has(`meetingRequests/${meeting.meetingRequestId}`)).toBe(false);
   });
 });

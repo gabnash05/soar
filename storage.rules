@@ -60,14 +60,20 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/organizations/$(orgId));
     }
 
+    function organizationAcceptsWrites(orgId) {
+      return firestore.exists(/databases/(default)/documents/organizations/$(orgId))
+        && organizationDoc(orgId).data.get('deletionStatus', '') != 'deleting';
+    }
+
     function isOrganizationOwner(orgId) {
       return activeUser()
-        && firestore.exists(/databases/(default)/documents/organizations/$(orgId))
+        && organizationAcceptsWrites(orgId)
         && organizationDoc(orgId).data.ownerUid == request.auth.uid;
     }
 
     function hasActiveOfficerGrant(orgId) {
       return activeUser()
+        && organizationAcceptsWrites(orgId)
         && firestore.exists(/databases/(default)/documents/organizations/$(orgId)/officerGrants/$(request.auth.uid))
         && firestore.get(/databases/(default)/documents/organizations/$(orgId)/officerGrants/$(request.auth.uid)).data.status == 'active';
     }
@@ -89,7 +95,8 @@ service firebase.storage {
         && request.resource.contentType == 'application/pdf'
         && request.resource.metadata.orgId == orgId
         && request.resource.metadata.meetingRequestId == requestId
-        && request.resource.metadata.requesterUid == request.auth.uid;
+        && request.resource.metadata.requesterUid == request.auth.uid
+        && organizationAcceptsWrites(orgId);
     }
 
     match /organization-logos/{orgId}/{fileName} {

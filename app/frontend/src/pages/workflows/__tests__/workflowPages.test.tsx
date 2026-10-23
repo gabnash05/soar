@@ -1607,7 +1607,7 @@ describe('SOAR workflow pages', () => {
       await user.click(screen.getByRole('button', { name: /^Save profile$/i }));
 
       const dialog = screen.getByRole('dialog', { name: /Approve organization changes/i });
-      expect(dialog).toHaveTextContent(/This sample uses local approval only/i);
+      expect(dialog).toHaveTextContent(/this sample uses local approval only/i);
       expect(within(dialog).queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
       await user.click(within(dialog).getByRole('button', { name: /^Approve simulated changes$/i }));
 
