@@ -13,11 +13,34 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/entitlements/$(request.auth.uid));
     }
 
-    function hasActiveAccess() {
+    function paymentPolicyDoc() {
+      return firestore.get(/databases/(default)/documents/systemSettings/paymentPolicy);
+    }
+
+    function hasRevokedAccess() {
+      return firestore.exists(/databases/(default)/documents/entitlements/$(request.auth.uid))
+        && entitlementDoc().data.status == 'revoked';
+    }
+
+    function hasActivePaidAccess() {
       return firestore.exists(/databases/(default)/documents/entitlements/$(request.auth.uid))
         && entitlementDoc().data.status == 'active'
         && entitlementDoc().data.accessExpiresAt is timestamp
         && entitlementDoc().data.accessExpiresAt > request.time;
+    }
+
+    function hasGrandfatheredAccess() {
+      return firestore.exists(/databases/(default)/documents/accounts/$(request.auth.uid))
+        && firestore.exists(/databases/(default)/documents/systemSettings/paymentPolicy)
+        && accountDoc().data.createdAt is timestamp
+        && paymentPolicyDoc().data.existingAccountAccessActivatedAt is timestamp
+        && paymentPolicyDoc().data.existingAccountAccessExpiresAt is timestamp
+        && accountDoc().data.createdAt < paymentPolicyDoc().data.existingAccountAccessActivatedAt
+        && paymentPolicyDoc().data.existingAccountAccessExpiresAt > request.time;
+    }
+
+    function hasActiveAccess() {
+      return !hasRevokedAccess() && (hasActivePaidAccess() || hasGrandfatheredAccess());
     }
 
     function accountDoc() {

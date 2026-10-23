@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     res.status(result.status).json(result.body ?? {});
   }),
   paymentHandlers: vi.fn(),
+  mergeIdentityAccessStatus: vi.fn(),
   listOrganizations: vi.fn(),
   getOrganizationProfile: vi.fn(),
   updateOrganizationProfile: vi.fn(),
@@ -95,6 +96,7 @@ vi.mock('../src/paymentsAdapter', () => ({
   attachAuthToPaymentRequest: mocks.attachAuthToPaymentRequest,
   sendPaymentResult: mocks.sendPaymentResult,
   paymentHandlers: mocks.paymentHandlers,
+  mergeIdentityAccessStatus: mocks.mergeIdentityAccessStatus,
 }));
 vi.mock('../src/content/service', () => ({
   addAnnouncementComment: mocks.addAnnouncementComment,
@@ -145,6 +147,7 @@ describe('SOAR HTTP route contracts', () => {
     mocks.getAdminPaymentPolicyStatus.mockResolvedValue({ paymentsRequired: true, checkout: { status: 'configured', mode: 'test' } });
     mocks.setPaymentPolicy.mockImplementation(async (input: unknown, uid: string) => ({ ...(input as object), checkout: { status: 'configured', mode: 'test' }, updatedByUid: uid }));
     mocks.requirePaymentsForCheckout.mockResolvedValue(undefined);
+    mocks.mergeIdentityAccessStatus.mockImplementation(async (_uid: string, result: Promise<any>) => result);
     mocks.paymentHandlers.mockReturnValue({
       paymongoWebhook: vi.fn(async () => ({ status: 200, body: { received: true } })),
       startRegistrationPayment: vi.fn(async () => ({ status: 200, body: { intentId: 'intent1' } })),
@@ -722,6 +725,7 @@ describe('SOAR HTTP route contracts', () => {
       expect(handlers.acceptPaidRegistrationRecovery).not.toHaveBeenCalled();
       expect(handlers.getRenewalStatus).not.toHaveBeenCalled();
       expect(handlers.getAccessStatus).toHaveBeenCalled();
+      expect(mocks.mergeIdentityAccessStatus).toHaveBeenCalledWith('user1', expect.any(Promise));
     } finally {
       if (previous === undefined) delete process.env.SOAR_DISABLE_PAYMENTS;
       else process.env.SOAR_DISABLE_PAYMENTS = previous;

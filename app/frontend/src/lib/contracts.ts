@@ -16,7 +16,7 @@ export interface OrganizationGrant {
   grantedAt?: string;
 }
 
-export type AccessProvenance = 'provider-confirmed-payment' | 'unpaid-preview';
+export type AccessProvenance = 'provider-confirmed-payment' | 'unpaid-preview' | 'grandfathered-existing-account';
 
 export interface PaymentPolicy {
   paymentsRequired: boolean;

@@ -191,6 +191,44 @@ describe('account and entitlement boundaries', () => {
     await assertFails(getDoc(doc(expiredDb, 'organizations', 'org1')));
   });
 
+  it('allows the activation-window cohort without entitlements but excludes later, undated, and revoked accounts', async () => {
+    const activationAt = Timestamp.fromDate(new Date(Date.now() - 5 * 24 * 60 * 60 * 1000));
+    const newAccountAt = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'systemSettings', 'paymentPolicy'), {
+        paymentsRequired: false,
+        existingAccountAccessActivatedAt: activationAt,
+        existingAccountAccessExpiresAt: future,
+      });
+      for (const [uid, createdAt] of [['grandfathered', oldEnough], ['registeredAfter', newAccountAt]] as const) {
+        await setDoc(doc(db, 'accounts', uid), {
+          uid,
+          role: 'student',
+          displayName: uid,
+          email: `${uid}@example.test`,
+          emailVerified: true,
+          createdAt,
+          updatedAt: createdAt,
+        });
+      }
+      await setDoc(doc(db, 'accounts', 'undated'), {
+        uid: 'undated', role: 'student', displayName: 'Undated', email: 'undated@example.test', emailVerified: true,
+      });
+      await setDoc(doc(db, 'accounts', 'revoked-grandfathered'), {
+        uid: 'revoked-grandfathered', role: 'student', displayName: 'Revoked', email: 'revoked@example.test', emailVerified: true, createdAt: oldEnough,
+      });
+      await setDoc(doc(db, 'entitlements', 'revoked-grandfathered'), {
+        uid: 'revoked-grandfathered', status: 'revoked', accessExpiresAt: future,
+      });
+    });
+
+    await assertSucceeds(getDoc(doc(dbFor('grandfathered'), 'organizations', 'org1')));
+    await assertFails(getDoc(doc(dbFor('registeredAfter'), 'organizations', 'org1')));
+    await assertFails(getDoc(doc(dbFor('undated'), 'organizations', 'org1')));
+    await assertFails(getDoc(doc(dbFor('revoked-grandfathered'), 'organizations', 'org1')));
+  });
+
   it('blocks unauthenticated, unverified, and expired users from organization data', async () => {
     await assertFails(getDoc(doc(anonDb(), 'organizations', 'org1')));
     await assertFails(getDoc(doc(dbFor('unverified', false), 'organizations', 'org1')));

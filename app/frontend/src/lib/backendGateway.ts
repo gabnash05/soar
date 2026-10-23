@@ -89,13 +89,14 @@ const normalizeAccess = (access: RawAccess): AccessEntitlement => {
   const status = access.status === 'none' ? 'missing' : access.status;
   const normalizedStatus = status ?? (access.active ? 'active' : 'missing');
   const previewAccess = access.provenance === 'unpaid-preview';
+  const grandfatheredAccess = access.provenance === 'grandfathered-existing-account';
   return {
     status: normalizedStatus,
     provenance: access.provenance,
     annualFeePhp: 10,
-    feePhp: access.feePhp ?? (previewAccess ? 0 : 10),
+    feePhp: access.feePhp ?? (previewAccess || grandfatheredAccess ? 0 : 10),
     periodMonths: access.periodMonths ?? (previewAccess ? undefined : 6),
-    periodLabel: access.periodLabel ?? (previewAccess ? 'Unpaid preview' : '6 months'),
+    periodLabel: access.periodLabel ?? (previewAccess ? 'Unpaid preview' : grandfatheredAccess ? 'Existing account access' : '6 months'),
     startsAt: access.startsAt,
     expiresAt: access.expiresAt ?? access.accessExpiresAt,
     lastPaymentReference: access.lastPaymentReference ?? access.latestPaymentId ?? undefined,

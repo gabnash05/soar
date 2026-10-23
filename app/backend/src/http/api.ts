@@ -17,7 +17,7 @@ import {
   revokeOfficerGrant,
   searchAdminStudents
 } from '../organizations/service';
-import { attachAuthToPaymentRequest, paymentHandlers, sendPaymentResult } from '../paymentsAdapter';
+import { attachAuthToPaymentRequest, mergeIdentityAccessStatus, paymentHandlers, sendPaymentResult } from '../paymentsAdapter';
 import {
   addAnnouncementComment,
   createAnnouncement,
@@ -212,7 +212,8 @@ export function createApiApp() {
 
   app.get(['/payments/access/status', '/api/payments/access/status'], asyncRoute(async (req, res) => {
     const user = await requireBearerToken(req);
-    await sendPaymentResult(res, paymentHandlers().getAccessStatus(attachAuthToPaymentRequest(req, user)));
+    const paymentStatus = paymentHandlers().getAccessStatus(attachAuthToPaymentRequest(req, user));
+    await sendPaymentResult(res, mergeIdentityAccessStatus(user.uid, paymentStatus));
   }));
 
   app.get(['/organizations', '/api/organizations'], asyncRoute(async (req, res) => {

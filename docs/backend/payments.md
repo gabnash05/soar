@@ -71,7 +71,7 @@ Current implementation uses the existing TypeScript Firebase/Express API and Fir
 
 Payment-owned collections:
 
-- `systemSettings/paymentPolicy`: singleton global payment requirement boolean and Admin audit metadata; user clients have no direct Firestore read/write grant. The API exposes only the non-secret policy/readiness response and trusted Admin writes.
+- `systemSettings/paymentPolicy`: singleton global payment requirement, Admin audit metadata, and the immutable existing-account activation/expiry window; user clients have no direct Firestore read/write grant. The public API exposes only the non-secret policy/readiness response, while the trusted Admin API also reports the activation timestamp.
 
 - `paymentRegistrationIntents/{intentId}`: pre-account checkout/registration state. Legacy intents may contain a `secretHash`; new same-UID intents do not set one. Plaintext binding secrets and passwords are never stored.
 - `payments/{paymentId}`: provider checkout/payment records for registration and renewal.
@@ -211,6 +211,8 @@ Requires the same authenticated uid. Returns server-owned access only:
   "uid": "firebase-auth-uid",
   "status": "active",
   "active": true,
+  "provenance": "provider-confirmed-payment",
+  "startsAt": "2026-10-07T15:00:00.000Z",
   "accessExpiresAt": "2027-04-07T15:00:00.000Z",
   "latestPaymentId": "pay_...",
   "feePhp": 10,
@@ -219,6 +221,8 @@ Requires the same authenticated uid. Returns server-owned access only:
   "serverTime": "2026-10-07T15:00:00.000Z"
 }
 ```
+
+For grandfathered access, the authenticated response uses `provenance: "grandfathered-existing-account"`, `feePhp: 0`, and `periodLabel: "Existing account access"`; it does not invent a payment reference.
 
 ### `POST /api/webhooks/paymongo`
 
@@ -235,7 +239,7 @@ Processing rules:
 
 ## Six-month access and renewal policy
 
-SOAR access is a **manual six-month purchase**, not an automatic subscription.
+SOAR paid access is a **manual six-month purchase**, not an automatic subscription. Eligible existing accounts also receive the separately identified activation-window grant described below.
 
 - The price remains **PHP 10.00 = 1000 minor units** unless separately changed.
 - New registration access starts from provider-confirmed paid time and expires six UTC calendar months later.
@@ -244,6 +248,9 @@ SOAR access is a **manual six-month purchase**, not an automatic subscription.
 - Expired renewal starts from the new confirmed payment time.
 - Calendar-month arithmetic preserves day/time in UTC when possible. Month-end dates clamp to the last valid day of the target month, including leap-year February.
 - Already-issued stored expiry dates are preserved; this code does not retroactively truncate paid rights or migrate live data.
+- Existing-account access uses a one-time activation window recorded in `systemSettings/paymentPolicy` by an explicit trusted Admin save while server checkout is configured for live mode and the server hard stop is off. The server stores its activation timestamp and helper-computed six-calendar-month expiry atomically, and profiles with a server-created `createdAt` strictly before activation receive that access without per-account writes.
+- Repeated saves and OFF/ON toggles preserve the original window. Disabled, unconfigured, and test-mode saves do not start it; profiles without a trustworthy pre-activation creation timestamp are not eligible.
+- Revoked entitlements remain revoked. Longer valid paid entitlements remain authoritative, and grandfathered access is reported with explicit provenance without creating a payment, provider event, transaction reference, or purchase history.
 - Pending, failed, cancelled, invalid, or expired checkout/payment records never unlock account creation or main app access.
 - Expiry locks main workflow access but preserves account and product records for manual renewal.
 
@@ -264,7 +271,7 @@ Recovery email requests are also rate-limited by email hash and IP. Production s
 - Public `GET /payment-policy` exposes only `{ paymentsRequired, checkout: { status, mode } }`; it returns no credential values. `GET/PUT /admin/payment-policy` require a server-verified Firebase token with `soarAdmin: true`. Writes accept only `{ paymentsRequired: boolean }` and store actor/timestamp audit metadata.
 - No saved policy defaults to `paymentsRequired=false`; credentials and `SOAR_DISABLE_PAYMENTS=false` do not opt into charging. Free account registration uses only explicit `unpaid-preview` provenance and creates no paid entitlement/event. `paymentsRequired=true` prevents that preview path and permits new registration/renewal checkout only when `SOAR_DISABLE_PAYMENTS` is not true and required server configuration is present.
 - `SOAR_DISABLE_PAYMENTS=true` remains a hard stop and Admin cannot override it. Readiness reports deployment-disabled, configuration-not-ready, or server-configured test/live mode; it does not claim merchant QR Ph activation. The existing frontend `VITE_SOAR_PAYMENTS_ENABLED=false` remains an additional UI/build stop.
-- Turning payment requirements on stops access based only on the explicit unpaid-preview marker. Active provider-confirmed entitlements remain authoritative and revoked records remain revoked. The setting does not edit history, expiry, profiles, or entitlements, and does not implement the separately approved existing-account grandfather grant whose start/duration remains undecided.
+- Turning payment requirements on stops access based only on the explicit unpaid-preview marker. Active provider-confirmed entitlements remain authoritative and revoked records remain revoked. The activation window is stored once in the same Admin-only policy document and is not reset by later policy changes; Firestore and Storage rules use its shared expiry and the profile creation boundary without creating per-user entitlements or changing payment history.
 - New registration route sequence: create/sign in to Firebase Auth, call authenticated `/payments/registration/auth-start`, redirect to hosted Checkout, then use authenticated `/payments/registration/auth-status`, `/payments/registration/resume` and `/payments/registration/auth-complete`. All are tied to the same UID. The server creates the SOAR profile and provider-confirmed entitlement only after a matching signed paid webhook.
 - Test readiness must not be mistaken for a real integration test. QR Ph test mode may show a real/scannable QR; never scan/pay it. Use only PayMongo’s response `test_url` simulator after a separate bounded test window is approved.
 
@@ -275,7 +282,7 @@ Payment-first account creation cannot be fully guaranteed by frontend discipline
 Required production hardening:
 
 1. Use the identity helper for all legitimate paid account creation.
-2. Firestore/Storage rules must require server-created `accounts/{uid}` and active `entitlements/{uid}` for main app data, so stray Auth users have no product access.
+2. Firestore/Storage rules require a server-created `accounts/{uid}` and either an active provider entitlement or an eligible account in the unexpired activation cohort, so an Auth identity alone never grants product access.
 3. To prevent stray Auth users from existing at all, enable Firebase Identity Platform blocking functions (`beforeCreate`) to reject direct signup attempts that lack a server-approved paid registration context. This may require Google Cloud/Firebase billing and Identity Platform availability.
 4. If blocking functions are not enabled, document the residual risk and add monitoring/cleanup for unprovisioned Auth users. Do not claim strict payment-before-Auth enforcement in that configuration.
 

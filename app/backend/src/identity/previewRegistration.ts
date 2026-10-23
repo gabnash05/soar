@@ -5,7 +5,7 @@ import { normalizeDepartmentKey, previewRegistrationSchema } from '../contracts/
 import type { AccountDocument } from '../contracts/schema';
 import { AppError } from '../errors';
 import { adminAuth, db } from '../firebase';
-import { isUnpaidAccessEnabled } from './paymentPolicy';
+import { isUnpaidAccessEnabled, isUnpaidAccessEnabledInTransaction } from './paymentPolicy';
 
 export interface PreviewRegistrationResult {
   uid: string;
@@ -70,7 +70,13 @@ export async function createUnpaidPreviewAccount(user: DecodedIdToken, rawInput:
   };
 
   const created = await db.runTransaction(async (transaction) => {
-    const existingSnapshot = await transaction.get(ref);
+    const [existingSnapshot, unpaidAccessAllowed] = await Promise.all([
+      transaction.get(ref),
+      isUnpaidAccessEnabledInTransaction(transaction),
+    ]);
+    if (!unpaidAccessAllowed) {
+      throw new AppError('preview_registration_unavailable', 'Free account creation is unavailable while SOAR requires payment.', 503);
+    }
     if (existingSnapshot.exists) {
       const existing = existingSnapshot.data() as AccountDocument;
       if (existing.uid === user.uid && samePreviewProfile(existing, input, email)) return false;

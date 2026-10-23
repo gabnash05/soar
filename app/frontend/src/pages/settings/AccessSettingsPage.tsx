@@ -78,6 +78,8 @@ export const AccessSettingsPage = () => {
 
   const active = hasActiveAccess(session);
   const previewAccess = session.access.provenance === 'unpaid-preview';
+  const grandfatheredAccess = session.access.provenance === 'grandfathered-existing-account';
+  const noChargeAccess = previewAccess || grandfatheredAccess;
   const tone = active ? 'approved' : session.access.status === 'expired' ? 'attention' : 'danger';
   const feePhp = session.access.feePhp ?? session.access.annualFeePhp;
   const periodLabel = session.access.periodLabel ?? '6 months';
@@ -101,9 +103,11 @@ export const AccessSettingsPage = () => {
     <div className="mx-auto grid w-[min(1120px,100%)] gap-[18px]">
       <header className="relative min-w-0 overflow-hidden rounded-[18px] border border-white/15 bg-[var(--color-navy)] bg-[image:var(--gradient-brand)] p-[clamp(16px,3vw,24px)] text-white [&_.eyebrow]:text-[var(--color-gold)] [&_p:not(.eyebrow)]:m-0 [&_p:not(.eyebrow)]:max-w-[72ch] [&_p:not(.eyebrow)]:text-white/80">
         <p className="eyebrow mb-2 text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-gold)]">Payment & access</p>
-        <h1 className="mb-1.5 font-[var(--font-display)] text-[clamp(1.9rem,4vw,3rem)] font-bold leading-[1.05] tracking-[-0.035em] text-white max-sm:text-[2.15rem]">{previewAccess ? 'Account access' : 'Six-month access status'}</h1>
+        <h1 className="mb-1.5 font-[var(--font-display)] text-[clamp(1.9rem,4vw,3rem)] font-bold leading-[1.05] tracking-[-0.035em] text-white max-sm:text-[2.15rem]">{previewAccess ? 'Account access' : grandfatheredAccess ? 'Existing account access' : 'Six-month access status'}</h1>
         <p>{previewAccess
           ? 'This account has access without payment. No transaction or paid entitlement was created.'
+          : grandfatheredAccess
+            ? 'This existing account receives six UTC calendar months of access from payment activation. This access grant created no charge or PayMongo payment record.'
           : paidFlowEnabled
             ? 'SOAR access costs PHP10 per account for six months through QR Ph (scan with GCash or another supported bank/e-wallet app). Users renew manually; there is no automatic recurring charge.'
             : paymentPolicy?.paymentsRequired
@@ -160,14 +164,14 @@ export const AccessSettingsPage = () => {
 
       <div className="grid grid-cols-2 gap-4 max-[820px]:grid-cols-1">
         <Card>
-          <CardHeader title="Access details" eyebrow={previewAccess ? 'Account access' : 'Six-month plan'}>{previewAccess ? 'Access is granted to this account; no payment was recorded.' : 'These values come from your secure access record.'}</CardHeader>
+          <CardHeader title="Access details" eyebrow={previewAccess ? 'Account access' : grandfatheredAccess ? 'Existing account access' : 'Six-month plan'}>{previewAccess ? 'This account has no payment record.' : grandfatheredAccess ? 'This access grant creates no payment record.' : 'These values come from your secure access record.'}</CardHeader>
           <dl className="mt-[18px] grid gap-px overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-border)] p-0 [&_div]:grid [&_div]:grid-cols-[minmax(120px,0.45fr)_minmax(0,1fr)] [&_div]:gap-3 [&_div]:bg-[var(--color-white)] [&_div]:p-3 max-[820px]:[&_div]:grid-cols-1 max-[820px]:[&_div]:gap-0.5 [&_dt]:text-[13px] [&_dt]:text-[var(--muted-foreground)] [&_dd]:m-0 [&_dd]:[overflow-wrap:anywhere] [&_dd]:font-bold [&_dd]:text-[var(--color-navy)]">
-            <div><dt>Fee</dt><dd>{previewAccess ? 'No payment' : `PHP${feePhp}`}</dd></div>
+            <div><dt>Fee</dt><dd>{noChargeAccess ? 'No payment' : `PHP${feePhp}`}</dd></div>
             <div><dt>Access period</dt><dd>{previewAccess ? 'While access remains active' : periodLabel}</dd></div>
             <div><dt>Status</dt><dd>{session.access.status}</dd></div>
             <div><dt>Started</dt><dd>{formatDate(session.access.startsAt)}</dd></div>
             <div><dt>Expires</dt><dd>{previewAccess ? 'While access remains active' : formatDate(session.access.expiresAt)}</dd></div>
-            <div><dt>Payment reference</dt><dd>{previewAccess ? 'No payment recorded' : session.access.lastPaymentReference || 'No confirmed reference'}</dd></div>
+            <div><dt>Payment reference</dt><dd>{previewAccess ? 'No payment recorded' : grandfatheredAccess ? session.access.lastPaymentReference || 'None for this access grant' : session.access.lastPaymentReference || 'No confirmed reference'}</dd></div>
           </dl>
         </Card>
         <Card>

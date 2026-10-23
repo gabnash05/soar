@@ -203,7 +203,20 @@ describe('Admin provisioning page', () => {
 
     await waitFor(() => expect(mocks.setAdminPaymentPolicy).toHaveBeenCalledWith(true));
     expect(await screen.findByRole('status')).toHaveTextContent(/payment policy saved/i);
-    expect(screen.getByText(/changing this toggle does not delete payment history/i)).toBeInTheDocument();
+    expect(screen.getByText(/existing-account access is separate from payment history/i)).toBeInTheDocument();
+    expect(screen.getByText(/disabled, unconfigured, and test-mode saves do not start the clock/i)).toBeInTheDocument();
+    expect(screen.getByText(/activation timestamp: not activated/i)).toBeInTheDocument();
+  });
+
+  it('shows the immutable server activation time to Admins without exposing it publicly', async () => {
+    mocks.getAdminPaymentPolicy.mockResolvedValue({
+      paymentsRequired: true,
+      checkout: { status: 'configured', mode: 'live' },
+      existingAccountAccessActivatedAt: '2026-10-23T01:02:03.000Z',
+    });
+    renderPage('/admin?tab=payments');
+
+    expect(await screen.findByText('Activation timestamp: 2026-10-23T01:02:03.000Z.')).toBeInTheDocument();
   });
 
   it('warns admins that PayMongo test QR codes must never be scanned or paid', async () => {

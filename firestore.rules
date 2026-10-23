@@ -17,15 +17,39 @@ service cloud.firestore {
       return /databases/$(database)/documents/entitlements/$(uid);
     }
 
+    function paymentPolicyPath() {
+      return /databases/$(database)/documents/systemSettings/paymentPolicy;
+    }
+
     function accountPath(uid) {
       return /databases/$(database)/documents/accounts/$(uid);
     }
 
-    function hasActiveAccess(uid) {
+    function hasRevokedAccess(uid) {
+      return exists(entitlementPath(uid))
+        && get(entitlementPath(uid)).data.status == 'revoked';
+    }
+
+    function hasActivePaidAccess(uid) {
       return exists(entitlementPath(uid))
         && get(entitlementPath(uid)).data.status == 'active'
         && get(entitlementPath(uid)).data.accessExpiresAt is timestamp
         && get(entitlementPath(uid)).data.accessExpiresAt > request.time;
+    }
+
+    function hasGrandfatheredAccess(uid) {
+      return exists(accountPath(uid))
+        && exists(paymentPolicyPath())
+        && get(accountPath(uid)).data.createdAt is timestamp
+        && get(paymentPolicyPath()).data.existingAccountAccessActivatedAt is timestamp
+        && get(paymentPolicyPath()).data.existingAccountAccessExpiresAt is timestamp
+        && get(accountPath(uid)).data.createdAt < get(paymentPolicyPath()).data.existingAccountAccessActivatedAt
+        && get(paymentPolicyPath()).data.existingAccountAccessExpiresAt > request.time;
+    }
+
+    function hasActiveAccess(uid) {
+      return !hasRevokedAccess(uid)
+        && (hasActivePaidAccess(uid) || hasGrandfatheredAccess(uid));
     }
 
     function activeUser() {

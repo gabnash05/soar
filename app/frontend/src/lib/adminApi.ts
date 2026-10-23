@@ -24,7 +24,10 @@ export interface AdminPage<T> {
   nextPageToken?: string;
 }
 
-export type AdminPaymentPolicy = PaymentPolicy & { updatedByUid?: string };
+export type AdminPaymentPolicy = PaymentPolicy & {
+  updatedByUid?: string;
+  existingAccountAccessActivatedAt?: string;
+};
 
 export async function getAdminPaymentPolicy(): Promise<AdminPaymentPolicy> {
   return apiFetch('/admin/payment-policy', { headers: await authHeaders() });
