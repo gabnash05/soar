@@ -31,6 +31,7 @@ export async function getUserSession(user: DecodedIdToken) {
   const expiresAt = access.accessExpiresAt?.toDate().toISOString();
   const startsAt = access.accessStartsAt?.toDate().toISOString();
   const previewAccess = access.provenance === 'unpaid-preview';
+  const grandfatheredAccess = access.provenance === 'grandfathered-existing-account';
   return {
     uid: user.uid,
     email: account.email,
@@ -43,9 +44,9 @@ export async function getUserSession(user: DecodedIdToken) {
       status: access.status === 'revoked' ? 'expired' : access.status,
       provenance: access.provenance,
       annualFeePhp: 10,
-      feePhp: previewAccess ? 0 : 10,
+      feePhp: previewAccess || grandfatheredAccess ? 0 : 10,
       periodMonths: previewAccess ? undefined : 6,
-      periodLabel: previewAccess ? 'Unpaid preview' : '6 months',
+      periodLabel: previewAccess ? 'Unpaid preview' : grandfatheredAccess ? 'Existing account access' : '6 months',
       startsAt,
       expiresAt,
       renewalAvailable: !previewAccess && access.status !== 'active'

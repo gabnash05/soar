@@ -681,8 +681,10 @@ export function AdminProvisioningPage() {
                 </section>
 
                 <aside className="grid gap-1 rounded-[var(--radius-md)] bg-[var(--color-blue-soft)] p-4 text-sm text-[var(--color-blue-deep)]" role="note">
-                  <strong>Existing access is not rewritten.</strong>
-                  <span>Changing this toggle does not delete payment history, extend paid access, restore revoked access, or decide grandfathered access for existing accounts. Turning payment requirements on stops active access based only on unpaid-preview provenance; saved provider-confirmed entitlements and revocations remain authoritative.</span>
+                  <strong>Existing-account access is separate from payment history.</strong>
+                  <span>A trusted Admin save of payment-required starts the one-time activation clock only when server checkout is configured for live mode and the server hard stop is off. Save only after the owner-approved live release, including an enabled frontend payment UI. Existing profiles with a server-created timestamp before that UTC instant receive six calendar months; repeat saves and OFF/ON toggles do not reset it. Disabled, unconfigured, and test-mode saves do not start the clock.</span>
+                  <span>No profile or payment history is rewritten. Revocations remain authoritative, longer valid paid access is preserved, and grandfathered access creates no payment reference.</span>
+                  <span>Activation timestamp: {paymentPolicy.existingAccountAccessActivatedAt ?? 'Not activated'}.</span>
                 </aside>
 
                 {paymentPolicyMessage ? <p className="m-0 text-sm font-bold text-[var(--color-blue-deep)]" role="status">{paymentPolicyMessage}</p> : null}

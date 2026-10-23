@@ -66,6 +66,24 @@ describe('AppShell navigation', () => {
     expect(screen.queryByText(/preview/i)).not.toBeInTheDocument();
   });
 
+  it('labels activation-based grandfathered access distinctly from paid or preview access', async () => {
+    renderShell(makeSession({
+      access: {
+        status: 'active',
+        provenance: 'grandfathered-existing-account',
+        annualFeePhp: 10,
+        feePhp: 0,
+        periodMonths: 6,
+        periodLabel: 'Existing account access',
+        expiresAt: '2027-04-23T01:02:03.000Z',
+        renewalAvailable: false,
+      },
+    }));
+
+    await waitFor(() => expect(screen.getByText('Shell child')).toBeInTheDocument());
+    expect(screen.getByText('Existing account access')).toBeInTheDocument();
+  });
+
   it('shows only the provisioning tab to the trusted Admin account type without payment or officer status UI', async () => {
     const admin = makeSession({
       accountKind: 'admin',

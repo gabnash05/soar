@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Timestamp } from 'firebase-admin/firestore';
 
 const mocks = vi.hoisted(() => ({
   getAccessState: vi.fn(),
@@ -50,6 +51,28 @@ describe('server-derived Admin session', () => {
     expect(mocks.syncVerifiedAuthEmail).not.toHaveBeenCalled();
     expect(mocks.getAccessState).not.toHaveBeenCalled();
     expect(mocks.listApprovedOfficerGrants).not.toHaveBeenCalled();
+  });
+
+  it('exposes activation-based access with explicit no-payment provenance', async () => {
+    const activationAt = Timestamp.fromDate(new Date('2026-10-23T01:02:03.000Z'));
+    const expiryAt = Timestamp.fromDate(new Date('2027-04-23T01:02:03.000Z'));
+    mocks.getAccessState.mockResolvedValue({
+      status: 'active',
+      provenance: 'grandfathered-existing-account',
+      accessStartsAt: activationAt,
+      accessExpiresAt: expiryAt,
+    });
+
+    const session = await getUserSession({ uid: 'student-1', email_verified: true } as never);
+    expect(session.access).toMatchObject({
+      status: 'active',
+      provenance: 'grandfathered-existing-account',
+      feePhp: 0,
+      periodMonths: 6,
+      periodLabel: 'Existing account access',
+      startsAt: '2026-10-23T01:02:03.000Z',
+      expiresAt: '2027-04-23T01:02:03.000Z',
+    });
   });
 
   it('preserves student identity and entitlement behavior without the trusted claim', async () => {

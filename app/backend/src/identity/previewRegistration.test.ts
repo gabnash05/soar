@@ -157,6 +157,24 @@ describe('unpaid preview registration', () => {
     expect(mocks.accounts.has('accounts/student-uid')).toBe(false);
   });
 
+  it('rechecks payment policy inside the account transaction to block a concurrent activation race', async () => {
+    process.env.SOAR_DISABLE_PAYMENTS = 'false';
+    mocks.accounts.set('systemSettings/paymentPolicy', { paymentsRequired: false });
+    mocks.runTransaction.mockImplementationOnce(async (callback) => callback({
+      get: async (ref: { path: string }) => {
+        const data = ref.path === 'systemSettings/paymentPolicy'
+          ? { paymentsRequired: true }
+          : mocks.accounts.get(ref.path);
+        return { exists: data !== undefined, data: () => data };
+      },
+      create: (ref: { path: string }, value: unknown) => mocks.accounts.set(ref.path, value),
+    }));
+
+    await expect(createUnpaidPreviewAccount(user, student))
+      .rejects.toMatchObject({ code: 'preview_registration_unavailable', status: 503 });
+    expect(mocks.accounts.has('accounts/student-uid')).toBe(false);
+  });
+
   it('rejects a Firebase identity whose verified token email no longer matches its account', async () => {
     mocks.getUser.mockResolvedValueOnce({ uid: 'student-uid', email: 'different@example.edu', emailVerified: false, disabled: false, customClaims: {} });
 
