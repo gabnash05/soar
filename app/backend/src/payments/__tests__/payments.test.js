@@ -8,7 +8,7 @@ const { PayMongoCheckoutProvider } = require('../paymongo');
 const { MemoryPaymentRepository } = require('../repository');
 const { FakePayMongoProvider, FakeIdentityFoundation } = require('../testing/fakes');
 const { makeCheckoutPaidEvent, signPayMongoPayload } = require('../testing/paymongo-fixtures');
-const { PAYMENT_STATUSES, REGISTRATION_STATUSES, ACCESS_PRICE_MINOR, ACCESS_CURRENCY } = require('../constants');
+const { PAYMENT_METHOD, PAYMENT_STATUSES, REGISTRATION_STATUSES, ACCESS_PRICE_MINOR, ACCESS_CURRENCY } = require('../constants');
 const { createPaymentsHttpHandlers, readRegistrationBinding } = require('../http');
 const { addCalendarMonthsUtc } = require('../time');
 const { loadPaymentConfigFromEnv } = require('../config');
@@ -666,6 +666,90 @@ test('dormant HttpOnly registration binding remains scoped to its exact intent',
   const cookie = '__Host-soar_reg=intent-one.secret-value; Path=/; HttpOnly; Secure; SameSite=Lax';
   assert.deepEqual(readRegistrationBinding({ cookie }, 'intent-one'), { intentId: 'intent-one', registrationSecret: 'secret-value' });
   assert.equal(readRegistrationBinding({ cookie }, 'intent-two'), null);
+});
+
+test('same-uid HTTP handlers complete a raw-body-signed local paid registration once with six UTC calendar months', async () => {
+  const harness = createHarness();
+  const handlers = createPaymentsHttpHandlers(harness.service);
+  const auth = { uid: 'firebase-local-paid-completion', email: 'local-paid-completion@example.edu' };
+  const authUser = { ...auth, emailVerified: false };
+  harness.identity.usersByUid.set(auth.uid, authUser);
+  harness.identity.usersByEmail.set(auth.email, authUser);
+  const body = {
+    role: 'student',
+    email: auth.email,
+    displayName: 'Local Completion Test',
+    studentId: 'LOCAL-PAID-01',
+    department: 'Computer Engineering Department',
+  };
+
+  const started = await handlers.startAuthenticatedRegistrationPayment({ auth, ip: '203.0.113.10', body });
+  assert.equal(started.status, 200);
+  assert.equal(started.body.amountPhp, 10);
+  const intentId = started.body.intentId;
+  const session = harness.provider.sessions[0];
+  assert.ok(intentId);
+  assert.equal(session.metadata.purpose, 'registration');
+  assert.equal(session.metadata.amountMinor, ACCESS_PRICE_MINOR);
+  assert.equal(session.metadata.currency, ACCESS_CURRENCY);
+  const startedSnapshot = harness.repository.snapshot();
+  assert.equal(startedSnapshot.registrationIntents[intentId].targetUid, auth.uid);
+  assert.equal(startedSnapshot.registrationIntents[intentId].authFirst, true);
+  assert.equal(startedSnapshot.payments[session.paymentId].paymentMethod, PAYMENT_METHOD);
+  assert.equal(startedSnapshot.payments[session.paymentId].providerCheckoutSessionId, session.providerCheckoutSessionId);
+  assert.equal(Object.keys(startedSnapshot.accounts).length, 0);
+  assert.equal(Object.keys(startedSnapshot.entitlements).length, 0);
+
+  const pendingStatus = await handlers.getAuthenticatedCheckoutStatus({ auth, query: { intentId } });
+  assert.equal(pendingStatus.status, 200);
+  assert.equal(pendingStatus.body.canCreateAccount, false);
+  const pendingResume = await handlers.resumeAuthenticatedRegistration({ auth });
+  assert.equal(pendingResume.body.registration.intentId, intentId);
+  assert.equal(pendingResume.body.registration.canCreateAccount, false);
+
+  const event = makeCheckoutPaidEvent({
+    eventId: 'evt_local_paid_completion',
+    checkoutSessionId: session.providerCheckoutSessionId,
+    referenceNumber: session.referenceNumber,
+    metadata: { paymentId: session.paymentId, intentId, purpose: 'registration' },
+    paidAt: PAID_AT_SECONDS,
+    livemode: false,
+  });
+  const signed = signPayMongoPayload(event, { secret: WEBHOOK_SECRET, timestamp: PAID_AT_SECONDS, livemode: false });
+  const webhookRequest = { rawBody: signed.rawBody, headers: { 'paymongo-signature': signed.signatureHeader } };
+  const firstDelivery = await handlers.paymongoWebhook(webhookRequest);
+  assert.equal(firstDelivery.status, 200);
+  assert.equal(firstDelivery.body.processed, true);
+  const duplicateDelivery = await handlers.paymongoWebhook(webhookRequest);
+  assert.equal(duplicateDelivery.status, 200);
+  assert.equal(duplicateDelivery.body.processed, false);
+  assert.equal(duplicateDelivery.body.duplicate, true);
+
+  const paidStatus = await handlers.getAuthenticatedCheckoutStatus({ auth, query: { intentId } });
+  assert.equal(paidStatus.body.canCreateAccount, true);
+  assert.equal(paidStatus.body.checkoutUrl, null);
+  const paidResume = await handlers.resumeAuthenticatedRegistration({ auth });
+  assert.equal(paidResume.body.registration.intentId, intentId);
+  assert.equal(paidResume.body.registration.canCreateAccount, true);
+
+  const completed = await handlers.completeAuthenticatedRegistration({ auth, body: { intentId } });
+  assert.equal(completed.status, 200);
+  assert.equal(completed.body.uid, auth.uid);
+  assert.equal(completed.body.completed, true);
+  const repeatedCompletion = await handlers.completeAuthenticatedRegistration({ auth, body: { intentId } });
+  assert.equal(repeatedCompletion.status, 200);
+  assert.equal(repeatedCompletion.body.uid, auth.uid);
+  assert.equal(repeatedCompletion.body.alreadyCompleted, true);
+
+  const snapshot = harness.repository.snapshot();
+  assert.deepEqual(Object.keys(snapshot.accounts), [auth.uid]);
+  assert.deepEqual(Object.keys(snapshot.entitlements), [auth.uid]);
+  assert.equal(snapshot.registrationIntents[intentId].status, REGISTRATION_STATUSES.COMPLETED);
+  assert.equal(snapshot.payments[session.paymentId].status, PAYMENT_STATUSES.PAID);
+  assert.equal(snapshot.entitlements[auth.uid].status, 'active');
+  assert.equal(snapshot.entitlements[auth.uid].accessExpiresAt.toISOString(), '2027-04-07T15:00:00.000Z');
+  assert.equal(Object.keys(snapshot.processedEvents).length, 1);
+  assert.equal(harness.identity.createCalls.length, 1);
 });
 
 test('HTTP registration handlers require and retain the same Firebase UID without using cookies or passwords', async () => {
