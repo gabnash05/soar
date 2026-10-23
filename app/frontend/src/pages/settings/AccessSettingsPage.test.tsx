@@ -55,6 +55,37 @@ describe('AccessSettingsPage', () => {
     expect(screen.queryByText('PHP10')).not.toBeInTheDocument();
   });
 
+  it('labels grandfathered existing-account access honestly without inventing payment history', async () => {
+    vi.stubEnv('VITE_SOAR_PAYMENTS_ENABLED', 'false');
+    const session = makeSession({
+      access: {
+        status: 'active',
+        provenance: 'grandfathered-existing-account',
+        annualFeePhp: 10,
+        feePhp: 0,
+        periodMonths: 6,
+        periodLabel: 'Existing account access',
+        startsAt: '2026-10-23T01:02:03.000Z',
+        expiresAt: '2027-04-23T01:02:03.000Z',
+        renewalAvailable: false,
+      },
+    });
+    render(
+      <MemoryRouter initialEntries={['/settings/access']}>
+        <AuthProvider gateway={createMockGateway(session)}>
+          <Routes><Route path="/settings/access" element={<AccessSettingsPage />} /></Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Existing account access' })).toBeInTheDocument();
+    expect(screen.getByText(/six UTC calendar months of access from payment activation/i)).toBeInTheDocument();
+    expect(screen.getByText('No payment')).toBeInTheDocument();
+    expect(screen.getByText('None for this access grant')).toBeInTheDocument();
+    expect(screen.getAllByText('Existing account access').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/PayMongo paid/i)).not.toBeInTheDocument();
+  });
+
   it('keeps renewal pending until the authenticated backend status confirms it, then reloads access', async () => {
     const gateway = createMockGateway(makeSession());
     vi.mocked(gateway.getRenewalStatus)
@@ -70,6 +101,7 @@ describe('AccessSettingsPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Checking renewal payment' })).toBeInTheDocument();
+    expect(screen.getByText(/through QR Ph \(scan with GCash or another supported bank\/e-wallet app\)/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText(/checkout returned successfully; waiting for the signed provider confirmation/i)).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /check renewal status/i }));
     expect(await screen.findByRole('heading', { name: 'Renewal confirmed' })).toBeInTheDocument();

@@ -34,7 +34,7 @@ export interface AccountDocument {
   displayName: string;
   email: string;
   emailVerified: boolean;
-  accessProvenance?: 'unpaid-preview';
+  accessProvenance?: 'unpaid-preview' | 'provider-confirmed-payment';
   previewAccessGrantedAt?: Timestamp;
   studentId?: string;
   department?: string;
@@ -175,7 +175,7 @@ export interface OfficerGrantDocument {
 
 export interface PaidRegistrationCompletionInput {
   email: string;
-  password: string;
+  uid: string;
   displayName: string;
   role: PublicAccountRole;
   studentId?: string;

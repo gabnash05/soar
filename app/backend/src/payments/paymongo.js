@@ -3,6 +3,7 @@
 const { Buffer } = require('node:buffer');
 const {
   PAYMENT_PROVIDER,
+  PAYMENT_METHOD,
   ACCESS_PRICE_MINOR,
   ACCESS_CURRENCY,
 } = require('./constants');
@@ -151,7 +152,13 @@ function validatePaidCheckoutFacts(facts, expected = {}) {
   }
 
   if (facts.paymentStatus && facts.paymentStatus !== 'paid') fail('payment_not_paid', 'PayMongo payment is not paid.');
-  if (facts.paymentSourceType && facts.paymentSourceType !== 'gcash') fail('payment_method_mismatch', 'PayMongo payment method is not GCash.');
+  const acceptedPaymentMethods = expected.paymentMethods || [PAYMENT_METHOD];
+  if (expected.requirePaymentSource && !facts.paymentSourceType) {
+    fail('payment_method_missing', 'PayMongo paid event did not include the expected payment method.');
+  }
+  if (facts.paymentSourceType && !acceptedPaymentMethods.includes(facts.paymentSourceType)) {
+    fail('payment_method_mismatch', 'PayMongo payment method does not match the checkout session.');
+  }
   return true;
 }
 
@@ -190,7 +197,7 @@ class PayMongoCheckoutProvider {
             currency: ACCESS_CURRENCY,
             quantity: 1,
           }],
-          payment_method_types: ['gcash'],
+          payment_method_types: [PAYMENT_METHOD],
           description: 'SOAR six-month account access',
           reference_number: referenceNumber,
           success_url: successUrl,

@@ -179,8 +179,8 @@ export function OrganizationIdentityArt({ name, logoUrl, className = '' }: { nam
   return (
     <div
       className={cn(
-        'org-identity-art grid min-h-[170px] place-items-center bg-[linear-gradient(135deg,var(--color-navy-soft),var(--color-blue-soft))] p-5.5 text-[var(--color-navy)] max-sm:min-h-[140px]',
-        '[&_img]:h-full [&_img]:max-h-[180px] [&_img]:w-full [&_img]:object-contain',
+        'org-identity-art grid h-[220px] min-h-0 min-w-0 place-items-center overflow-hidden bg-[linear-gradient(135deg,var(--color-navy-soft),var(--color-blue-soft))] p-5.5 text-[var(--color-navy)] max-sm:h-[180px]',
+        '[&_img]:block [&_img]:h-full [&_img]:max-h-full [&_img]:max-w-full [&_img]:w-full [&_img]:object-contain',
         '[&_span]:grid [&_span]:aspect-square [&_span]:w-[min(126px,48vw)] [&_span]:place-items-center [&_span]:rounded-[28px] [&_span]:bg-[var(--color-white)] [&_span]:font-[var(--font-display)] [&_span]:text-[clamp(2rem,6vw,3.3rem)] [&_span]:font-black [&_span]:leading-none [&_span]:text-[var(--color-navy)] [&_span]:shadow-[var(--shadow-soft)]',
         className,
       )}

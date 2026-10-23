@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import type { UserRecord } from 'firebase-admin/auth';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { accountPath, entitlementPath, entitlementProviderEventPath } from '../contracts/paths';
+import { accountPath, entitlementPath, entitlementProviderEventPath, paymentPolicyPath } from '../contracts/paths';
 import { normalizeDepartmentKey, paidRegistrationCompletionSchema } from '../contracts/validation';
 import type { PaidRegistrationCompletionInput, PaidRegistrationCompletionResult } from '../contracts/schema';
 import { AppError } from '../errors';
@@ -61,23 +61,12 @@ async function claimProviderEvent(input: PaidRegistrationCompletionInput): Promi
   return { key, lockId, alreadyProcessedUid };
 }
 
-async function getOrCreateAuthUser(input: PaidRegistrationCompletionInput): Promise<UserRecord> {
-  try {
-    return await adminAuth.getUserByEmail(input.email);
-  } catch (error) {
-    const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : '';
-    if (code !== 'auth/user-not-found') {
-      throw error;
-    }
+async function getAuthenticatedAuthUser(input: PaidRegistrationCompletionInput): Promise<UserRecord> {
+  const user = await adminAuth.getUser(input.uid);
+  if (!user.email || user.email.toLowerCase() !== input.email.toLowerCase()) {
+    throw new AppError('account_conflict', 'The authenticated account email does not match this paid registration.', 409, 'contact_support');
   }
-
-  return adminAuth.createUser({
-    email: input.email,
-    password: input.password,
-    displayName: input.displayName,
-    emailVerified: false,
-    disabled: false
-  });
+  return user;
 }
 
 export async function createPaidAccountFromConfirmedRegistration(rawInput: PaidRegistrationCompletionInput): Promise<PaidRegistrationCompletionResult> {
@@ -87,12 +76,14 @@ export async function createPaidAccountFromConfirmedRegistration(rawInput: PaidR
     return { uid: alreadyProcessedUid, alreadyProcessed: true };
   }
 
-  const authUser = await getOrCreateAuthUser(input);
+  const authUser = await getAuthenticatedAuthUser(input);
   const eventRef = db.doc(entitlementProviderEventPath(key));
   const accountRef = db.doc(accountPath(authUser.uid));
   const entitlementRef = db.doc(entitlementPath(authUser.uid));
+  const paymentPolicyRef = db.doc(paymentPolicyPath());
 
   await db.runTransaction(async (tx) => {
+    await tx.get(paymentPolicyRef);
     const [eventSnap, accountSnap] = await Promise.all([tx.get(eventRef), tx.get(accountRef)]);
     const event = eventSnap.data();
     if (event?.status === 'completed') {

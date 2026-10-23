@@ -187,7 +187,7 @@ export function OrganizationView({ organizationId, session, client }: { organiza
       {profile ? (
         <>
           <section className="grid items-stretch gap-[clamp(18px,4vw,34px)] rounded-[20px] bg-[var(--color-white)] p-[clamp(16px,3vw,24px)] shadow-[var(--shadow-soft)] md:grid-cols-[minmax(220px,0.42fr)_minmax(0,1fr)] max-[820px]:grid-cols-1">
-            <OrganizationIdentityArt name={profile.name} logoUrl={profile.logoUrl} className="profile-identity-art min-h-[260px] rounded-[18px] max-[820px]:min-h-[210px]" />
+            <OrganizationIdentityArt name={profile.name} logoUrl={profile.logoUrl} className="profile-identity-art h-[260px] rounded-[18px] max-[820px]:h-[210px]" />
             <div className="grid content-center gap-3.5 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[clamp(1.5rem,3vw,2.35rem)] [&_h2]:font-extrabold [&_h2]:leading-[1.08] [&_h2]:tracking-[-0.03em] [&_h2]:text-[var(--color-navy)]">
               <div className="flex min-w-0 items-center gap-3 [&_h2]:m-0 [&_h2]:font-[var(--font-display)] [&_h2]:text-[1.05rem] [&_h2]:font-bold [&_h2]:leading-tight [&_h2]:text-[var(--color-navy)] [&_h3]:m-0 [&_h3]:font-[var(--font-display)] [&_h3]:text-[1.05rem] [&_h3]:font-bold [&_h3]:leading-tight [&_h3]:text-[var(--color-navy)]">
                 <OrganizationAvatar name={profile.name} logoUrl={profile.logoUrl} />

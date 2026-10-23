@@ -1,6 +1,7 @@
 export const COLLECTIONS = {
   accounts: 'accounts',
   entitlements: 'entitlements',
+  systemSettings: 'systemSettings',
   entitlementProviderEvents: 'entitlementProviderEvents',
   organizations: 'organizations',
   officerGrants: 'officerGrants',
@@ -16,6 +17,10 @@ export function accountPath(uid: string): string {
 
 export function entitlementPath(uid: string): string {
   return `${COLLECTIONS.entitlements}/${uid}`;
+}
+
+export function paymentPolicyPath(): string {
+  return `${COLLECTIONS.systemSettings}/paymentPolicy`;
 }
 
 export function entitlementProviderEventPath(eventKey: string): string {

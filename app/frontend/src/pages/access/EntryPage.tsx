@@ -1,9 +1,14 @@
 import { SoarLogo } from '../../components/SoarLogo';
 import { ButtonLink, Card, RoleBadge } from '../../components/ui';
+import { useAuth } from '../../context/AuthContext';
 import { isPaidFlowEnabled } from '../../lib/features';
 
 export const EntryPage = () => {
-  const paidFlowEnabled = isPaidFlowEnabled();
+  const { paymentPolicy, paymentPolicyLoading } = useAuth();
+  const paymentsRequired = paymentPolicy?.paymentsRequired === true;
+  const paidFlowEnabled = paymentsRequired && paymentPolicy?.checkout.status === 'configured' && isPaidFlowEnabled();
+  const freeSignupEnabled = paymentPolicy?.paymentsRequired === false;
+  const paymentPolicyUnavailable = !paymentPolicyLoading && !paymentPolicy;
   return (
   <main className="relative isolate mx-auto w-[min(1200px,100%)] p-[clamp(18px,4vw,56px)] max-sm:px-3.5">
     {import.meta.env.VITE_SOAR_USE_FIXTURES === 'true' ? (
@@ -31,13 +36,19 @@ export const EntryPage = () => {
             Discover campus organizations, follow announcements, manage application and meeting progress, and keep six-month access current from one role-aware workspace.
           </p>
           <div className="flex flex-wrap items-center gap-2.5 max-sm:[&>a]:w-full max-sm:[&>button]:w-full">
-            <ButtonLink to="/register" variant="primary">{paidFlowEnabled ? 'Start with PHP10 access' : 'Create a free account'}</ButtonLink>
+            <ButtonLink to="/register" variant="primary">{paidFlowEnabled ? 'Start with PHP10 access' : freeSignupEnabled ? 'Create a free account' : 'View registration options'}</ButtonLink>
             <ButtonLink to="/login" variant="secondary">Sign in</ButtonLink>
           </div>
           <p className="hero-note text-sm text-white/80" role={paidFlowEnabled ? undefined : 'status'}>
             {paidFlowEnabled
               ? 'PHP10 six-month access is required before account creation. Expired accounts can still sign in to renew.'
-              : 'Create a free account. Checkout is unavailable; no payment is requested or recorded.'}
+              : freeSignupEnabled
+                ? 'Payment is not required right now. New accounts receive explicitly unpaid access; no provider payment is recorded.'
+                : paymentPolicyUnavailable
+                  ? 'Registration is paused because the payment policy could not be loaded.'
+                  : paymentsRequired
+                    ? `Payment is required, but checkout is unavailable${!isPaidFlowEnabled() ? ' in this frontend build' : paymentPolicy?.checkout.status === 'disabled' ? ' in this server deployment' : ' in this server configuration'}. New account creation is paused.`
+                    : 'Loading SOAR registration policy…'}
           </p>
         </div>
       </div>

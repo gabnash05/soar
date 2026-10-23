@@ -93,7 +93,7 @@ export const AppShell = ({ allowLockedMain = false }: { allowLockedMain?: boolea
 
   const accessTone = activeAccess ? 'approved' : session.access.status === 'expired' ? 'attention' : 'danger';
   const accessLabel = activeAccess
-    ? session.access.provenance === 'unpaid-preview' ? 'Account active' : 'Active access'
+    ? session.access.provenance === 'unpaid-preview' ? 'Account active' : session.access.provenance === 'grandfathered-existing-account' ? 'Existing account access' : 'Active access'
     : session.access.status === 'expired' ? 'Expired access' : 'Access locked';
   const sidebarRole = admin ? 'Admin' : session.accountKind === 'sponsor' ? 'Sponsor' : officer ? 'Officer' : 'Student';
 

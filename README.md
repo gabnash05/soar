@@ -6,7 +6,7 @@
 
 - **Status:** PRD v2 plus in-progress MVP implementation. React frontend and Firebase/Express backend foundations now live under `app/` while this README remains the product-requirements authority.
 - **Primary agreement:** the client-approved `docs/client-scope/Project Scope and Acceptance — Final.pdf` defines the feature boundaries, acceptance checks, exclusions, required inputs, and handover expectations.
-- **Confirmed amendments:** the later approved decisions recorded for this PRD supersede the PDF and supplied overview only where they conflict. Most notably, access is now **PHP10 per account for six months**, replacing earlier PHP2/annual references.
+- **Confirmed amendments:** the later approved decisions recorded for this PRD supersede the PDF and supplied overview only where they conflict. Most notably, access is now **PHP10 per account for six months**, replacing earlier PHP2/annual references. Payment implementation now uses PayMongo Hosted Checkout Sessions v2 with QR Ph only for new sessions and a persisted global trusted-Admin payment requirement switch; see `docs/backend/payments.md` and the current task handoff for operational status.
 - **Supporting context:** `docs/client-scope/SOAR-project-overview.md` explains product direction, delivery context, and summarized workflows as originally supplied. The supplied `docs/client-scope/TECHNO/` source folder is evidence of the current draft, not the final requirement set.
 - **Reference quality bar:** the classmate site at <https://unsaysud-antech-ustpcdocafeteria.ai.studio/> is a minimum UI/UX quality reference, not an expansion of SOAR scope. `chrome-devtools-axi` was available but could not attach to a live browser target in this environment, so no specific visual observations from that site are encoded here.
 
@@ -23,7 +23,7 @@ The intended outcome is a working application that can be demonstrated and used 
 SOAR is successful when the delivered hosted website:
 
 1. Lets users register, sign in, recover passwords, manage allowed account settings, and access only role-appropriate pages.
-2. Requires a confirmed **PHP10 six-month payment per account** before account creation or continued main-app access, while preserving records for renewal.
+2. Applies the trusted Admin’s global payment requirement to new registrations/manual renewals; when payment is required, only signed provider confirmation unlocks the paid account. Explicit unpaid-preview behavior remains a separate no-payment mode, and existing-account grandfathering is not inferred from fake provider history.
 3. Shows a responsive, readable organization directory, organization profiles, announcements, application tracker, meeting tracker, settings, and officer dashboard on phones and computers.
 4. Persists organization data, announcements, images, applications, meeting requests, payment/access status, and role permissions across refresh, sign-out, and another device.
 5. Keeps private application, meeting, and payment records visible only to the correct accounts, with officers limited to the organization they are approved to manage.
@@ -138,10 +138,10 @@ SOAR is successful when the delivered hosted website:
 ### 10. Six-month paid access
 
 - Access costs **PHP10 per account for six calendar months** from confirmed payment. This is a confirmed amendment to the PDF's PHP2 amount and earlier annual references.
-- Payment must go through one payment provider that supports GCash and automatic provider-side confirmation.
-- **PayMongo** is the intended provider, subject to merchant approval and a successful live PHP10 test. This is not a promise that PayMongo is free or the cheapest provider.
-- New users must complete verified payment before creating an account and accessing main pages.
-- Existing users need active paid access and renew manually when access expires; there is no automatic recurring charge.
+- New paid checkouts use PayMongo Hosted Checkout Sessions v2 with **QR Ph only** and automatic signed provider-side confirmation. GCash may be used as a QR Ph scanning app; this is not direct GCash acceptance.
+- **PayMongo** is the intended provider. Hosted merchant/channel activation and actual fees remain unverified; this is not a promise that PayMongo is free or the cheapest provider.
+- When the trusted Admin setting requires payment, signed QR Ph payment is required before paid account/profile creation and before a manual renewal grants more time. When the setting does not require payment, new account access is explicitly marked unpaid-preview and is not represented as provider-paid.
+- Existing payment history, active provider-confirmed entitlements and revoked states are preserved. Existing-account eligibility is approved, while the start/duration of any grandfathered grant remains a separate activation decision. There is no automatic recurring charge.
 - Payment confirmation is automatic and linked to the correct registration or renewal.
 - Pending, failed, cancelled, or expired access does not unlock registration or main pages.
 - Expiry restricts access while retaining the account and saved records for renewal.
@@ -171,7 +171,7 @@ The supplied `docs/client-scope/TECHNO/` folder is a static Firebase-hosted draf
 | Applications | Student click currently logs an application and opens the external form; officer page can update statuses. | Require explicit external-submission confirmation, prevent duplicates per recruitment opportunity/position, include **Declined**, use the agreed status labels, and keep tracker updates consistent. |
 | Calendar/date entries | Officers can add/delete simple title/date slots; profiles show available slots. | Add edit, short details, time where needed, valid-date checks, and visual distinction between events and interview/meeting availability. |
 | Meeting requests | Users can request date/time from a profile slot; officers can approve/decline. | Allow the confirmed requesting roles, prevent repeated identical requests, clarify pending vs. confirmed, and ensure each user sees their own request history. |
-| Payments | No six-month payment, GCash checkout, payment status, renewal, or access-expiry enforcement is present. | Implement the confirmed PHP10 six-month paid access flow with provider-side automatic confirmation before production use. |
+| Payments | Source now includes PayMongo Checkout Sessions v2 (QR Ph), signed payment status, six-month manual renewals, access enforcement and a persisted trusted-Admin global policy. Hosted activation is not verified. | Complete a separately approved provider test using `test_url`; activate live only after merchant QR Ph readiness and explicit owner approval. |
 | Images | Draft stores uploaded proof/logo/post images as base64-like data in saved records. | Use Firebase file storage or the agreed project file storage, with file validation and previews. |
 | Security | Current behavior appears primarily client-side; database/security rules were not supplied for review. | Implement/verify Firebase-rule or server-side enforcement for roles, organization ownership/officer access, private records, and payment/access fields. |
 | Mixed dependencies | Some pages include a Supabase CDN script, but application logic uses Firebase. | Standardize on the agreed Firebase-backed implementation unless a later approved architecture changes this. |
@@ -203,7 +203,7 @@ The classmate site should be used later as a minimum quality comparison for poli
 | Application links open; only explicit confirmed external submissions enter checking; officer stage changes appear in the student tracker without duplicate entries per recruitment opportunity/position. | Applications. |
 | Officers can add, change, and remove calendar entries; permitted images save and display after refresh and sign-in. | Calendar/date entries; image uploads; saved data. |
 | Meeting requests save with correct organization, date, and time; officers approve/decline; users see decisions; repeated requests are handled clearly. | Meeting requests. |
-| A real successful **PHP10** payment unlocks account creation and six calendar months of access; pending/failed/cancelled payments and expired access stay restricted; renewal restores access without data loss. | Six-month paid access; saved data. |
+| Under payment-required policy, signed confirmation of a valid **PHP10** QR Ph payment unlocks paid account creation and six calendar months; browser return/pending/failed/cancelled payments do not. Renewal preserves saved data. | Six-month paid access; saved data. |
 | Users see only their private application, meeting, and payment records; officers manage only approved organizations; users cannot change paid status or access end date. | Permissions; saved data; officer dashboard; paid access. |
 | Hosted link, complete updated source files, and short setup/use instructions are handed over after final review. | Hosting and handover. |
 
@@ -238,14 +238,14 @@ The client must provide or confirm:
 - service invitations for hosting, database, file storage, domain, code repository, and the existing Firebase project
 - Firebase access covering Authentication, database/storage, security rules, hosting settings, and any existing server/function code
 - Firebase billing setup required for live payment confirmation and image uploads
-- an activated payment-provider account that supports a PHP10 GCash checkout with automatic confirmation
+- a PayMongo merchant account with QR Ph enabled for Checkout Sessions; actual activation and fee schedule must be confirmed by the account owner
 - any required secrets privately, not in committed files
 
 The client group is responsible for finding users and paying customers. Provider transaction fees and hosting/storage charges are paid through the client service accounts.
 
 ### Payment-provider evidence
 
-PayMongo is the intended provider because public documentation reviewed on 2026-10-06 showed that PayMongo supports GCash in hosted checkout, webhook confirmation, and payment amounts below PHP10. The current public evidence is time-sensitive and must be rechecked during implementation.
+PayMongo is the intended provider because current public documentation rechecked on 2026-10-22 lists QR Ph for Individual accounts and PHP1.00 as the QR Ph minimum. Merchant activation and Checkout behavior remain unverified; public facts are not account-state evidence.
 
 Official PayMongo sources reviewed:
 
@@ -257,7 +257,7 @@ Official PayMongo sources reviewed:
 - Testing: <https://docs.paymongo.com/docs/payment-acceptance-testing.md>
 - Account setup: <https://docs.paymongo.com/docs/account-settings-account-setup.md>
 
-Public pricing at retrieval time listed GCash e-wallet payments at **2.23% VAT-exclusive** and no Standard setup/monthly/hidden fees. A PHP10 payment would therefore have an estimated fee of about **PHP0.25** and estimated net of about **PHP9.75**, assuming VAT and centavo rounding consistent with PayMongo samples. This is an estimate only, not a fee-free promise or proof that PayMongo is cheapest.
+Current public Standard pricing lists QR Ph at **1.34% VAT-exclusive**. Actual merchant rate, VAT and settlement handling must be confirmed by the owner; this is not a fee-free promise or proof that PayMongo is cheapest. PayMongo test mode may generate a real/scannable QR Ph code; never scan/pay it, and simulate only through the response `test_url` after an approved bounded test window.
 
 ### Delivery context
 
@@ -288,13 +288,13 @@ These are planning boundaries only, not a backend/frontend design.
 3. **Access foundation:** implement verified payment before account creation, manual six-month renewal/expiry behavior, roles, owner-approved officer access, payment status visibility, and permission enforcement.
 4. **Core content workflows:** implement organization directory/profiles, announcements, image handling, personal and organization settings, and responsive UI states.
 5. **Operational workflows:** implement applications, calendar/date entries, meeting requests, and officer dashboard sections.
-6. **Hardening and handover:** validate acceptance checks, fix refresh/sign-out/another-device consistency, verify private-record access, test a real PHP10 payment, deploy, and write setup/use instructions.
+6. **Hardening and handover:** validate acceptance checks, fix refresh/sign-out/another-device consistency, verify private-record access, use an approved test-mode `test_url` simulation, separately authorize any live payment work, and write setup/use instructions.
 
 ## Remaining verification items
 
 No product conflicts remain from the confirmed decisions above. The remaining items are implementation prerequisites and external validations, not permission to expand scope:
 
-1. **PayMongo approval and live test:** PayMongo merchant approval and a successful live PHP10 GCash test must happen before production acceptance of paid access.
+1. **PayMongo activation:** the owner must verify merchant QR Ph availability and approve a bounded test-mode window; simulate via `test_url` without scanning/paying a QR. Any live test or production activation requires separate explicit live authority.
 2. **Provider terms recheck:** PayMongo pricing, fees, VAT treatment, minimums, and webhook behavior must be rechecked against official sources during implementation.
 3. **Firebase inspection:** existing Firebase Authentication, Firestore/database, Storage, Hosting, security rules, billing, and any function/server code still need inspection before implementation.
 4. **Security enforcement:** roles, owner-approved officer access, private records, payment status, and access end dates must be enforced outside client-only UI logic.

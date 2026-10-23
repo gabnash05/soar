@@ -34,7 +34,7 @@ describe('EmailVerificationPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Verify your email' })).toBeInTheDocument();
-    expect(screen.getByText(/no payment is recorded/i)).toBeInTheDocument();
+    expect(screen.getByText(/without a recorded payment/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Resend verification' }));
     expect(gateway.resendEmailVerification).toHaveBeenCalledTimes(1);

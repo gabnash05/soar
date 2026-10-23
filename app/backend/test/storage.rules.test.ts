@@ -159,6 +159,41 @@ describe('storage organization image boundaries', () => {
     await assertFails(storageFor('requester').ref(requestPath).put(pdfBlob(), { contentType: 'application/pdf', customMetadata: metadata }));
   });
 
+  it('allows only eligible activation-cohort accounts to read without entitlements and keeps revocation precedence', async () => {
+    const activationAt = Timestamp.fromDate(new Date(Date.now() - 5 * 24 * 60 * 60 * 1000));
+    const newAccountAt = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'systemSettings', 'paymentPolicy'), {
+        paymentsRequired: false,
+        existingAccountAccessActivatedAt: activationAt,
+        existingAccountAccessExpiresAt: future,
+      });
+      for (const [uid, createdAt] of [['grandfathered', oldEnough], ['registeredAfter', newAccountAt]] as const) {
+        await setDoc(doc(db, 'accounts', uid), {
+          uid,
+          role: 'student',
+          displayName: uid,
+          email: `${uid}@example.test`,
+          emailVerified: true,
+          createdAt,
+          updatedAt: createdAt,
+        });
+      }
+      await setDoc(doc(db, 'accounts', 'revoked-grandfathered'), {
+        uid: 'revoked-grandfathered', role: 'student', displayName: 'Revoked', email: 'revoked@example.test', emailVerified: true, createdAt: oldEnough,
+      });
+      await setDoc(doc(db, 'entitlements', 'revoked-grandfathered'), {
+        uid: 'revoked-grandfathered', status: 'revoked', accessExpiresAt: future,
+      });
+      await context.storage().ref('organization-logos/org1/grandfathered.png').put(imageBlob(), { contentType: 'image/png' });
+    });
+
+    await assertSucceeds(storageFor('grandfathered').ref('organization-logos/org1/grandfathered.png').getDownloadURL());
+    await assertFails(storageFor('registeredAfter').ref('organization-logos/org1/grandfathered.png').getDownloadURL());
+    await assertFails(storageFor('revoked-grandfathered').ref('organization-logos/org1/grandfathered.png').getDownloadURL());
+  });
+
   it('allows active users to read images while blocking expired users', async () => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
       await context.storage().ref('organization-logos/org1/logo.png').put(imageBlob(), { contentType: 'image/png' });

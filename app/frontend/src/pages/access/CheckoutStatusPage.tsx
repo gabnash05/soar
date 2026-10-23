@@ -1,24 +1,18 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { SoarLogo } from '../../components/SoarLogo';
-import { Button, ButtonLink, Card, Field, LoadingBlock, StateBlock, TextInput, StatusChip } from '../../components/ui';
+import { Button, ButtonLink, Card, LoadingBlock, StateBlock, StatusChip } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import type { CheckoutStatus } from '../../lib/contracts';
 import { isCanonicalDepartment } from '../../lib/departments';
 import { isPaidFlowEnabled } from '../../lib/features';
 import { markFixturePaymentConfirmedFromUrl } from '../../lib/fixtures';
+import { navigateToHostedCheckout } from '../../lib/redirects';
 import { readRegistrationDraft } from './RegistrationIntentPage';
 
 export const CheckoutStatusPage = () => {
   const paidFlowEnabled = isPaidFlowEnabled();
-  const {
-    gateway,
-    registerAccount,
-    requestPaidRegistrationRecovery,
-    acceptPaidRegistrationRecovery,
-    error,
-    clearError,
-  } = useAuth('registration');
+  const { gateway, registerAccount, error, clearError } = useAuth('registration');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const intentId = searchParams.get('intentId') || searchParams.get('intent_id') || readRegistrationDraft()?.intentId || '';
@@ -28,14 +22,8 @@ export const CheckoutStatusPage = () => {
   const [loading, setLoading] = useState(Boolean(intentId));
   const [checking, setChecking] = useState(false);
   const [pollCycle, setPollCycle] = useState(0);
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [recoveryEmail, setRecoveryEmail] = useState(() => readRegistrationDraft()?.email || '');
-  const [recoveryCode, setRecoveryCode] = useState('');
-  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
-  const [recoverySubmitting, setRecoverySubmitting] = useState(false);
 
   const draft = useMemo(() => readRegistrationDraft(), []);
   const registrationProfile = status?.registrationProfile ?? draft;
@@ -88,19 +76,11 @@ export const CheckoutStatusPage = () => {
     clearError();
     setLocalError(null);
     if (!registrationProfile?.email || !registrationProfile.displayName || !registrationProfile.role) {
-      setLocalError('Registration details are unavailable. Restore the secure registration session or start registration again.');
+      setLocalError('Registration details are unavailable. Sign in with the same Firebase account or start registration again.');
       return;
     }
     if (registrationProfile.role === 'student' && !isCanonicalDepartment(registrationProfile.department)) {
       setLocalError('Department selection is missing or invalid. Start registration again and choose from the department list.');
-      return;
-    }
-    if (password.length < 8) {
-      setLocalError('Use at least 8 characters for your password.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setLocalError('Passwords do not match.');
       return;
     }
     setSubmitting(true);
@@ -113,51 +93,12 @@ export const CheckoutStatusPage = () => {
         studentId: registrationProfile.studentId,
         department: registrationProfile.department,
         companyName: registrationProfile.companyName,
-        password,
       });
-      setPassword('');
-      setConfirmPassword('');
       navigate('/access/verify-email', { replace: true });
-    } catch {
-      // AuthContext retains the safe error and the password fields stay available for retry.
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleRecoveryRequest = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!paidFlowEnabled) return;
-    clearError();
-    setRecoveryMessage(null);
-    setRecoverySubmitting(true);
-    try {
-      const result = await requestPaidRegistrationRecovery(recoveryEmail.trim());
-      setRecoveryMessage(result.delivery === 'not_configured'
-        ? 'Email recovery is not configured yet. Keep this checkout page open; if its secure browser session is still available, you can continue here.'
-        : 'If a paid registration matches this email and delivery is available, follow the recovery-code instructions sent to you.');
     } catch {
       // AuthContext retains the safe operation-scoped error.
     } finally {
-      setRecoverySubmitting(false);
-    }
-  };
-
-  const handleRecoveryAccept = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!paidFlowEnabled) return;
-    clearError();
-    setRecoveryMessage(null);
-    setRecoverySubmitting(true);
-    try {
-      await acceptPaidRegistrationRecovery(intentId, recoveryCode.trim());
-      setRecoveryCode('');
-      setRecoveryMessage('Secure registration session restored. Checking provider-confirmed payment status…');
-      setPollCycle((cycle) => cycle + 1);
-    } catch {
-      // Keep the code field available; AuthContext retains the safe operation-scoped error.
-    } finally {
-      setRecoverySubmitting(false);
+      setSubmitting(false);
     }
   };
 
@@ -237,34 +178,21 @@ export const CheckoutStatusPage = () => {
           {gateway.mode === 'fixture' ? <div className="rounded-[var(--radius-md)] bg-[var(--color-orange-soft)] px-3.5 py-3 text-sm text-[var(--color-navy)]">Demo payment confirmation is simulated locally.</div> : null}
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 font-bold text-[var(--color-blue-deep)] max-sm:flex-col max-sm:items-stretch"><Link to="/register">Start over</Link><Link to="/login">Sign in instead</Link></div>
 
-          {!status?.canCreateAccount && !status?.completed ? (
-            <section className="mt-6 grid gap-3 border-t border-[var(--color-border)] pt-5">
-              <h2>Paid, but unable to continue?</h2>
-              <p className="m-0 text-sm text-[var(--muted-foreground)]">Request a recovery code to restore this browser’s secure registration session. A code is accepted only for a payment-confirmed registration.</p>
-              <form onSubmit={handleRecoveryRequest} className="grid gap-3">
-                <Field id="recoveryEmail" label="Registration email">
-                  <TextInput id="recoveryEmail" type="email" autoComplete="email" required value={recoveryEmail} onChange={(event) => setRecoveryEmail(event.target.value)} disabled={recoverySubmitting} />
-                </Field>
-                <Button type="submit" variant="secondary" disabled={recoverySubmitting || !recoveryEmail.trim()}>
-                  {recoverySubmitting ? 'Requesting recovery…' : 'Email recovery instructions'}
-                </Button>
-              </form>
-              <form onSubmit={handleRecoveryAccept} className="grid gap-3">
-                <Field id="recoveryCode" label="Recovery code" hint="Enter the code from your recovery message. It is sent securely to SOAR and is never placed in a URL.">
-                  <TextInput id="recoveryCode" type="password" autoComplete="off" required value={recoveryCode} onChange={(event) => setRecoveryCode(event.target.value)} disabled={recoverySubmitting} />
-                </Field>
-                <Button type="submit" variant="secondary" disabled={recoverySubmitting || !recoveryCode.trim()}>
-                  {recoverySubmitting ? 'Restoring session…' : 'Restore secure session'}
-                </Button>
-              </form>
-              {recoveryMessage ? <p className="m-0 text-sm text-[var(--color-blue-deep)]" role="status">{recoveryMessage}</p> : null}
-            </section>
+          {status?.status === 'pending' && !status.canCreateAccount && status.checkoutUrl ? (
+            <Button type="button" variant="secondary" onClick={() => navigateToHostedCheckout(status.checkoutUrl!)}>
+              Continue to hosted checkout
+            </Button>
+          ) : null}
+          {!status?.completed ? (
+            <p className="mt-6 border-t border-[var(--color-border)] pt-5 text-sm text-[var(--muted-foreground)]">
+              This registration is tied to your Firebase sign-in. To resume on another device, sign in with the same email and password; use <Link to="/recovery">Firebase password recovery</Link> if needed.
+            </p>
           ) : null}
         </div>
 
         <form onSubmit={handleCreate} className="grid content-start gap-3.5" aria-disabled={!status?.canCreateAccount || status.completed}>
-          <h2>Create account</h2>
-          <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">This step is enabled only after provider-confirmed payment. Email verification is still required before the main app.</p>
+          <h2>Finish account setup</h2>
+          <p className="m-0 max-w-[64ch] text-[var(--muted-foreground)]">This profile and all SOAR access are saved only after provider-confirmed payment. The same Firebase sign-in used to start checkout is required.</p>
           <dl className="mt-[18px] grid gap-px overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-border)] p-0 [&_div]:grid [&_div]:grid-cols-[minmax(120px,0.45fr)_minmax(0,1fr)] [&_div]:gap-3 [&_div]:bg-[var(--color-white)] [&_div]:p-3 max-[820px]:[&_div]:grid-cols-1 max-[820px]:[&_div]:gap-0.5 [&_dt]:text-[13px] [&_dt]:text-[var(--muted-foreground)] [&_dd]:m-0 [&_dd]:[overflow-wrap:anywhere] [&_dd]:font-bold [&_dd]:text-[var(--color-navy)] mt-0">
             <div><dt>Name</dt><dd>{registrationProfile?.displayName || 'Unavailable'}</dd></div>
             <div><dt>Email</dt><dd>{registrationProfile?.email || 'Unavailable'}</dd></div>
@@ -272,14 +200,8 @@ export const CheckoutStatusPage = () => {
             {registrationProfile?.studentId ? <div><dt>Student ID</dt><dd>{registrationProfile.studentId}</dd></div> : null}
             {registrationProfile?.role === 'student' ? <div><dt>Department</dt><dd>{registrationProfile.department || 'Missing department selection'}</dd></div> : null}
           </dl>
-          <Field id="password" label="Password" hint="Use at least 8 characters.">
-            <TextInput id="password" type="password" autoComplete="new-password" required disabled={!status?.canCreateAccount || status.completed || submitting} value={password} onChange={(event) => setPassword(event.target.value)} />
-          </Field>
-          <Field id="confirmPassword" label="Confirm password">
-            <TextInput id="confirmPassword" type="password" autoComplete="new-password" required disabled={!status?.canCreateAccount || status.completed || submitting} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
-          </Field>
           <Button type="submit" disabled={!status?.canCreateAccount || status.completed || submitting}>
-            {submitting ? 'Creating account…' : 'Create account and send verification'}
+            {submitting ? 'Finishing account setup…' : 'Finish account setup'}
           </Button>
         </form>
       </Card>

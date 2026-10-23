@@ -15,7 +15,7 @@
     "emulators:start": "bash scripts/start-local-emulators.sh",
     "emulators:seed": "node scripts/seed-local-emulator.cjs",
     "test": "npm run test:payments && npm run test:seed && npm run test:storage && npm run test:firebase-config && npm run test:content && npm run test:requests && npm run test:identity && npm run test:organizations && npm run test:http",
-    "test:identity": "vitest run --maxWorkers=1 --no-file-parallelism src/identity/session.test.ts src/identity/access.test.ts src/identity/previewRegistration.test.ts",
+    "test:identity": "vitest run --maxWorkers=1 --no-file-parallelism src/identity/session.test.ts src/identity/access.test.ts src/identity/previewRegistration.test.ts src/identity/paymentPolicy.test.ts",
     "test:storage": "vitest run src/storage/objectStorage.test.ts",
     "test:firebase-config": "vitest run src/firebase.test.ts",
     "test:organizations": "vitest run --maxWorkers=1 --no-file-parallelism src/organizations/adminProvisioning.test.ts src/organizations/cascade.test.ts",

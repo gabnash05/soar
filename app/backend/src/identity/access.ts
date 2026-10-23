@@ -1,38 +1,62 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
-import type { Timestamp } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
+import type { Timestamp } from 'firebase-admin/firestore';
 import { adminAuth, db } from '../firebase';
 import { AppError } from '../errors';
 import { accountPath, COLLECTIONS, entitlementPath } from '../contracts/paths';
 import type { AccountDocument, EntitlementDocument } from '../contracts/schema';
-import { isUnpaidPreviewEnabled } from './previewPolicy';
+import { getExistingAccountAccessWindow, isUnpaidAccessEnabled } from './paymentPolicy';
 
 export interface AccessState {
   status: 'active' | 'expired' | 'missing' | 'revoked';
   accessExpiresAt?: Timestamp;
   accessStartsAt?: Timestamp;
-  provenance?: 'provider-confirmed-payment' | 'unpaid-preview';
+  provenance?: 'provider-confirmed-payment' | 'unpaid-preview' | 'grandfathered-existing-account';
 }
 
-async function getUnpaidPreviewAccess(uid: string): Promise<AccessState | undefined> {
-  if (!isUnpaidPreviewEnabled()) return undefined;
+function isFirestoreTimestamp(value: unknown): value is Timestamp {
+  return typeof value === 'object'
+    && value !== null
+    && typeof (value as Timestamp).toMillis === 'function'
+    && typeof (value as Timestamp).toDate === 'function';
+}
+
+async function getAccountFallbackAccess(uid: string): Promise<AccessState | undefined> {
   const accountSnapshot = await db.doc(accountPath(uid)).get();
   if (!accountSnapshot.exists) return undefined;
 
   const account = accountSnapshot.data() as AccountDocument;
-  if (account.accessProvenance !== 'unpaid-preview') return undefined;
+  const accessWindow = await getExistingAccountAccessWindow();
+  let grandfatheredAccess: AccessState | undefined;
+  if (
+    accessWindow
+    && isFirestoreTimestamp(account.createdAt)
+    && account.createdAt.toMillis() < accessWindow.activatedAt.toMillis()
+  ) {
+    grandfatheredAccess = {
+      status: accessWindow.expiresAt.toMillis() > Date.now() ? 'active' : 'expired',
+      accessStartsAt: accessWindow.activatedAt,
+      accessExpiresAt: accessWindow.expiresAt,
+      provenance: 'grandfathered-existing-account',
+    };
+    if (grandfatheredAccess.status === 'active') return grandfatheredAccess;
+  }
 
-  return {
-    status: 'active',
-    accessStartsAt: account.previewAccessGrantedAt,
-    provenance: 'unpaid-preview',
-  };
+  if (account.accessProvenance === 'unpaid-preview' && await isUnpaidAccessEnabled()) {
+    return {
+      status: 'active',
+      accessStartsAt: account.previewAccessGrantedAt,
+      provenance: 'unpaid-preview',
+    };
+  }
+
+  return grandfatheredAccess;
 }
 
 export async function getAccessState(uid: string): Promise<AccessState> {
   const snap = await db.doc(entitlementPath(uid)).get();
   if (!snap.exists) {
-    return (await getUnpaidPreviewAccess(uid)) ?? { status: 'missing' };
+    return (await getAccountFallbackAccess(uid)) ?? { status: 'missing' };
   }
 
   const entitlement = snap.data() as EntitlementDocument;
@@ -41,7 +65,7 @@ export async function getAccessState(uid: string): Promise<AccessState> {
   }
 
   if (entitlement.status === 'expired' || entitlement.accessExpiresAt.toMillis() <= Date.now()) {
-    return (await getUnpaidPreviewAccess(uid)) ?? {
+    return (await getAccountFallbackAccess(uid)) ?? {
       status: 'expired',
       accessExpiresAt: entitlement.accessExpiresAt,
       provenance: 'provider-confirmed-payment',

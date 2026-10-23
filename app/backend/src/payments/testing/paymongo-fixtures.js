@@ -10,7 +10,7 @@ function makeCheckoutPaidEvent({
   paymentId = 'pay_provider_1',
   amount = ACCESS_PRICE_MINOR,
   currency = ACCESS_CURRENCY,
-  sourceType = 'gcash',
+  sourceType = 'qrph',
   referenceNumber,
   metadata = {},
   paymentStatus = 'paid',
@@ -33,7 +33,7 @@ function makeCheckoutPaidEvent({
             status: 'active',
             reference_number: referenceNumber,
             line_items: [{ name: 'SOAR six-month access', amount, currency, quantity: 1 }],
-            payment_method_types: ['gcash'],
+            payment_method_types: sourceType ? [sourceType] : ['qrph'],
             metadata,
             payments: [{
               id: paymentId,
