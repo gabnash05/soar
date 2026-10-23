@@ -5,6 +5,7 @@ import {
   uploadMeetingDocumentToTarget,
   uploadToStorageTarget,
   validateAnnouncementMediaFiles,
+  validateMeetingDocumentFile,
   type ImageUploadTarget,
   type MeetingDocumentUploadTarget,
 } from '../../lib/storageUploads';
@@ -351,6 +352,7 @@ async function createAnnouncementUpload(input: AnnouncementInput): Promise<{ ann
 
 async function createMeetingDocumentUpload(input: MeetingRequestInput, session: UserSession): Promise<MeetingRequestDocument | undefined> {
   if (!input.document?.file) return undefined;
+  validateMeetingDocumentFile(input.document.file);
   const target = await apiFetch<MeetingDocumentUploadTarget>('/requests/meetings/document-targets', await bodyInit({
     organizationId: input.organizationId,
     dateEntryId: input.dateEntryId,
@@ -363,6 +365,15 @@ async function createMeetingDocumentUpload(input: MeetingRequestInput, session: 
     meetingRequestId: target.meetingRequestId,
     requesterUid: session.uid,
   });
+}
+
+function isAmbiguousMeetingSaveFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return true;
+
+  const details = error as { status?: unknown; code?: unknown };
+  if (details.code === 'duplicate_meeting_request') return true;
+  if (typeof details.status === 'number') return details.status >= 500;
+  return details.code !== 'service_unavailable' && details.code !== 'validation_problem';
 }
 
 async function profileInputToBackend(input: OrganizationProfileInput) {
@@ -487,14 +498,27 @@ export function createProductionWorkflowDataClient(): WorkflowDataClient {
 
     async requestMeeting(input: MeetingRequestInput, session: UserSession) {
       const document = await createMeetingDocumentUpload(input, session);
-      const response = await apiFetch<unknown>('/requests/meetings', await bodyInit({
+      const saveRequest = await bodyInit({
         organizationId: input.organizationId,
         dateEntryId: input.dateEntryId,
         requestedDate: input.requestedDate,
         requestedTime: input.requestedTime,
         note: input.note,
         ...(document ? { document } : {}),
-      }));
+      });
+      let response: unknown;
+      try {
+        response = await apiFetch<unknown>('/requests/meetings', saveRequest);
+      } catch (error) {
+        if (!isAmbiguousMeetingSaveFailure(error)) throw error;
+        return {
+          ok: true,
+          persisted: 'unconfirmed',
+          source: 'production',
+          reason: 'error',
+          message: 'The meeting request save outcome could not be confirmed.',
+        } satisfies WorkflowMutationResult<MeetingRequest>;
+      }
       return mutationResult('Meeting request created as Pending.', mapMeetingRequest(response));
     },
 

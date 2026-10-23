@@ -517,6 +517,15 @@ describe('request service meeting workflow', () => {
       contentType: 'text/html',
       sizeBytes: 1024
     }));
+    await expectValidation(service.createMeetingDocumentTarget(user('student'), {
+      organizationId: 'org1',
+      dateEntryId: 'availability1',
+      requestedDate: '2026-11-12',
+      requestedTime: '09:30',
+      fileName: 'request (1).pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024
+    }));
   });
 
   it('rejects missing or mismatched actual meeting document uploads before creating the request', async () => {

@@ -123,7 +123,7 @@ export function MeetingsView({ session, client }: { session: UserSession; client
           ok: false,
           persisted: 'unconfirmed',
           reason: 'error',
-          message: 'We could not confirm that your meeting request was saved. Check My requests before trying again.',
+          message: 'We could not confirm that your meeting request was saved. Close this form and check My requests before trying again.',
         });
         await requestsQuery.reload();
         return;
