@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   setAdminPaymentPolicy: vi.fn(),
   assignAdminOfficer: vi.fn(),
   createAdminOrganization: vi.fn(),
+  deleteAdminOrganization: vi.fn(),
   listAdminOfficerGrants: vi.fn(),
   listAdminOrganizations: vi.fn(),
   revokeAdminOfficer: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('../../lib/adminApi', () => ({
   setAdminPaymentPolicy: mocks.setAdminPaymentPolicy,
   assignAdminOfficer: mocks.assignAdminOfficer,
   createAdminOrganization: mocks.createAdminOrganization,
+  deleteAdminOrganization: mocks.deleteAdminOrganization,
   listAdminOfficerGrants: mocks.listAdminOfficerGrants,
   listAdminOrganizations: mocks.listAdminOrganizations,
   revokeAdminOfficer: mocks.revokeAdminOfficer,
@@ -52,6 +54,7 @@ describe('Admin provisioning page', () => {
     mocks.revokeAdminOfficer.mockResolvedValue({ orgId: 'robotics', uid: 'student-1', status: 'revoked', alreadyRevoked: false });
     mocks.searchAdminStudents.mockResolvedValue({ items: [student] });
     mocks.createAdminOrganization.mockResolvedValue({ orgId: 'robotics-club' });
+    mocks.deleteAdminOrganization.mockResolvedValue({ orgId: 'robotics', status: 'complete' });
     mocks.assignAdminOfficer.mockResolvedValue({ orgId: 'robotics', uid: student.uid, status: 'approved', alreadyAssigned: true });
   });
 
@@ -190,6 +193,50 @@ describe('Admin provisioning page', () => {
     await user.click(screen.getByRole('button', { name: 'Assign officer' }));
     expect(await screen.findByText(/Choose an organization and a registered student/i)).toBeInTheDocument();
     expect(mocks.assignAdminOfficer).not.toHaveBeenCalled();
+  });
+
+  it('requires a scoped destructive confirmation and then reports preserved accounts and unrelated data', async () => {
+    const user = userEvent.setup();
+    renderPage('/admin?tab=manage');
+
+    const panel = screen.getByRole('tabpanel');
+    await user.selectOptions(await within(panel).findByLabelText('Organization'), 'robotics');
+    await user.click(within(panel).getByRole('button', { name: 'Delete organization' }));
+    const confirmation = screen.getByRole('alertdialog');
+    expect(within(confirmation).getByText(/You are deleting/)).toHaveTextContent('Robotics Club');
+    expect(within(confirmation).getByText(/User Auth accounts and profiles, unrelated organizations, and their grants and content will not be deleted/)).toBeInTheDocument();
+    expect(mocks.deleteAdminOrganization).not.toHaveBeenCalled();
+
+    await user.click(within(confirmation).getByRole('button', { name: 'Keep organization' }));
+    expect(mocks.deleteAdminOrganization).not.toHaveBeenCalled();
+    await user.click(within(panel).getByRole('button', { name: 'Delete organization' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete organization' }));
+
+    await waitFor(() => expect(mocks.deleteAdminOrganization).toHaveBeenCalledWith('robotics'));
+    expect(await screen.findByText(/Robotics Club and its organization-owned records and files were deleted/)).toHaveAttribute('role', 'status');
+    expect(screen.getByText(/User accounts and unrelated organization data were preserved/)).toBeInTheDocument();
+  });
+
+  it('shows bounded cleanup progress and offers a safe continuation action', async () => {
+    const user = userEvent.setup();
+    const retryAfterAt = '2026-10-19T02:00:00.000Z';
+    mocks.deleteAdminOrganization.mockImplementation(async () => {
+      const result = { orgId: 'robotics', status: 'in_progress' as const, phase: 'meetingRequests', retryAfterAt };
+      mocks.listAdminOrganizations.mockResolvedValue({ items: [{ ...organizations[0], deletionStatus: 'deleting', deletionPhase: result.phase, retryAfterAt }] });
+      return result;
+    });
+    renderPage('/admin?tab=manage');
+
+    const panel = screen.getByRole('tabpanel');
+    await user.selectOptions(await within(panel).findByLabelText('Organization'), 'robotics');
+    await user.click(within(panel).getByRole('button', { name: 'Delete organization' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete organization' }));
+
+    expect(await screen.findByRole('region', { name: 'Organization deletion progress' })).toBeInTheDocument();
+    expect(screen.getByText(/removing meeting requests and private PDFs/)).toBeInTheDocument();
+    expect(screen.getByText(/Previously issued upload links may remain usable until/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Continue deletion' }));
+    await waitFor(() => expect(mocks.deleteAdminOrganization).toHaveBeenCalledTimes(2));
   });
 
   it('lets a trusted Admin change and save the persisted global payment requirement', async () => {

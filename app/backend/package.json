@@ -18,7 +18,7 @@
     "test:identity": "vitest run --maxWorkers=1 --no-file-parallelism src/identity/session.test.ts src/identity/access.test.ts src/identity/previewRegistration.test.ts src/identity/paymentPolicy.test.ts",
     "test:storage": "vitest run src/storage/objectStorage.test.ts",
     "test:firebase-config": "vitest run src/firebase.test.ts",
-    "test:organizations": "vitest run src/organizations/adminProvisioning.test.ts",
+    "test:organizations": "vitest run --maxWorkers=1 --no-file-parallelism src/organizations/adminProvisioning.test.ts src/organizations/cascade.test.ts",
     "test:payments": "node --test src/payments/__tests__/payments.test.js && node --test src/payments/__tests__/firestoreRepository.test.js",
     "test:seed": "node --test scripts/seed-local-emulator.test.cjs",
     "test:content": "vitest run src/content/__tests__/*.test.ts",

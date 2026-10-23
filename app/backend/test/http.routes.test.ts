@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   approveOfficerGrant: vi.fn(),
   assignAdminOfficerGrant: vi.fn(),
   assignInitialOrganizationOwner: vi.fn(),
+  deleteOrganizationCascade: vi.fn(),
   listAdminOfficerGrants: vi.fn(),
   listAdminOrganizations: vi.fn(),
   revokeAdminOfficerGrant: vi.fn(),
@@ -82,6 +83,7 @@ vi.mock('../src/identity/accountSettings', () => ({
   updateDisplayName: mocks.updateDisplayName,
   requestVerifiedEmailChange: mocks.requestVerifiedEmailChange,
 }));
+vi.mock('../src/organizations/cascade', () => ({ deleteOrganizationCascade: mocks.deleteOrganizationCascade }));
 vi.mock('../src/organizations/service', () => ({
   approveOfficerGrant: mocks.approveOfficerGrant,
   assignAdminOfficerGrant: mocks.assignAdminOfficerGrant,
@@ -579,6 +581,11 @@ describe('SOAR HTTP route contracts', () => {
         body: JSON.stringify({ uid: 'student-1' }),
       });
       expect(ordinaryAssignment.status).toBe(403);
+      const ordinaryDelete = await fetch(`${baseUrl}/api/admin/organizations/robotics`, {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(ordinaryDelete.status).toBe(403);
       const ordinaryCreate = await fetch(`${baseUrl}/api/admin/organizations`, {
         method: 'POST',
         headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
@@ -589,6 +596,7 @@ describe('SOAR HTTP route contracts', () => {
 
     expect(mocks.searchAdminStudents).not.toHaveBeenCalled();
     expect(mocks.listAdminOrganizations).not.toHaveBeenCalled();
+    expect(mocks.deleteOrganizationCascade).not.toHaveBeenCalled();
     expect(mocks.assignAdminOfficerGrant).not.toHaveBeenCalled();
     expect(mocks.assignInitialOrganizationOwner).not.toHaveBeenCalled();
     expect(mocks.listAdminOfficerGrants).not.toHaveBeenCalled();
@@ -599,6 +607,7 @@ describe('SOAR HTTP route contracts', () => {
     mocks.requireBearerToken.mockResolvedValue({ uid: 'trusted-admin', email_verified: true, soarAdmin: true });
     mocks.searchAdminStudents.mockResolvedValue({ items: [{ uid: 'student-1', displayName: 'Mara Santos' }] });
     mocks.listAdminOrganizations.mockResolvedValue({ items: [{ id: 'robotics', name: 'Robotics Club' }] });
+    mocks.deleteOrganizationCascade.mockResolvedValue({ orgId: 'robotics', status: 'in_progress', phase: 'storedObjects', retryAfterAt: '2026-10-19T03:00:00.000Z' });
     mocks.assignInitialOrganizationOwner.mockResolvedValue({ orgId: 'robotics' });
     mocks.assignAdminOfficerGrant.mockResolvedValue({ orgId: 'robotics', uid: 'student-1', status: 'approved', alreadyAssigned: true });
     mocks.listAdminOfficerGrants.mockResolvedValue({ items: [{ uid: 'student-1', displayName: 'Mara Santos', status: 'active', isOrganizationOwner: false }] });
@@ -612,6 +621,13 @@ describe('SOAR HTTP route contracts', () => {
       const organizations = await fetch(`${baseUrl}/api/admin/organizations`, { headers: { authorization: 'Bearer test-token' } });
       expect(organizations.status).toBe(200);
       await expect(organizations.json()).resolves.toEqual({ items: [{ id: 'robotics', name: 'Robotics Club' }] });
+
+      const deletion = await fetch(`${baseUrl}/api/admin/organizations/robotics`, {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer test-token' },
+      });
+      expect(deletion.status).toBe(202);
+      await expect(deletion.json()).resolves.toMatchObject({ orgId: 'robotics', status: 'in_progress', phase: 'storedObjects' });
 
       const created = await fetch(`${baseUrl}/api/admin/organizations`, {
         method: 'POST',
@@ -648,6 +664,7 @@ describe('SOAR HTTP route contracts', () => {
     );
     expect(mocks.assignAdminOfficerGrant).toHaveBeenCalledWith('robotics', { uid: 'student-1' }, 'trusted-admin');
     expect(mocks.listAdminOfficerGrants).toHaveBeenCalledWith('robotics', { limit: '25' });
+    expect(mocks.deleteOrganizationCascade).toHaveBeenCalledWith('robotics', 'trusted-admin');
     expect(mocks.revokeAdminOfficerGrant).toHaveBeenCalledWith('robotics', 'student-1', 'trusted-admin');
   });
 

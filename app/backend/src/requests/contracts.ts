@@ -98,12 +98,12 @@ export interface RequestStore {
   getOrganization(orgId: string): Promise<OrganizationDocument | undefined>;
   getOfficerGrant(orgId: string, uid: string): Promise<{ status?: string } | undefined>;
   getCalendarEntry(dateEntryId: string): Promise<CalendarEntryDocument | undefined>;
-  createApplicationIfAbsent(applicationId: string, application: ApplicationDocument): Promise<'created' | 'exists' | 'closed' | 'organization_missing'>;
+  createApplicationIfAbsent(applicationId: string, application: ApplicationDocument): Promise<'created' | 'exists' | 'closed' | 'organization_missing' | 'organization_deleting'>;
   getApplication(applicationId: string): Promise<ApplicationDocument | undefined>;
   listApplicationsByStudent(studentUid: string): Promise<ApplicationDocument[]>;
   listApplicationsByOrganization(orgId: string): Promise<ApplicationDocument[]>;
   updateApplicationStage(applicationId: string, orgId: string, status: ApplicationStatus, reviewerUid: string, reviewedAt: Timestamp): Promise<ApplicationDocument | undefined>;
-  createMeetingIfAbsent(meetingRequestId: string, meeting: MeetingRequestDocument): Promise<'created' | 'exists'>;
+  createMeetingIfAbsent(meetingRequestId: string, meeting: MeetingRequestDocument): Promise<'created' | 'exists' | 'organization_missing' | 'organization_deleting'>;
   getMeetingRequest(meetingRequestId: string): Promise<MeetingRequestDocument | undefined>;
   listMeetingsByRequester(requesterUid: string): Promise<MeetingRequestDocument[]>;
   listMeetingsByOrganization(orgId: string): Promise<MeetingRequestDocument[]>;

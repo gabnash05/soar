@@ -1,5 +1,5 @@
 import type { DecodedIdToken } from 'firebase-admin/auth';
-import type { DocumentData, Query } from 'firebase-admin/firestore';
+import type { DocumentData, Query, Transaction } from 'firebase-admin/firestore';
 import { FieldPath, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { COLLECTIONS, organizationLogoStoragePath, announcementImageStoragePath, organizationPath, officerGrantPath } from '../contracts/paths';
 import type { OrganizationDocument } from '../contracts/schema';
@@ -84,16 +84,25 @@ async function assertCanManageOrganization(user: DecodedIdToken, orgId: string):
   }
 
   const organization = orgSnap.data() as OrganizationDocument;
-  if (organization.ownerUid === user.uid) {
-    return organization;
+  const isOwner = organization.ownerUid === user.uid;
+  const grantSnap = isOwner ? undefined : await db.doc(officerGrantPath(orgId, user.uid)).get();
+  if (!isOwner && !(grantSnap?.exists && grantSnap.data()?.status === 'active')) {
+    throw new AppError('organization_management_required', 'Approved organization management access is required for this action.', 403);
   }
+  assertOrganizationWritable(organization);
+  return organization;
+}
 
-  const grantSnap = await db.doc(officerGrantPath(orgId, user.uid)).get();
-  if (grantSnap.exists && grantSnap.data()?.status === 'active') {
-    return organization;
+function assertOrganizationWritable(organization: DocumentData | undefined): void {
+  if (!organization) throw new AppError('organization_missing', 'The organization was not found.', 404);
+  if (organization.deletionStatus === 'deleting') {
+    throw new AppError('organization_deleting', 'This organization is being deleted and can no longer be changed.', 409);
   }
+}
 
-  throw new AppError('organization_management_required', 'Approved organization management access is required for this action.', 403);
+async function assertOrganizationWritableInTransaction(transaction: Transaction, orgId: string): Promise<void> {
+  const organization = await transaction.get(db.doc(organizationPath(orgId)));
+  assertOrganizationWritable(organization.exists ? organization.data() : undefined);
 }
 
 async function requireReadableUser(user: DecodedIdToken): Promise<void> {
@@ -294,6 +303,9 @@ export async function getOrganizationProfile(user: DecodedIdToken, orgIdParam: s
   }
 
   const data = orgSnap.data() ?? {};
+  if (data.deletionStatus === 'deleting') {
+    throw new AppError('organization_missing', 'The organization was not found.', 404);
+  }
   const [posts, dateEntries] = await Promise.all([
     listAnnouncements(user, { orgId, limit: 10 }),
     listDateEntries(user, { organizationId: orgId, limit: 20 })
@@ -349,7 +361,12 @@ export async function updateOrganizationProfile(user: DecodedIdToken, orgIdParam
     };
   }
 
-  await db.doc(organizationPath(orgId)).update(update);
+  const organizationRef = db.doc(organizationPath(orgId));
+  await db.runTransaction(async (transaction) => {
+    const current = await transaction.get(organizationRef);
+    assertOrganizationWritable(current.exists ? current.data() : undefined);
+    transaction.update(organizationRef, update);
+  });
   return getOrganizationProfile(user, orgId);
 }
 
@@ -389,6 +406,7 @@ export async function createLogoImageTarget(user: DecodedIdToken, orgIdParam: st
   const input = imageTargetRequestSchema.omit({ announcementId: true }).parse(rawBody);
   const storagePath = organizationLogoStoragePath(orgId, sanitizeTargetFileName(input.fileName));
   const uploadTarget = await createSignedObjectUploadTarget(storagePath);
+  await assertCanManageOrganization(user, orgId);
   return {
     storagePath,
     contentType: input.contentType,
@@ -406,6 +424,7 @@ export async function createAnnouncementImageTarget(user: DecodedIdToken, orgIdP
   const announcementId = input.announcementId ?? db.collection(COLLECTIONS.announcements).doc().id;
   const storagePath = announcementImageStoragePath(orgId, announcementId, sanitizeTargetFileName(input.fileName));
   const uploadTarget = await createSignedObjectUploadTarget(storagePath);
+  await assertCanManageOrganization(user, orgId);
   return {
     announcementId,
     storagePath,
@@ -427,6 +446,7 @@ export async function createAnnouncementMediaTargets(user: DecodedIdToken, orgId
     const uploadTarget = await createSignedObjectUploadTarget(storagePath);
     return { announcementId, storagePath, contentType: file.contentType, sizeBytes: file.sizeBytes, ...(uploadTarget ?? {}) };
   }));
+  await assertCanManageOrganization(user, orgId);
   return {
     announcementId,
     items,
@@ -525,7 +545,8 @@ export async function createAnnouncement(user: DecodedIdToken, orgIdParam: strin
   const now = Timestamp.now();
   const docRef = db.collection(COLLECTIONS.announcements).doc(announcementId);
   await db.runTransaction(async (tx) => {
-    const existing = await tx.get(docRef);
+    const [existing, currentOrganization] = await Promise.all([tx.get(docRef), tx.get(db.doc(organizationPath(orgId)))]);
+    assertOrganizationWritable(currentOrganization.exists ? currentOrganization.data() : undefined);
     if (existing.exists) {
       throw new AppError('announcement_exists', 'That announcement id is already in use.', 409);
     }
@@ -557,7 +578,8 @@ export async function updateAnnouncement(user: DecodedIdToken, orgIdParam: strin
   const input = announcementUpdateSchema.parse(rawBody);
   const ref = db.collection(COLLECTIONS.announcements).doc(announcementId);
   await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
+    const [snap, currentOrganization] = await Promise.all([tx.get(ref), tx.get(db.doc(organizationPath(orgId)))]);
+    assertOrganizationWritable(currentOrganization.exists ? currentOrganization.data() : undefined);
     if (!snap.exists || snap.data()?.deletedAt) {
       throw new AppError('announcement_missing', 'The announcement was not found.', 404);
     }
@@ -575,7 +597,8 @@ export async function deleteAnnouncement(user: DecodedIdToken, orgIdParam: strin
   const announcementId = routeDocumentId(announcementIdParam, 'announcement');
   const ref = db.collection(COLLECTIONS.announcements).doc(announcementId);
   await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
+    const [snap, currentOrganization] = await Promise.all([tx.get(ref), tx.get(db.doc(organizationPath(orgId)))]);
+    assertOrganizationWritable(currentOrganization.exists ? currentOrganization.data() : undefined);
     if (!snap.exists || snap.data()?.deletedAt) {
       throw new AppError('announcement_missing', 'The announcement was not found.', 404);
     }
@@ -598,6 +621,7 @@ export async function setAnnouncementLike(user: DecodedIdToken, announcementIdPa
     if (!announcement.exists || announcement.data()?.deletedAt) {
       throw new AppError('announcement_missing', 'The announcement was not found.', 404);
     }
+    await assertOrganizationWritableInTransaction(tx, routeOrgId(String(announcement.data()?.orgId ?? '')));
     if (liked && !like.exists) {
       tx.create(likeRef, { uid: user.uid, announcementId, createdAt: Timestamp.now() });
       tx.update(ref, { likeCount: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() });
@@ -648,6 +672,7 @@ export async function addAnnouncementComment(user: DecodedIdToken, announcementI
     if (!announcement.exists || announcement.data()?.deletedAt) {
       throw new AppError('announcement_missing', 'The announcement was not found.', 404);
     }
+    await assertOrganizationWritableInTransaction(tx, routeOrgId(String(announcement.data()?.orgId ?? '')));
     tx.create(commentRef, {
       commentId: commentRef.id,
       announcementId,
@@ -684,6 +709,7 @@ export async function updateAnnouncementComment(user: DecodedIdToken, announceme
     if (comment.data()?.authorUid !== user.uid) {
       throw new AppError('comment_owner_required', 'You can edit only your own comments.', 403);
     }
+    await assertOrganizationWritableInTransaction(tx, routeOrgId(String(announcement.data()?.orgId ?? '')));
     tx.update(commentRef, { body: input.body, updatedAt: now, editedAt: now });
     tx.update(announcementRef, { updatedAt: FieldValue.serverTimestamp() });
   });
@@ -715,6 +741,7 @@ export async function deleteAnnouncementComment(user: DecodedIdToken, announceme
     if (comment.data()?.authorUid !== user.uid) {
       throw new AppError('comment_owner_required', 'You can delete only your own comments.', 403);
     }
+    await assertOrganizationWritableInTransaction(tx, routeOrgId(String(announcement.data()?.orgId ?? '')));
     tx.delete(commentRef);
     tx.update(announcementRef, {
       commentCount: Math.max(0, comments.size - 1),
@@ -768,9 +795,11 @@ export async function createDateEntry(user: DecodedIdToken, orgIdParam: string, 
     updatedAt: now
   };
 
+  const organizationRef = db.doc(organizationPath(orgId));
   if (input.entryId) {
     const saved = await db.runTransaction(async (tx) => {
-      const existing = await tx.get(ref);
+      const [existing, currentOrganization] = await Promise.all([tx.get(ref), tx.get(organizationRef)]);
+      assertOrganizationWritable(currentOrganization.exists ? currentOrganization.data() : undefined);
       if (existing.exists) {
         const savedEntry = existing.data() ?? {};
         const sameRequest = savedEntry.orgId === orgId && savedEntry.createdByUid === user.uid &&
@@ -788,7 +817,11 @@ export async function createDateEntry(user: DecodedIdToken, orgIdParam: string, 
     return dateEntryFromDoc(saved);
   }
 
-  await ref.create(entry);
+  await db.runTransaction(async (tx) => {
+    const currentOrganization = await tx.get(organizationRef);
+    assertOrganizationWritable(currentOrganization.exists ? currentOrganization.data() : undefined);
+    tx.create(ref, entry);
+  });
   return dateEntryFromDoc(entry);
 }
 
@@ -800,6 +833,7 @@ export async function updateDateEntry(user: DecodedIdToken, orgIdParam: string, 
   const ref = db.collection(COLLECTIONS.calendarEntries).doc(entryId);
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
+    await assertOrganizationWritableInTransaction(tx, orgId);
     if (!snap.exists) {
       throw new AppError('date_entry_missing', 'The date entry was not found.', 404);
     }
@@ -828,6 +862,7 @@ export async function deleteDateEntry(user: DecodedIdToken, orgIdParam: string, 
   const ref = db.collection(COLLECTIONS.calendarEntries).doc(entryId);
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
+    await assertOrganizationWritableInTransaction(tx, orgId);
     if (!snap.exists) {
       throw new AppError('date_entry_missing', 'The date entry was not found.', 404);
     }

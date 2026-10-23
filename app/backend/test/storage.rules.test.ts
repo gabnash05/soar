@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 import { doc, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 
 const projectId = process.env.GCLOUD_PROJECT ?? `soar-storage-rules-${Date.now()}`;
+const requestPath = 'meeting-request-documents/org1/meeting1/formal-request.pdf';
+const metadata = { orgId: 'org1', meetingRequestId: 'meeting1', requesterUid: 'requester' };
 
 function emulatorHostPort(value: string | undefined) {
   if (!value) {
@@ -147,6 +149,16 @@ describe('storage organization image boundaries', () => {
     await assertFails(storageFor('officer').ref('announcement-images/org1/post1/clip.webm').put(unsupportedVideoBlob(16, 'video/webm'), { contentType: 'video/webm' }));
   });
 
+  it('blocks all new organization image and private-request uploads after deletion starts', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), 'organizations', 'org1'), { deletionStatus: 'deleting' });
+    });
+
+    await assertFails(storageFor('owner').ref('organization-logos/org1/new-logo.png').put(imageBlob(), { contentType: 'image/png' }));
+    await assertFails(storageFor('officer').ref('announcement-images/org1/new-post/photo.png').put(imageBlob(), { contentType: 'image/png' }));
+    await assertFails(storageFor('requester').ref(requestPath).put(pdfBlob(), { contentType: 'application/pdf', customMetadata: metadata }));
+  });
+
   it('allows only eligible activation-cohort accounts to read without entitlements and keeps revocation precedence', async () => {
     const activationAt = Timestamp.fromDate(new Date(Date.now() - 5 * 24 * 60 * 60 * 1000));
     const newAccountAt = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
@@ -193,9 +205,6 @@ describe('storage organization image boundaries', () => {
 });
 
 describe('storage meeting request document boundaries', () => {
-  const requestPath = 'meeting-request-documents/org1/meeting1/formal-request.pdf';
-  const metadata = { orgId: 'org1', meetingRequestId: 'meeting1', requesterUid: 'requester' };
-
   it('allows requesters to upload PDFs with matching metadata only', async () => {
     await assertSucceeds(storageFor('requester').ref(requestPath).put(pdfBlob(), { contentType: 'application/pdf', customMetadata: metadata }));
     await assertFails(storageFor('requester').ref('meeting-request-documents/org1/meeting1/request.html').put(pdfBlob(16, 'text/html'), { contentType: 'text/html', customMetadata: metadata }));

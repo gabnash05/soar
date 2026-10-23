@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Timestamp } from 'firebase-admin/firestore';
 import { AppError } from '../errors';
 
 const state = vi.hoisted(() => ({
@@ -13,6 +14,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('../firebase', () => ({ adminAuth: state.adminAuth, db: state.db }));
+vi.mock('../identity/access', () => ({ requireActiveAccess: vi.fn(async () => undefined) }));
 
 import {
   assignAdminOfficerGrant,
@@ -20,6 +22,7 @@ import {
   listAdminOfficerGrants,
   listAdminOrganizations,
   revokeAdminOfficerGrant,
+  revokeOfficerGrant,
   searchAdminStudents
 } from './service';
 
@@ -190,6 +193,26 @@ describe('admin organization provisioning', () => {
     });
   });
 
+  it('does not revoke an officer grant if deletion starts between owner authorization and the transaction', async () => {
+    state.docs.set('organizations/robotics', { orgId: 'robotics', ownerUid: 'owner-1' });
+    state.docs.set('organizations/robotics/officerGrants/student-01', { uid: 'student-01', status: 'active' });
+    state.db.runTransaction.mockImplementationOnce(async (work: (transaction: any) => Promise<unknown>) => {
+      state.docs.get('organizations/robotics')!.deletionStatus = 'deleting';
+      return work({
+        get: async (ref: { path: string }) => documentSnapshot(ref.path),
+        update: (ref: { path: string }, patch: Record<string, unknown>) => {
+          const current = state.docs.get(ref.path);
+          if (!current) throw new Error(`Document does not exist: ${ref.path}`);
+          state.docs.set(ref.path, { ...current, ...patch });
+        }
+      });
+    });
+
+    await expect(revokeOfficerGrant({ uid: 'owner-1', email_verified: true } as any, 'robotics', 'student-01'))
+      .rejects.toMatchObject({ code: 'organization_deleting' });
+    expect(state.docs.get('organizations/robotics/officerGrants/student-01')).toMatchObject({ uid: 'student-01', status: 'active' });
+  });
+
   it('does not rewrite an existing active grant when an admin repeats an assignment', async () => {
     state.docs.set('organizations/robotics', { orgId: 'robotics', name: 'Robotics Club' });
     state.docs.set('accounts/student-01', { role: 'student', displayName: 'Mara Santos' });
@@ -306,6 +329,20 @@ describe('admin organization provisioning', () => {
     await expect(revokeAdminOfficerGrant('robotics', 'student-1', 'trusted-admin')).rejects.toMatchObject({ code: 'invalid_officer_grant' });
     expect(state.docs.get('organizations/robotics/officerGrants/owner-1')?.status).toBe('active');
     expect(state.docs.get('organizations/robotics/officerGrants/student-1')?.status).toBe('active');
+  });
+
+  it('exposes only bounded deletion progress fields to the admin organization picker', async () => {
+    const uploadDrainUntil = Timestamp.fromDate(new Date('2026-10-19T02:00:00.000Z'));
+    state.docs.set('organizations/robotics', {
+      orgId: 'robotics', name: 'Robotics Club', ownerUid: 'private-owner', deletionStatus: 'deleting',
+      deletionProgress: { phase: 'storedObjects', uploadDrainUntil, startedByUid: 'private-admin' }
+    });
+    state.docs.set('organizations/civil', { orgId: 'civil', name: 'Civil Club', ownerUid: 'private-owner' });
+
+    await expect(listAdminOrganizations({ limit: 2 })).resolves.toEqual({ items: [
+      { id: 'civil', name: 'Civil Club' },
+      { id: 'robotics', name: 'Robotics Club', deletionStatus: 'deleting', deletionPhase: 'storedObjects', retryAfterAt: '2026-10-19T02:00:00.000Z' }
+    ] });
   });
 
   it('lists only organization picker fields with stable tied-name cursors across mutations', async () => {
