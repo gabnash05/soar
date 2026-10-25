@@ -45,21 +45,21 @@ npm run dev -- --host 127.0.0.1
 
 Leave the terminal running and open the local URL Vite prints (normally `http://127.0.0.1:5173`). The page should load with sample data. Stop the server with Ctrl-C.
 
-## Run the integrated local application
+## Run the connected local application (optional)
 
-This optional setup runs the frontend with local Firebase emulators instead of sample data. It requires Bash/WSL, Java 21, and emulator downloads. Emulator services are local substitutes for Firebase services; use the isolated project name `demo-soar-local`, not the hosted project. Do not use the root `test:rules` script for this local path because it explicitly names the hosted project.
+Choose this path when you want the browser interface to call the local API and Firebase emulators instead of using fixtures. The API is the server-side part of SOAR; the frontend is the browser interface. You need Node.js 22 with npm, Bash (or WSL), Java 21, and Firebase emulator downloads. Keep the API/emulator terminal and frontend terminal open at the same time. This setup uses the isolated demo project `demo-soar-local`, not the hosted Firebase project; its records are synthetic and local. Do not use the root `test:rules` command here because it explicitly targets the hosted project.
 
-In Bash/WSL, from the repository root:
+In a Bash/WSL terminal at the repository root, download the Firestore emulator once, set the exact frontend origin the API will allow, then start the API and emulators:
 
 ```bash
 npx firebase setup:emulators:firestore
-export SOAR_APP_BASE_URL=http://localhost:5173
+export SOAR_APP_BASE_URL=http://127.0.0.1:5173
 npm --workspace app/backend run emulators:start
 ```
 
-Keep that terminal running. The helper requires Java 21 and uses Auth `127.0.0.1:19099`, Firestore `127.0.0.1:18080`, Storage `127.0.0.1:19199`, and Functions `127.0.0.1:15001`. Stop it with Ctrl-C.
+Leave this terminal running. The helper starts Auth at `127.0.0.1:19099`, Firestore at `127.0.0.1:18080`, Storage at `127.0.0.1:19199`, and the API at `127.0.0.1:15001`. The API health address is `http://127.0.0.1:15001/demo-soar-local/asia-southeast1/api/health`. Stop the services with Ctrl-C.
 
-In a second Bash/WSL terminal, from the repository root, seed the local demo:
+Open a second Bash/WSL terminal at the repository root and seed the emulators with synthetic sample records:
 
 ```bash
 GCLOUD_PROJECT=demo-soar-local \
@@ -68,9 +68,9 @@ FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:19099 \
 npm --workspace app/backend run emulators:seed
 ```
 
-The seed creates synthetic student, sponsor, owner, and officer records with simulated access. Obtain test credentials privately. It does not provision an Admin; the trusted emulator-only Admin procedure is in [the backend README](app/backend/README.md#trusted-admin-provisioning).
+The seed creates demo student, sponsor, owner, and officer records; a successful run exits without an error. These records and simulated access are for local demonstration, not real accounts or payment evidence. The seed does not create an Admin. Demo credentials are provided privately; do not guess them or save them in the repository.
 
-Set `app/frontend/.env.local` to:
+From the repository root, create the local frontend config by copying the checked-in example (`cp app/frontend/.env.example app/frontend/.env.local` in Bash/WSL, or `Copy-Item app/frontend/.env.example app/frontend/.env.local` in PowerShell). Open `app/frontend/.env.local`, replace its contents with the following emulator configuration, then save it. These are safe demo identifiers, not hosted-project credentials:
 
 ```dotenv
 VITE_SOAR_USE_FIXTURES=false
@@ -87,11 +87,18 @@ VITE_FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:19099
 VITE_FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:19199
 ```
 
-Start the frontend at the exact `SOAR_APP_BASE_URL` origin, or export a different origin before starting the helper and match it in the browser. The API uses an exact origin allowlist. Run `npm run dev -- --host 127.0.0.1` inside `app/frontend` and open `http://localhost:5173` with the configuration above. Health endpoint: `http://127.0.0.1:15001/demo-soar-local/asia-southeast1/api/health`.
+Save the configuration, then open a third terminal in `app/frontend` and start the frontend:
+
+```bash
+cd app/frontend
+npm run dev -- --host 127.0.0.1
+```
+
+Vite prints the local address; open `http://127.0.0.1:5173`, which must match `SOAR_APP_BASE_URL` exactly. A successful connection shows the SOAR interface; the API health address above should return a successful response. Use the private demo-account handoff for sign-in details. Stop the frontend with Ctrl-C.
 
 ## Hosted setup: Firebase + Render + Supabase
 
-This section describes the checked-in hosted preview path. Confirm the actual service names, URLs, access, quotas, and existing media with the account owner. A local build does not verify a hosted deployment.
+This is an optional hosted-preview setup; it is not needed to run the fixtures or local emulator walkthrough above. It requires authorized access to the existing Firebase, Render, and Supabase projects. A local build does not create or configure those services and does not verify deployment. Use the checked-in examples as templates: copy `app/backend/.env.example` only for a private standalone backend run, and `app/frontend/.env.example` to `app/frontend/.env.local` for local frontend configuration. Never commit either populated file. For Render, enter backend values in its private environment settings and frontend values in the private build environment.
 
 1. **Firebase:** obtain access to project `soar-a711e`, its existing web app configuration, Email/Password Authentication, Firestore, and Hosting site. Confirm the frontend host is permitted by Authentication's authorized domains. Arrange an approved Firebase Admin runtime identity for Render, scoped to this project. Never place it in a `VITE_` variable.
 2. **Supabase:** obtain the project URL and backend-only service-role key. Use a private bucket named `soar-files` (or keep `SOAR_FILES_BUCKET` consistent with the selected private bucket). Permit the supported image types and `application/pdf`, and confirm browser upload/CORS behavior for the exact frontend origin. SOAR limits images to 5 MiB and meeting PDFs to 10 MiB. Existing Firebase Storage objects need a separate inventory/migration decision.
@@ -100,6 +107,8 @@ This section describes the checked-in hosted preview path. Confirm the actual se
 5. **Verify:** check API health, sign-in/email verification, role access, saved records after refresh, and authorized image/PDF upload and retrieval. Confirm the recipient can access the provider dashboards. Do not report handoff completion until those access checks are done.
 
 ### Render server configuration
+
+The frontend uses public Firebase web-app identifiers; obtain the existing values from the authorized Firebase project web-app configuration. The backend additionally needs an approved Firebase Admin identity and private Supabase service-role key, supplied only to Render's server environment. Do not copy these server secrets into `app/frontend/.env.local`: every `VITE_` variable is compiled into browser-visible code.
 
 | Variable | Required value or source |
 | --- | --- |
@@ -147,7 +156,7 @@ npx firebase deploy --project soar-a711e --only hosting
 
 The PayMongo merchant-account arrangement is pending because the existing account is personal to the developer. Settle that arrangement before transferring secrets or enabling payments. New checkouts use Hosted Checkout Sessions v2 with QR Ph. The integration needs backend-only `PAYMONGO_SECRET_KEY`, `PAYMONGO_WEBHOOK_SECRET`, and `PAYMENT_SECRET_PEPPER`, plus the correct `PAYMONGO_EXPECTED_LIVEMODE`. Use `PAYMENT_SECURE_COOKIES=true` for deployed HTTPS.
 
-The webhook handler is `POST /api/webhooks/paymongo` on the API origin and expects signed `checkout_session.payment.paid` events. Confirm the route and test/live lane against [the payment integration guide](docs/backend/payments.md). Keep `SOAR_DISABLE_PAYMENTS=true` and `VITE_SOAR_PAYMENTS_ENABLED=false` for the unpaid preview. The authenticated Admin payment policy is an additional requirement; keys or deployment flags alone do not enable charging. A live-mode policy activation also records the one-time existing-account access window, so review that behavior before activating it.
+The webhook handler is `POST /api/webhooks/paymongo` on the API origin and expects signed `checkout_session.payment.paid` events. Confirm the route and test/live lane against [the payment integration guide](docs/backend/payments.md). For a no-payment preview, keep backend `SOAR_DISABLE_PAYMENTS=true` and frontend `VITE_SOAR_PAYMENTS_ENABLED=false`. The frontend flag only enables payment UI paths; the backend flag is a server-side stop. For an approved provider test, use test credentials and `PAYMONGO_EXPECTED_LIVEMODE=false`; this setting checks the expected credential/session mode, it does not itself enable checkout or create a transaction. A live setup requires separately approved live credentials, `PAYMONGO_EXPECTED_LIVEMODE=true`, safe server configuration, and explicit owner authorization; do not enable live mode as part of ordinary setup. The authenticated Admin payment policy is an additional requirement; keys or deployment flags alone do not enable charging. A live-mode policy activation also records the one-time existing-account access window, so review that behavior before activating it.
 
 Merchant activation, signed public webhook delivery, and live payment readiness are separate checks. Use only an approved test-mode `test_url` simulation; do not scan/pay a QR Ph test QR. Any live charge or activation requires the owner's separate authorization.
 
