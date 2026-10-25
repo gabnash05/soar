@@ -14,7 +14,9 @@ The recipient needs repository access and appropriate project/service access for
 
 ## Prerequisites and installation
 
-Use Git and Node.js 22 with npm for the backend. The frontend has a separate lockfile and dependency set; install it separately. Integrated local development also needs Bash/WSL, Java 21, and Firebase emulator downloads. Use one environment consistently for installation and execution, especially under WSL.
+For the sample-data frontend, install Git and Node.js 22 (npm is included with Node.js). Check them in a terminal with `git --version`, `node --version`, and `npm --version`; Node should report `v22.x`. Integrated local development additionally requires Bash (WSL is suitable on Windows), Java 21, and Firebase emulator downloads. You do not need Java or emulator downloads for the frontend-only setup.
+
+Open a terminal in the folder where you keep projects, then clone the repository and install dependencies. `npm ci` installs the exact versions recorded in each lockfile; run it once at the repository root and once in `app/frontend`:
 
 ```bash
 git clone https://github.com/gabnash05/soar.git
@@ -22,25 +24,30 @@ cd soar
 npm ci
 cd app/frontend
 npm ci
-cd ../..
 ```
 
-For an existing clean clone, run `git switch main` and `git pull --ff-only origin main`. Preserve any local changes and resolve a diverged branch before updating. Only `app/backend` is a root npm workspace; run frontend commands inside `app/frontend`.
+Keep using the same terminal environment for installation and commands, especially when using WSL. The root npm workspace contains `app/backend`; frontend commands must be run from `app/frontend`. For an existing clone, first go to its repository root and check `git status`; preserve local changes before updating, then use `git switch main` and `git pull --ff-only origin main` only when the branch can fast-forward.
 
 ## Run the frontend with sample data
 
-From `app/frontend`, copy `.env.example` to the ignored `.env.local` file (`cp .env.example .env.local` in Bash, or `Copy-Item .env.example .env.local` in PowerShell). Set:
+This is the quickest local option and uses built-in sample records; it does not start the API or contact provider services. In a terminal, change to the frontend folder (`cd app/frontend` from the repository root). Copy the checked-in example configuration to the ignored local file: use `cp .env.example .env.local` in Bash, or `Copy-Item .env.example .env.local` in PowerShell. Open `app/frontend/.env.local` in a text editor and set:
 
 ```dotenv
 VITE_SOAR_USE_FIXTURES=true
 VITE_SOAR_PAYMENTS_ENABLED=false
 ```
 
-Run `npm run dev -- --host 127.0.0.1` from that folder and open the URL Vite prints. This mode uses sample data and needs no backend or provider secrets.
+Save the file, then run this command in the same `app/frontend` terminal:
+
+```bash
+npm run dev -- --host 127.0.0.1
+```
+
+Leave the terminal running and open the local URL Vite prints (normally `http://127.0.0.1:5173`). The page should load with sample data. Stop the server with Ctrl-C.
 
 ## Run the integrated local application
 
-Use the isolated project `demo-soar-local`; the checked-in default Firebase binding is the existing hosted project. The backend helper supplies the loopback emulator configuration. Do not use the root `test:rules` script for this local path because it explicitly names the hosted project.
+This optional setup runs the frontend with local Firebase emulators instead of sample data. It requires Bash/WSL, Java 21, and emulator downloads. Emulator services are local substitutes for Firebase services; use the isolated project name `demo-soar-local`, not the hosted project. Do not use the root `test:rules` script for this local path because it explicitly names the hosted project.
 
 In Bash/WSL, from the repository root:
 
